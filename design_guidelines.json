@@ -1,0 +1,112 @@
+{
+  "project_name": "BARBER HUB",
+  "theme": "Luxury Design with Dual Modes (Dark for Men, Light for Women)",
+  "archetype": "5 (Jewel & Luxury)",
+  "design_philosophy": {
+    "core_principles": [
+      "Exclusive & Premium: Every pixel should feel expensive and highly curated.",
+      "Dual Identity: Complete separation between Men (Dark Moody, Gold) and Women (Light Soft, Rose Gold) interfaces.",
+      "Cinematic Lighting: Use gradients and shadows to simulate real-world studio lighting.",
+      "RTL First: Designed ground-up for Arabic typography and Right-To-Left layouts."
+    ]
+  },
+  "typography": {
+    "primary_font_en": "Playfair Display",
+    "primary_font_ar": "Tajawal",
+    "body_font_en": "Outfit",
+    "body_font_ar": "Tajawal",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none font-bold",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight leading-snug font-semibold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm uppercase tracking-[0.2em]"
+    }
+  },
+  "colors": {
+    "men_section": {
+      "mode": "dark",
+      "background": "#0A0A0A",
+      "surface": "#141414",
+      "surface_elevated": "#1F1F1F",
+      "primary": "#D4AF37",
+      "primary_hover": "#F3E5AB",
+      "text_primary": "#F8FAFC",
+      "text_secondary": "#94A3B8",
+      "border": "#262626",
+      "accent": "#B8860B"
+    },
+    "women_section": {
+      "mode": "light",
+      "background": "#FDFBF7",
+      "surface": "#FFFFFF",
+      "surface_elevated": "#FAFAFA",
+      "primary": "#B76E79",
+      "primary_hover": "#D8A7B1",
+      "text_primary": "#1C1917",
+      "text_secondary": "#57534E",
+      "border": "#E7E5E4",
+      "accent": "#9E5B66"
+    }
+  },
+  "spacing_and_layout": {
+    "generous_spacing": "Use 2x standard padding (e.g., p-8 or p-12 for containers) to create a luxurious, uncrowded feel.",
+    "bento_grids": "Use Mode A 'Tetris Grid' for the Top Barbers and salon showcases. Base: grid-cols-1 md:grid-cols-12 gap-8.",
+    "borders": "Always use 1px solid borders tinted towards the primary color (e.g., border-white/10 for men, border-black/5 for women).",
+    "radius": "Subtle rounded corners (rounded-lg or rounded-xl max). Avoid fully rounded pills except for small badges."
+  },
+  "components": {
+    "buttons": "Flat background with 1px inner glow. Primary buttons use the theme's primary color with contrasting text. Hover states add a subtle shadow and brightness.",
+    "cards": "Cardless or flat cards with 1px border. No heavy drop shadows. For men: bg-[#141414] border-[#262626]. For women: bg-white border-[#E7E5E4].",
+    "inputs": "Shadcn inputs customized. bg-transparent border-b-2 (underlined style) or fully enclosed with subtle border and focus ring of primary color.",
+    "navigation": "Sticky header with Crystal Glassmorphism. Men: backdrop-blur-xl bg-black/60 border-b border-white/10. Women: backdrop-blur-xl bg-white/70 border-b border-black/5.",
+    "gender_selection": "50/50 split screen on desktop. Left side Dark/Gold (Men), Right side Light/Rose Gold (Women). Hover expands the side slightly with smooth transition.",
+    "calendars": "Shadcn calendar, customized with luxury fonts. High contrast for selected dates (Gold/Rose Gold background, dark/white text)."
+  },
+  "motion_and_interactions": {
+    "hover_states": "All cards lift slightly (-translate-y-1) with a soft diffuse shadow.",
+    "transitions": "Use 'transition-all duration-300 ease-out'. Avoid snappy linear animations.",
+    "page_load": "Fade in content sequentially. Stagger lists (like Top Barbers) with 100ms delay."
+  },
+  "icons_library": {
+    "primary": "lucide-react",
+    "style": "Thin, elegant stroke weights (strokeWidth={1.5})."
+  },
+  "image_urls": {
+    "hero_men": {
+      "url": "https://images.unsplash.com/photo-1773904215697-e6c21fc27ac2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHw0fHxsdXh1cnklMjBiYXJiZXIlMjBzaG9wfGVufDB8fHx8MTc3NjE2ODQ1MXww&ixlib=rb-4.1.0&q=85",
+      "description": "Luxurious dark barber shop chairs and sinks, perfectly matching the dark/gold mood.",
+      "usage": "Men's section hero background or gender selection side."
+    },
+    "hero_women": {
+      "url": "https://images.pexels.com/photos/7195812/pexels-photo-7195812.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Bright, elegant women's salon with soft lighting.",
+      "usage": "Women's section hero background or gender selection side."
+    },
+    "salon_interior_men": {
+      "url": "https://images.unsplash.com/photo-1759134198561-e2041049419c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBiYXJiZXIlMjBzaG9wfGVufDB8fHx8MTc3NjE2ODQ1MXww&ixlib=rb-4.1.0&q=85",
+      "description": "Barbers cutting hair in a modern luxury salon.",
+      "usage": "Profile page banners for men's salons."
+    },
+    "salon_interior_women": {
+      "url": "https://images.pexels.com/photos/7195799/pexels-photo-7195799.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Stylish black backwash chair in bright modern salon.",
+      "usage": "Profile page banners for women's salons."
+    },
+    "tools_abstract": {
+      "url": "https://images.unsplash.com/photo-1764670687832-6dc25615fdf3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwxfHxiYXJiZXIlMjB0b29scyUyMHZpbnRhZ2V8ZW58MHx8fHwxNzc2MTY4NDUxfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Vintage grooming tools.",
+      "usage": "About section, filler bento box images, or default service thumbnails."
+    }
+  },
+  "instructions_to_main_agent": [
+    "You MUST implement RTL support (dir='rtl') and use logical properties (start/end) instead of left/right for margins/padding.",
+    "Do NOT use generic fonts like Inter. Import and use 'Tajawal' and 'Playfair Display' from Google Fonts.",
+    "Ensure the Gender Selection is the first thing users see. It should be a dramatic 50/50 split (Men/Women) routing to their respective themes.",
+    "Strictly follow the color palettes. Men's UI is Dark Mode locked. Women's UI is Light Mode locked.",
+    "Use Shadcn UI for forms, calendars, and dashboards, but heavily customize borders and padding to feel 'expensive' and cardless where appropriate.",
+    "Never use generic placeholder images. Use the provided high-quality image_urls.",
+    "Add 'data-testid' to all buttons, links, inputs, and interactive elements."
+  ]
+}

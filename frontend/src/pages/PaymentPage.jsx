@@ -1,82 +1,60 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/App';
-import { Button } from '@/components/ui/button';
-import { 
-  ArrowRight, ArrowLeft, MessageCircle, CreditCard, 
-  Building, User, CheckCircle
-} from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 
 const PaymentPage = () => {
   const navigate = useNavigate();
-  const { gender, language, themeClass } = useApp();
+  const { gender, language } = useApp();
 
   const isMen = gender === 'male';
 
   const texts = {
     ar: {
-      back: 'رجوع',
-      title: 'تفعيل الاشتراك',
-      subtitle: 'بسبب عدم توفر أدوات دفع في المنطقة، يرجى تفعيل الاشتراك عبر التحويل المالي',
-      plans: 'باقات الاشتراك',
+      title: 'تفعيل الاشتراك السنوي',
+      subtitle: 'بسبب عدم توفر أدوات الدفع الإلكتروني المباشرة في منطقتك، يتم تفعيل الاشتراك عبر الحوالة اليدوية لضمان الأمان والسرعة.',
+      transferData: 'بيانات التحويل:',
+      amountRequired: 'المبلغ المطلوب:',
+      amountNote: '(حسب الباقة)',
+      recipientName: 'اسم المستلم:',
+      address: 'العنوان:',
+      transferNote: 'يمكنك التحويل من أي مكتب صرافة قريب منك، أو عن طريق أي شخص ينوب عنك.',
+      afterTransfer: 'بعد التحويل، يرجى إرسال صورة "إشعار التحويل" عبر الواتساب لتفعيل حسابك خلال 24 ساعة.',
+      contactBtn: 'تواصل لتأكيد الحوالة',
+      adminNumber: 'رقم المدير:',
+      packages: 'باقات الاشتراك',
       basic: 'عادي',
       barber: 'حلاق',
       store: 'متجر',
-      vip: 'VIP',
-      basicDesc: 'ملف شخصي + حجوزات',
-      barberDesc: 'كل الميزات + QR Code',
-      storeDesc: 'متجر مصغر + 5 منتجات',
-      vipDesc: 'ظهور مميز + أولوية',
-      yearly: 'سنوياً',
-      howTo: 'طريقة التفعيل',
-      step1: 'اختر الباقة المناسبة',
-      step2: 'قم بالتحويل المالي',
-      step3: 'أرسل إشعار التحويل عبر واتساب',
-      step4: 'سيتم تفعيل اشتراكك خلال 24 ساعة',
-      transferInfo: 'معلومات التحويل',
-      name: 'الاسم: محمد الرجب',
-      location: 'الموقع: سوريا - الحسكة',
-      method: 'الطريقة: من أي مكتب صراف قريب عليك أو أي شخص يمكنه الدفع عنك',
-      sendReceipt: 'أرسل إشعار التحويل',
-      whatsappNumber: '+963 935 964 158',
-      disclaimer: 'ملاحظة: بعد إرسال إشعار التحويل باسمك، سيتم تفعيل اشتراكك خلال 24 ساعة'
+      vip: 'VIP'
     },
     en: {
-      back: 'Back',
-      title: 'Activate Subscription',
-      subtitle: 'Due to limited payment options in the region, please activate via bank transfer',
-      plans: 'Subscription Plans',
+      title: 'Activate Annual Subscription',
+      subtitle: 'Due to the lack of direct electronic payment options in your region, subscription is activated via manual transfer to ensure security and speed.',
+      transferData: 'Transfer Details:',
+      amountRequired: 'Amount Required:',
+      amountNote: '(based on package)',
+      recipientName: 'Recipient Name:',
+      address: 'Address:',
+      transferNote: 'You can transfer from any nearby exchange office, or through anyone who can transfer on your behalf.',
+      afterTransfer: 'After transfer, please send a photo of the "Transfer Receipt" via WhatsApp to activate your account within 24 hours.',
+      contactBtn: 'Contact to Confirm Transfer',
+      adminNumber: 'Admin Number:',
+      packages: 'Subscription Packages',
       basic: 'Basic',
       barber: 'Barber',
       store: 'Store',
-      vip: 'VIP',
-      basicDesc: 'Profile + Bookings',
-      barberDesc: 'All features + QR Code',
-      storeDesc: 'Mini store + 5 products',
-      vipDesc: 'Featured + Priority',
-      yearly: 'Yearly',
-      howTo: 'How to Activate',
-      step1: 'Choose your plan',
-      step2: 'Make the transfer',
-      step3: 'Send receipt via WhatsApp',
-      step4: 'Activation within 24 hours',
-      transferInfo: 'Transfer Information',
-      name: 'Name: Mohammed Al-Rajab',
-      location: 'Location: Syria - Hasakah',
-      method: 'Method: From any nearby exchange office or anyone who can pay on your behalf',
-      sendReceipt: 'Send Transfer Receipt',
-      whatsappNumber: '+963 935 964 158',
-      disclaimer: 'Note: After sending the transfer receipt with your name, your subscription will be activated within 24 hours'
+      vip: 'VIP'
     }
   };
 
   const t = texts[language] || texts.ar;
 
-  const plans = [
-    { key: 'basic', price: 75, color: 'from-gray-400 to-gray-600' },
-    { key: 'barber', price: 100, color: 'from-blue-400 to-blue-600' },
-    { key: 'store', price: 150, color: 'from-purple-400 to-purple-600' },
-    { key: 'vip', price: 175, color: 'from-yellow-400 to-yellow-600' }
+  const packages = [
+    { name: t.basic, price: 75, color: 'from-gray-400 to-gray-600', features: language === 'ar' ? 'ملف شخصي + حجوزات' : 'Profile + Bookings' },
+    { name: t.barber, price: 100, color: 'from-blue-400 to-blue-600', features: language === 'ar' ? 'كل الميزات + QR Code' : 'All features + QR Code' },
+    { name: t.store, price: 150, color: 'from-purple-400 to-purple-600', features: language === 'ar' ? 'متجر مصغر + 5 منتجات' : 'Mini store + 5 products' },
+    { name: t.vip, price: 175, color: 'from-yellow-400 to-yellow-600', features: language === 'ar' ? 'ظهور مميز + أولوية' : 'Featured + Priority' }
   ];
 
   const openWhatsApp = () => {
@@ -89,96 +67,78 @@ const PaymentPage = () => {
   };
 
   return (
-    <div className={`min-h-screen ${themeClass} py-8 px-4`} data-testid="payment-page">
-      <div className="container mx-auto max-w-2xl">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <button
-            onClick={() => navigate(-1)}
-            className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
-          >
-            {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
-          </button>
-          <div>
-            <h1 className={`text-2xl font-bold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-              <CreditCard className={`w-6 h-6 inline me-2 ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`} />
-              {t.title}
-            </h1>
-            <p className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.subtitle}</p>
+    <div className="min-h-screen bg-gray-950 text-white p-8" dir={language === 'ar' ? 'rtl' : 'ltr'} data-testid="payment-page">
+      <div className="max-w-2xl mx-auto">
+        {/* Main Card */}
+        <div className="bg-gray-900 p-10 rounded-[3rem] border border-yellow-500/30 shadow-2xl">
+          {/* Header */}
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-yellow-500 text-black rounded-full flex items-center justify-center mx-auto mb-4 text-4xl shadow-lg">
+              💶
+            </div>
+            <h1 className="text-3xl font-black">{t.title}</h1>
+            <p className="text-gray-400 mt-3 text-sm leading-relaxed">{t.subtitle}</p>
           </div>
-        </div>
 
-        {/* Plans */}
-        <div className={`${isMen ? 'card-men' : 'card-women'} p-6 mb-6`}>
-          <h2 className={`text-lg font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-            {t.plans}
-          </h2>
-          <div className="grid grid-cols-2 gap-4">
-            {plans.map((plan) => (
-              <div 
-                key={plan.key}
-                className={`p-4 rounded-xl bg-gradient-to-br ${plan.color} text-white text-center`}
-              >
-                <p className="text-sm opacity-80">{t[plan.key]}</p>
-                <p className="text-3xl font-bold my-2">{plan.price}€</p>
-                <p className="text-xs opacity-80">{t.yearly}</p>
-                <p className="text-xs mt-2 opacity-70">{t[`${plan.key}Desc`]}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* How to Activate */}
-        <div className={`${isMen ? 'card-men' : 'card-women'} p-6 mb-6`}>
-          <h2 className={`text-lg font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-            {t.howTo}
-          </h2>
-          <div className="space-y-4">
-            {[t.step1, t.step2, t.step3, t.step4].map((step, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white'}`}>
-                  {i + 1}
+          {/* Packages */}
+          <div className="mb-8">
+            <h3 className="text-yellow-500 font-bold mb-4">{t.packages}</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {packages.map((pkg) => (
+                <div 
+                  key={pkg.name}
+                  className={`bg-gradient-to-br ${pkg.color} p-4 rounded-2xl text-center text-white`}
+                >
+                  <p className="text-xs opacity-80">{pkg.name}</p>
+                  <p className="text-2xl font-black my-1">{pkg.price}€</p>
+                  <p className="text-[10px] opacity-70">{pkg.features}</p>
                 </div>
-                <p className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{step}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Transfer Info */}
-        <div className={`${isMen ? 'card-men' : 'card-women'} p-6 mb-6`}>
-          <h2 className={`text-lg font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-            <Building className="w-5 h-5 inline me-2" />
-            {t.transferInfo}
-          </h2>
-          <div className={`p-4 rounded-lg ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
-            <div className="space-y-3">
-              <p className={`flex items-center gap-2 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                <User className="w-4 h-4" />
-                {t.name}
-              </p>
-              <p className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.location}</p>
-              <p className={`text-sm ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.method}</p>
+              ))}
             </div>
           </div>
+
+          {/* Transfer Details */}
+          <div className="bg-black/50 p-6 rounded-3xl border border-gray-800 mb-8">
+            <h2 className="text-yellow-500 font-bold mb-4 underline underline-offset-8">{t.transferData}</h2>
+            <div className="space-y-4">
+              <div className="flex justify-between border-b border-gray-800 pb-2">
+                <span className="text-gray-500">{t.amountRequired}</span>
+                <span className="font-black text-xl">75€ - 175€ <span className="text-xs font-normal opacity-50 text-gray-400">{t.amountNote}</span></span>
+              </div>
+              <div className="flex justify-between border-b border-gray-800 pb-2">
+                <span className="text-gray-500">{t.recipientName}</span>
+                <span className="font-black">محمد الرجب</span>
+              </div>
+              <div className="flex justify-between border-b border-gray-800 pb-2">
+                <span className="text-gray-500">{t.address}</span>
+                <span className="font-black">سوريا، الحسكة</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-2 italic text-center">{t.transferNote}</p>
+            </div>
+          </div>
+
+          {/* CTA */}
+          <div className="text-center space-y-4">
+            <p className="text-sm font-bold">{t.afterTransfer}</p>
+            <button 
+              onClick={openWhatsApp}
+              className="inline-flex items-center gap-3 bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-full font-black text-xl transition-all shadow-xl hover:scale-105"
+              data-testid="whatsapp-payment-btn"
+            >
+              <MessageCircle size={28}/> {t.contactBtn}
+            </button>
+            <p className="text-[10px] text-gray-600">{t.adminNumber} +963 935 964 158</p>
+          </div>
         </div>
 
-        {/* WhatsApp Button */}
-        <div className="text-center">
-          <Button
-            onClick={openWhatsApp}
-            className="whatsapp-btn text-lg px-8 py-6"
-            data-testid="whatsapp-payment-btn"
-          >
-            <MessageCircle className="w-6 h-6 me-2" />
-            {t.sendReceipt}
-          </Button>
-          <p className={`mt-4 text-lg font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
-            {t.whatsappNumber}
-          </p>
-          <p className={`mt-4 text-sm ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-            {t.disclaimer}
-          </p>
+        {/* Quick Navigation */}
+        <div className="fixed bottom-4 left-4 flex gap-2 z-[100] scale-75 opacity-50 hover:opacity-100 transition-opacity">
+          <button onClick={() => navigate('/')} className="bg-white text-black p-2 rounded-lg text-[10px] font-bold">
+            {language === 'ar' ? 'شاشة الدخول' : 'Landing'}
+          </button>
+          <button onClick={() => navigate('/home')} className="bg-white text-black p-2 rounded-lg text-[10px] font-bold">
+            {language === 'ar' ? 'الرئيسية' : 'Home'}
+          </button>
         </div>
       </div>
     </div>

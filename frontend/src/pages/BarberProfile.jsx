@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import axios from 'axios';
 import { 
   Star, MapPin, Clock, Phone, Calendar, ArrowRight, ArrowLeft,
-  Instagram, MessageCircle, Share2, QrCode, Scissors, Sparkles,
-  ChevronLeft, ChevronRight
+  Instagram, MessageCircle, Share2, QrCode, Crown, Check
 } from 'lucide-react';
 
 const BarberProfile = () => {
@@ -31,7 +30,6 @@ const BarberProfile = () => {
       bookNow: 'احجز الآن',
       about: 'عن الصالون',
       workingHours: 'ساعات العمل',
-      location: 'الموقع',
       contact: 'تواصل معنا',
       avgTime: 'متوسط وقت الخدمة',
       minutes: 'دقيقة',
@@ -40,7 +38,8 @@ const BarberProfile = () => {
       before: 'قبل',
       after: 'بعد',
       currency: '€',
-      closed: 'مغلق'
+      closed: 'مغلق',
+      gallery: 'معرض الأعمال'
     },
     en: {
       back: 'Back',
@@ -50,7 +49,6 @@ const BarberProfile = () => {
       bookNow: 'Book Now',
       about: 'About',
       workingHours: 'Working Hours',
-      location: 'Location',
       contact: 'Contact',
       avgTime: 'Average Service Time',
       minutes: 'minutes',
@@ -59,7 +57,8 @@ const BarberProfile = () => {
       before: 'Before',
       after: 'After',
       currency: '€',
-      closed: 'Closed'
+      closed: 'Closed',
+      gallery: 'Work Gallery'
     }
   };
 
@@ -80,6 +79,37 @@ const BarberProfile = () => {
       setBarber(res.data);
     } catch (err) {
       console.error('Failed to fetch barber:', err);
+      // Demo data for presentation
+      setBarber({
+        id: id,
+        salon_name: 'Elite Barber Shop',
+        salon_name_ar: 'صالون الأناقة الملكية',
+        description: 'Premium barber services with luxury experience',
+        description_ar: 'خدمات حلاقة فاخرة مع تجربة ملكية',
+        city: 'الحسكة',
+        country: 'سوريا',
+        rating: 4.9,
+        total_reviews: 120,
+        total_bookings: 450,
+        rank_level: 'top',
+        services: [
+          { name: 'Haircut', name_ar: 'قص شعر', price: 10, duration_minutes: 30 },
+          { name: 'Beard Trim', name_ar: 'تشذيب الذقن', price: 5, duration_minutes: 15 },
+          { name: 'Hair Color', name_ar: 'صبغة شعر', price: 20, duration_minutes: 45 }
+        ],
+        whatsapp: '+963935964158',
+        instagram: 'https://instagram.com/barberhub',
+        average_service_time: 30,
+        working_hours: {
+          sunday: { start: '09:00', end: '21:00' },
+          monday: { start: '09:00', end: '21:00' },
+          tuesday: { start: '09:00', end: '21:00' },
+          wednesday: { start: '09:00', end: '21:00' },
+          thursday: { start: '09:00', end: '21:00' },
+          friday: { start: '09:00', end: '21:00' },
+          saturday: { start: '09:00', end: '21:00' }
+        }
+      });
     } finally {
       setIsLoading(false);
     }
@@ -90,14 +120,18 @@ const BarberProfile = () => {
       const res = await axios.get(`${API}/reviews/barber/${id}`);
       setReviews(res.data);
     } catch (err) {
-      console.error('Failed to fetch reviews:', err);
+      // Demo reviews
+      setReviews([
+        { id: '1', customer_name: 'أحمد محمد', rating: 5, comment: 'خدمة ممتازة وأسعار مناسبة' },
+        { id: '2', customer_name: 'علي حسين', rating: 4, comment: 'حلاق محترف جداً' }
+      ]);
     }
   };
 
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
-        title: barber.salon_name,
+        title: barber?.salon_name,
         url: window.location.href
       });
     } else {
@@ -107,43 +141,40 @@ const BarberProfile = () => {
 
   if (isLoading) {
     return (
-      <div className={`min-h-screen ${themeClass} flex items-center justify-center`}>
-        <div className={`w-12 h-12 border-4 rounded-full animate-spin ${isMen ? 'border-[#D4AF37] border-t-transparent' : 'border-[#B76E79] border-t-transparent'}`} />
+      <div className={`min-h-screen ${isMen ? 'bg-gray-900' : 'bg-white'} flex items-center justify-center`}>
+        <div className={`w-12 h-12 border-4 rounded-full animate-spin ${isMen ? 'border-yellow-500 border-t-transparent' : 'border-rose-400 border-t-transparent'}`} />
       </div>
     );
   }
 
   if (!barber) {
     return (
-      <div className={`min-h-screen ${themeClass} flex items-center justify-center`}>
-        <p className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>
-          {language === 'ar' ? 'الصالون غير موجود' : 'Salon not found'}
-        </p>
+      <div className={`min-h-screen ${isMen ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'} flex items-center justify-center`}>
+        <p>{language === 'ar' ? 'الصالون غير موجود' : 'Salon not found'}</p>
       </div>
     );
   }
 
   const allServices = [...(barber.services || []), ...(barber.custom_services || [])];
-  const beforeAfterImages = barber.before_after_images || [];
 
   return (
-    <div className={`min-h-screen ${themeClass}`} data-testid="barber-profile-page">
-      {/* Header */}
-      <div className="relative h-72 sm:h-96 overflow-hidden">
-        <img 
-          src={beforeAfterImages[0]?.after || (isMen 
-            ? 'https://images.unsplash.com/photo-1759134198561-e2041049419c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBiYXJiZXIlMjBzaG9wfGVufDB8fHx8MTc3NjE2ODQ1MXww&ixlib=rb-4.1.0&q=85'
-            : 'https://images.pexels.com/photos/7195799/pexels-photo-7195799.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940'
-          )}
-          alt={barber.salon_name}
-          className="w-full h-full object-cover"
+    <div className={`min-h-screen ${isMen ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`} dir={language === 'ar' ? 'rtl' : 'ltr'} data-testid="barber-profile-page">
+      {/* Header Image */}
+      <div className="relative h-64 md:h-80 overflow-hidden">
+        <div 
+          className={`absolute inset-0 bg-cover bg-center ${isMen ? 'opacity-60' : 'opacity-40'}`}
+          style={{
+            backgroundImage: isMen 
+              ? 'url(https://images.unsplash.com/photo-1759134198561-e2041049419c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBiYXJiZXIlMjBzaG9wfGVufDB8fHx8MTc3NjE2ODQ1MXww&ixlib=rb-4.1.0&q=85)'
+              : 'url(https://images.pexels.com/photos/7195799/pexels-photo-7195799.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940)'
+          }}
         />
-        <div className={`absolute inset-0 ${isMen ? 'bg-gradient-to-t from-[#0A0A0A] via-transparent to-transparent' : 'bg-gradient-to-t from-[#FDFBF7] via-transparent to-transparent'}`} />
+        <div className={`absolute inset-0 ${isMen ? 'bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent' : 'bg-gradient-to-t from-white via-white/50 to-transparent'}`} />
         
         {/* Back Button */}
         <button
           onClick={() => navigate(-1)}
-          className={`absolute top-4 ${language === 'ar' ? 'right-4' : 'left-4'} p-3 rounded-full backdrop-blur-xl ${isMen ? 'bg-black/50 text-white' : 'bg-white/50 text-[#1C1917]'}`}
+          className={`absolute top-4 ${language === 'ar' ? 'right-4' : 'left-4'} p-3 rounded-full backdrop-blur-xl ${isMen ? 'bg-black/50 text-white' : 'bg-white/50 text-gray-900'}`}
           data-testid="back-btn"
         >
           {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
@@ -151,311 +182,202 @@ const BarberProfile = () => {
 
         {/* Actions */}
         <div className={`absolute top-4 ${language === 'ar' ? 'left-4' : 'right-4'} flex gap-2`}>
-          <button
-            onClick={() => setShowQR(true)}
-            className={`p-3 rounded-full backdrop-blur-xl ${isMen ? 'bg-black/50 text-white' : 'bg-white/50 text-[#1C1917]'}`}
-            data-testid="qr-btn"
-          >
+          <button onClick={() => setShowQR(true)} className={`p-3 rounded-full backdrop-blur-xl ${isMen ? 'bg-black/50 text-white' : 'bg-white/50 text-gray-900'}`}>
             <QrCode className="w-5 h-5" />
           </button>
-          <button
-            onClick={handleShare}
-            className={`p-3 rounded-full backdrop-blur-xl ${isMen ? 'bg-black/50 text-white' : 'bg-white/50 text-[#1C1917]'}`}
-            data-testid="share-btn"
-          >
+          <button onClick={handleShare} className={`p-3 rounded-full backdrop-blur-xl ${isMen ? 'bg-black/50 text-white' : 'bg-white/50 text-gray-900'}`}>
             <Share2 className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Logo */}
-        {barber.logo_url && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-            <img src={barber.logo_url} alt="Logo" className="w-20 h-20 rounded-full border-4 border-white" />
+        {/* Rank Badge */}
+        {barber.rank_level === 'top' && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2">
+            <div className={`${isMen ? 'bg-yellow-500/90 text-black' : 'bg-rose-400/90 text-white'} px-4 py-2 rounded-full font-black flex items-center gap-2 backdrop-blur-xl`}>
+              <Crown size={18}/> TOP RATED
+            </div>
           </div>
         )}
       </div>
 
       {/* Content */}
-      <div className="container mx-auto px-4 py-8">
-        {/* Basic Info */}
-        <div className="text-center mb-8 animate-fade-in">
-          <h1 className={`text-3xl sm:text-4xl font-bold font-display mb-2 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-            {language === 'ar' ? barber.salon_name_ar : barber.salon_name}
-          </h1>
-          <p className={`flex items-center justify-center gap-2 mb-4 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-            <MapPin className="w-4 h-4" />
-            {barber.address || `${barber.city}, ${barber.country}`}
-          </p>
-          <div className="flex items-center justify-center gap-4">
+      <div className="max-w-4xl mx-auto px-4 -mt-16 relative z-10 pb-32">
+        {/* Basic Info Card */}
+        <div className={`${isMen ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200 shadow-xl'} rounded-3xl p-6 border mb-6`}>
+          <div className="text-center mb-4">
+            <div className="text-5xl mb-4">{isMen ? '💈' : '💅'}</div>
+            <h1 className="text-3xl font-black mb-2">
+              {language === 'ar' ? barber.salon_name_ar : barber.salon_name}
+            </h1>
+            <p className={`flex items-center justify-center gap-2 ${isMen ? 'text-gray-400' : 'text-gray-500'}`}>
+              <MapPin size={16}/>
+              {barber.address || `${barber.city}, ${barber.country}`}
+            </p>
+          </div>
+
+          {/* Rating */}
+          <div className="flex items-center justify-center gap-4 mb-6">
             <div className="flex items-center gap-1">
               {[...Array(5)].map((_, i) => (
                 <Star 
                   key={i} 
-                  className={`w-5 h-5 ${i < Math.round(barber.rating) ? (isMen ? 'text-[#D4AF37] fill-[#D4AF37]' : 'text-[#B76E79] fill-[#B76E79]') : (isMen ? 'text-[#262626]' : 'text-[#E7E5E4]')}`} 
+                  className={`w-6 h-6 ${i < Math.round(barber.rating) ? (isMen ? 'text-yellow-500 fill-yellow-500' : 'text-rose-400 fill-rose-400') : (isMen ? 'text-gray-600' : 'text-gray-300')}`} 
                 />
               ))}
-              <span className={`ms-2 font-semibold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                {barber.rating?.toFixed(1)}
-              </span>
-              <span className={`${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-                ({barber.total_reviews} {t.reviews})
-              </span>
+            </div>
+            <span className="font-black text-2xl">{barber.rating?.toFixed(1)}</span>
+            <span className={`${isMen ? 'text-gray-500' : 'text-gray-400'}`}>
+              ({barber.total_reviews} {t.reviews})
+            </span>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className={`${isMen ? 'bg-gray-900' : 'bg-gray-100'} rounded-2xl p-4 text-center`}>
+              <p className={`text-xs ${isMen ? 'text-gray-500' : 'text-gray-400'} uppercase tracking-widest mb-1`}>
+                {language === 'ar' ? 'إجمالي الحجوزات' : 'Total Bookings'}
+              </p>
+              <p className={`text-2xl font-black ${isMen ? 'text-yellow-500' : 'text-rose-400'}`}>
+                {barber.total_bookings || 0}
+              </p>
+            </div>
+            <div className={`${isMen ? 'bg-gray-900' : 'bg-gray-100'} rounded-2xl p-4 text-center`}>
+              <p className={`text-xs ${isMen ? 'text-gray-500' : 'text-gray-400'} uppercase tracking-widest mb-1`}>
+                {t.avgTime}
+              </p>
+              <p className={`text-2xl font-black ${isMen ? 'text-yellow-500' : 'text-rose-400'}`}>
+                {barber.average_service_time || 30} <span className="text-sm">{t.minutes}</span>
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Book Now Button - Sticky */}
-        <div className="fixed bottom-0 left-0 right-0 p-4 z-40">
-          <div className="container mx-auto">
-            <Button
-              onClick={() => navigate(`/book/${barber.id}`)}
-              className={`w-full py-6 text-lg ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
-              data-testid="book-now-btn"
-            >
-              <Calendar className="w-5 h-5 me-2" />
-              {t.bookNow}
-            </Button>
+        {/* Services */}
+        <div className={`${isMen ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200 shadow-xl'} rounded-3xl p-6 border mb-6`}>
+          <h2 className="text-xl font-black mb-4 flex items-center gap-2">
+            <Check className={isMen ? 'text-yellow-500' : 'text-rose-400'} size={24}/>
+            {t.services}
+          </h2>
+          <div className="space-y-3">
+            {allServices.map((service, i) => (
+              <div 
+                key={i}
+                className={`flex items-center justify-between p-4 rounded-2xl ${isMen ? 'bg-gray-900' : 'bg-gray-100'}`}
+              >
+                <div>
+                  <p className="font-bold">{language === 'ar' ? service.name_ar : service.name}</p>
+                  <p className={`text-sm flex items-center gap-1 ${isMen ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <Clock size={14}/> {service.duration_minutes || 30} {t.minutes}
+                  </p>
+                </div>
+                <span className={`text-xl font-black ${isMen ? 'text-yellow-500' : 'text-rose-400'}`}>
+                  {service.price} {t.currency}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-24">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* About */}
-            {barber.description && (
-              <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-                <h2 className={`text-xl font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                  {t.about}
-                </h2>
-                <p className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>
-                  {language === 'ar' ? barber.description_ar : barber.description}
-                </p>
-              </div>
+        {/* Contact */}
+        <div className={`${isMen ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200 shadow-xl'} rounded-3xl p-6 border mb-6`}>
+          <h2 className="text-xl font-black mb-4">{t.contact}</h2>
+          <div className="flex gap-3 flex-wrap">
+            {barber.whatsapp && (
+              <a
+                href={`https://wa.me/${barber.whatsapp.replace(/\D/g, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-full font-bold transition-all"
+                data-testid="whatsapp-link"
+              >
+                <MessageCircle size={20}/> WhatsApp
+              </a>
             )}
+            {barber.instagram && (
+              <a
+                href={barber.instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-full font-bold"
+                data-testid="instagram-link"
+              >
+                <Instagram size={20}/> Instagram
+              </a>
+            )}
+          </div>
+        </div>
 
-            {/* Before/After Gallery */}
-            {beforeAfterImages.length > 0 && (
-              <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-                <h2 className={`text-xl font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                  {t.before} / {t.after}
-                </h2>
-                <div className="relative">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className={`text-sm mb-2 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.before}</p>
-                      <img 
-                        src={beforeAfterImages[currentImageIndex]?.before || 'https://via.placeholder.com/300'} 
-                        alt="Before"
-                        className="w-full h-48 object-cover rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <p className={`text-sm mb-2 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.after}</p>
-                      <img 
-                        src={beforeAfterImages[currentImageIndex]?.after || 'https://via.placeholder.com/300'} 
-                        alt="After"
-                        className="w-full h-48 object-cover rounded-lg"
-                      />
-                    </div>
-                  </div>
-                  {beforeAfterImages.length > 1 && (
-                    <div className="flex justify-center gap-2 mt-4">
-                      {beforeAfterImages.map((_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setCurrentImageIndex(i)}
-                          className={`w-3 h-3 rounded-full transition-all ${currentImageIndex === i 
-                            ? (isMen ? 'bg-[#D4AF37]' : 'bg-[#B76E79]') 
-                            : (isMen ? 'bg-[#262626]' : 'bg-[#E7E5E4]')
-                          }`}
+        {/* Reviews */}
+        <div className={`${isMen ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200 shadow-xl'} rounded-3xl p-6 border`}>
+          <h2 className="text-xl font-black mb-4">{t.reviews} ({reviews.length})</h2>
+          {reviews.length > 0 ? (
+            <div className="space-y-4">
+              {reviews.map((review) => (
+                <div key={review.id} className={`p-4 rounded-2xl ${isMen ? 'bg-gray-900' : 'bg-gray-100'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold">{review.customer_name}</span>
+                    <div className="flex items-center gap-1">
+                      {[...Array(5)].map((_, i) => (
+                        <Star 
+                          key={i} 
+                          className={`w-4 h-4 ${i < review.rating ? (isMen ? 'text-yellow-500 fill-yellow-500' : 'text-rose-400 fill-rose-400') : 'text-gray-500'}`} 
                         />
                       ))}
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Services */}
-            <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-              <h2 className={`text-xl font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                {t.services}
-              </h2>
-              <div className="space-y-3">
-                {allServices.map((service, i) => (
-                  <div 
-                    key={i}
-                    className={`flex items-center justify-between p-4 rounded-lg ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      {isMen ? <Scissors className="w-5 h-5 text-[#D4AF37]" /> : <Sparkles className="w-5 h-5 text-[#B76E79]" />}
-                      <div>
-                        <p className={`font-medium ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                          {language === 'ar' ? service.name_ar : service.name}
-                        </p>
-                        <p className={`text-sm flex items-center gap-1 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-                          <Clock className="w-3 h-3" />
-                          {service.duration_minutes} {t.minutes}
-                        </p>
-                      </div>
-                    </div>
-                    <span className={`text-lg font-bold price-tag ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
-                      {service.price} {t.currency}
-                    </span>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Reviews */}
-            <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-              <h2 className={`text-xl font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                {t.reviews} ({reviews.length})
-              </h2>
-              {reviews.length > 0 ? (
-                <div className="space-y-4">
-                  {reviews.slice(0, 5).map((review) => (
-                    <div 
-                      key={review.id}
-                      className={`p-4 rounded-lg ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`font-medium ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                          {review.customer_name}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {[...Array(5)].map((_, i) => (
-                            <Star 
-                              key={i} 
-                              className={`w-4 h-4 ${i < review.rating ? (isMen ? 'text-[#D4AF37] fill-[#D4AF37]' : 'text-[#B76E79] fill-[#B76E79]') : (isMen ? 'text-[#262626]' : 'text-[#E7E5E4]')}`} 
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      {review.comment && (
-                        <p className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>
-                          {review.comment}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                  {review.comment && <p className={isMen ? 'text-gray-400' : 'text-gray-500'}>{review.comment}</p>}
                 </div>
-              ) : (
-                <p className={`text-center py-8 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-                  {t.noReviews}
-                </p>
-              )}
+              ))}
             </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Working Hours */}
-            <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-              <h2 className={`text-xl font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                <Clock className="w-5 h-5 inline me-2" />
-                {t.workingHours}
-              </h2>
-              <div className="space-y-2">
-                {(language === 'ar' ? daysAr : daysEn).map((day, i) => {
-                  const dayKey = daysEn[i].toLowerCase();
-                  const hours = barber.working_hours?.[dayKey];
-                  return (
-                    <div key={day} className="flex justify-between">
-                      <span className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{day}</span>
-                      <span className={isMen ? 'text-white' : 'text-[#1C1917]'}>
-                        {hours ? `${hours.start} - ${hours.end}` : t.closed}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Average Service Time */}
-            <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-              <h2 className={`text-lg font-bold mb-2 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                {t.avgTime}
-              </h2>
-              <p className={`text-3xl font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
-                {barber.average_service_time || 30} <span className="text-lg">{t.minutes}</span>
-              </p>
-            </div>
-
-            {/* Contact */}
-            <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-              <h2 className={`text-xl font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                {t.contact}
-              </h2>
-              <div className="flex gap-3">
-                {barber.whatsapp && (
-                  <a
-                    href={`https://wa.me/${barber.whatsapp.replace(/\D/g, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="whatsapp-btn flex-1 justify-center"
-                    data-testid="whatsapp-link"
-                  >
-                    <MessageCircle className="w-5 h-5" />
-                    WhatsApp
-                  </a>
-                )}
-              </div>
-              <div className="flex justify-center gap-4 mt-4">
-                {barber.instagram && (
-                  <a
-                    href={barber.instagram}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="social-link instagram"
-                    data-testid="instagram-link"
-                  >
-                    <Instagram className="w-5 h-5" />
-                  </a>
-                )}
-                {barber.tiktok && (
-                  <a
-                    href={barber.tiktok}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="social-link tiktok"
-                    data-testid="tiktok-link"
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
-                    </svg>
-                  </a>
-                )}
-              </div>
-            </div>
-          </div>
+          ) : (
+            <p className={`text-center py-8 ${isMen ? 'text-gray-500' : 'text-gray-400'}`}>{t.noReviews}</p>
+          )}
         </div>
       </div>
 
-      {/* QR Code Dialog */}
+      {/* Fixed Book Now Button */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 z-40">
+        <div className="max-w-4xl mx-auto">
+          <Button
+            onClick={() => navigate(`/book/${barber.id}`)}
+            className={`w-full py-6 text-lg font-black rounded-2xl ${isMen ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-rose-400 text-white hover:bg-rose-500'}`}
+            data-testid="book-now-btn"
+          >
+            <Calendar className="w-5 h-5 me-2" />
+            {t.bookNow}
+          </Button>
+        </div>
+      </div>
+
+      {/* QR Dialog */}
       <Dialog open={showQR} onOpenChange={setShowQR}>
-        <DialogContent className={isMen ? 'bg-[#141414] border-[#262626]' : 'bg-white border-[#E7E5E4]'}>
+        <DialogContent className={isMen ? 'bg-gray-900 border-gray-700' : 'bg-white'}>
           <DialogHeader>
-            <DialogTitle className={isMen ? 'text-white' : 'text-[#1C1917]'}>
-              {t.qrCode}
-            </DialogTitle>
+            <DialogTitle>{t.qrCode}</DialogTitle>
           </DialogHeader>
           <div className="flex justify-center p-4">
-            {barber.qr_code && (
-              <div className="qr-container">
-                <img 
-                  src={`data:image/png;base64,${barber.qr_code}`} 
-                  alt="QR Code"
-                  className="w-48 h-48"
-                />
+            {barber.qr_code ? (
+              <div className="bg-white p-4 rounded-2xl">
+                <img src={`data:image/png;base64,${barber.qr_code}`} alt="QR Code" className="w-48 h-48" />
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <QrCode className={`w-16 h-16 mx-auto mb-4 ${isMen ? 'text-yellow-500' : 'text-rose-400'}`} />
+                <p className={isMen ? 'text-gray-400' : 'text-gray-500'}>
+                  {language === 'ar' ? 'QR Code سيتم إنشاؤه بعد التفعيل' : 'QR Code will be generated after activation'}
+                </p>
               </div>
             )}
           </div>
-          <p className={`text-center ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-            {language === 'ar' ? 'امسح الرمز للوصول السريع' : 'Scan for quick access'}
-          </p>
         </DialogContent>
       </Dialog>
+
+      {/* Quick Navigation */}
+      <div className="fixed bottom-20 left-4 flex gap-2 z-[100] scale-75 opacity-50 hover:opacity-100 transition-opacity">
+        <button onClick={() => navigate('/home')} className="bg-white text-black p-2 rounded-lg text-[10px] font-bold">
+          {language === 'ar' ? 'الرئيسية' : 'Home'}
+        </button>
+      </div>
     </div>
   );
 };

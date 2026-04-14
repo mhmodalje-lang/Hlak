@@ -38,6 +38,14 @@ BARBER HUB is a global booking platform connecting barbers, salons, and customer
 - [x] Manual payment page
 - [x] Multi-language support (AR/EN)
 
+## Design Update (April 14, 2026)
+- Updated landing page with GENTLEMEN/LADIES split design (💈💅 emojis)
+- Added demo barber cards with TOP #1, #2, #3 ranking badges
+- Redesigned admin dashboard with "لوحة تحكم المدير الملكي 👑"
+- New payment page with 4 subscription packages (75€-175€)
+- Quick navigation buttons at bottom of all pages
+- Improved card design with 3-image gallery slots
+
 ## What's Been Implemented (April 14, 2026)
 
 ### Backend APIs

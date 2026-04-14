@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -22,7 +22,7 @@ load_dotenv(ROOT_DIR / '.env')
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ.get('DB_NAME', 'barber_hub')]
 
 # JWT Settings
 JWT_SECRET = os.environ.get('JWT_SECRET', 'barber-hub-secret-key-2026')
@@ -43,13 +43,13 @@ logger = logging.getLogger(__name__)
 
 # ============== PYDANTIC MODELS ==============
 
-# --- Users (الزبائن) ---
+# --- Users ---
 class UserCreate(BaseModel):
     phone_number: str
     email: Optional[str] = None
     full_name: str
     password: str
-    gender: str  # 'male' or 'female'
+    gender: str
     country: str
     city: str
     district: Optional[str] = None
@@ -70,13 +70,13 @@ class UserResponse(BaseModel):
     district: Optional[str] = None
     created_at: str
 
-# --- Barbershops (الصالونات) ---
+# --- Barbershops ---
 class BarbershopCreate(BaseModel):
     owner_name: str
     shop_name: str
     shop_logo: Optional[str] = None
     description: Optional[str] = None
-    shop_type: str  # 'male' or 'female'
+    shop_type: str
     phone_number: str
     password: str
     email: Optional[str] = None
@@ -133,12 +133,13 @@ class BarbershopResponse(BaseModel):
     total_reviews: int = 0
     created_at: str
 
-# --- Services (الخدمات) ---
+# --- Services ---
 class ServiceCreate(BaseModel):
     name: str
+    name_ar: Optional[str] = None
     description: Optional[str] = None
     price: float
-    duration_minutes: int
+    duration_minutes: int = 30
     category: str = "other"
 
 class ServiceResponse(BaseModel):
@@ -146,34 +147,46 @@ class ServiceResponse(BaseModel):
     id: str
     barbershop_id: str
     name: str
+    name_ar: Optional[str] = None
     description: Optional[str] = None
     price: float
     duration_minutes: int
     category: str
     created_at: str
 
-# --- Gallery Images (صور الأعمال) ---
+# --- Gallery Images ---
 class GalleryImageCreate(BaseModel):
-    image_before: str
-    image_after: str
+    image_before: Optional[str] = None
+    image_after: Optional[str] = None
+    before: Optional[str] = None
+    after: Optional[str] = None
     caption: Optional[str] = None
 
 class GalleryImageResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
     barbershop_id: str
-    image_before: str
-    image_after: str
+    image_before: Optional[str] = None
+    image_after: Optional[str] = None
+    before: Optional[str] = None
+    after: Optional[str] = None
     caption: Optional[str] = None
     created_at: str
 
-# --- Bookings (الحجوزات) ---
+# --- Bookings ---
 class BookingCreate(BaseModel):
-    barbershop_id: str
-    service_id: str
-    booking_date: str  # YYYY-MM-DD
-    start_time: str    # HH:MM
-    user_phone_for_notification: str
+    barbershop_id: Optional[str] = None
+    barber_id: Optional[str] = None
+    service_id: Optional[str] = None
+    service_ids: Optional[List[str]] = None
+    booking_date: Optional[str] = None
+    date: Optional[str] = None
+    start_time: Optional[str] = None
+    time: Optional[str] = None
+    user_phone_for_notification: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_name: Optional[str] = None
+    notes: Optional[str] = None
 
 class BookingResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -181,25 +194,26 @@ class BookingResponse(BaseModel):
     user_id: Optional[str] = None
     barbershop_id: str
     barbershop_name: Optional[str] = None
-    service_id: str
+    service_id: Optional[str] = None
     service_name: Optional[str] = None
     booking_date: str
     start_time: str
     end_time: str
     status: str
-    user_phone_for_notification: str
+    user_phone_for_notification: Optional[str] = None
     created_at: str
 
-# --- Reviews (التقييمات) ---
+# --- Reviews ---
 class ReviewCreate(BaseModel):
-    booking_id: str
-    rating: int  # 1-5
+    booking_id: Optional[str] = None
+    barber_id: Optional[str] = None
+    rating: int
     comment: Optional[str] = None
 
 class ReviewResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
-    booking_id: str
+    booking_id: Optional[str] = None
     user_id: Optional[str] = None
     user_name: Optional[str] = None
     barbershop_id: str
@@ -207,18 +221,20 @@ class ReviewResponse(BaseModel):
     comment: Optional[str] = None
     created_at: str
 
-# --- Reports (البلاغات) ---
+# --- Reports ---
 class ReportCreate(BaseModel):
     reported_entity_id: str
-    report_type: str  # 'no_show', 'misconduct', 'frequent_cancellation'
+    report_type: str
     description: Optional[str] = None
 
-# --- Subscriptions (الاشتراكات) ---
+# --- Subscriptions ---
 class SubscriptionCreate(BaseModel):
-    plan_type: str = "annual"  # 'annual' or 'monthly'
-    amount: float
+    plan_type: str = "annual"
+    amount: float = 100.0
     payment_method: Optional[str] = None
     receipt_image: Optional[str] = None
+    subscription_type: Optional[str] = None
+    price: Optional[float] = None
 
 class SubscriptionResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -238,8 +254,26 @@ class SubscriptionResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    user_type: str  # 'user', 'barbershop', 'admin'
+    user_type: str
     user: Optional[Dict] = None
+
+# --- Barber Profile (Extended) ---
+class BarberProfileCreate(BaseModel):
+    salon_name: Optional[str] = None
+    salon_name_ar: Optional[str] = None
+    description: Optional[str] = None
+    description_ar: Optional[str] = None
+    logo_url: Optional[str] = None
+    whatsapp: Optional[str] = None
+    instagram: Optional[str] = None
+    tiktok: Optional[str] = None
+    address: Optional[str] = None
+    neighborhood: Optional[str] = None
+    average_service_time: int = 30
+    services: Optional[List[Dict]] = None
+    custom_services: Optional[List[Dict]] = None
+    before_after_images: Optional[List[Dict]] = None
+    working_hours: Optional[Dict] = None
 
 # ============== UTILITY FUNCTIONS ==============
 
@@ -318,11 +352,123 @@ def calculate_end_time(start_time: str, duration_minutes: int) -> str:
     end = start + timedelta(minutes=duration_minutes)
     return end.strftime("%H:%M")
 
+async def enrich_barbershop_for_frontend(shop: Dict) -> Dict:
+    """Transform barbershop data to match frontend expectations"""
+    shop_id = shop['id']
+    
+    # Get services
+    services = await db.services.find({"barbershop_id": shop_id}, {"_id": 0}).to_list(100)
+    
+    # Get gallery images
+    gallery = await db.gallery_images.find({"barbershop_id": shop_id}, {"_id": 0}).to_list(10)
+    before_after_images = []
+    for img in gallery:
+        before_after_images.append({
+            "before": img.get("image_before") or img.get("before", ""),
+            "after": img.get("image_after") or img.get("after", ""),
+            "caption": img.get("caption", "")
+        })
+    
+    # Get extended profile data
+    profile_ext = await db.barber_profiles.find_one({"barbershop_id": shop_id}, {"_id": 0})
+    
+    # Count total bookings
+    total_bookings = await db.bookings.count_documents({"barbershop_id": shop_id})
+    
+    # Build enriched response
+    enriched = {
+        "id": shop_id,
+        "salon_name": profile_ext.get("salon_name", shop.get("shop_name", "")) if profile_ext else shop.get("shop_name", ""),
+        "salon_name_ar": profile_ext.get("salon_name_ar", shop.get("shop_name", "")) if profile_ext else shop.get("shop_name", ""),
+        "shop_name": shop.get("shop_name", ""),
+        "owner_name": shop.get("owner_name", ""),
+        "description": profile_ext.get("description", shop.get("description", "")) if profile_ext else shop.get("description", ""),
+        "description_ar": profile_ext.get("description_ar", shop.get("description", "")) if profile_ext else shop.get("description", ""),
+        "shop_type": shop.get("shop_type", "male"),
+        "phone_number": shop.get("phone_number", ""),
+        "email": shop.get("email"),
+        "country": shop.get("country", ""),
+        "city": shop.get("city", ""),
+        "district": shop.get("district"),
+        "address": profile_ext.get("address", shop.get("address", "")) if profile_ext else shop.get("address", ""),
+        "neighborhood": profile_ext.get("neighborhood", "") if profile_ext else "",
+        "latitude": shop.get("latitude"),
+        "longitude": shop.get("longitude"),
+        "rating": shop.get("ranking_score", 0.0),
+        "ranking_score": shop.get("ranking_score", 0.0),
+        "total_reviews": shop.get("total_reviews", 0),
+        "total_bookings": total_bookings,
+        "rank_level": shop.get("ranking_tier", "normal"),
+        "ranking_tier": shop.get("ranking_tier", "normal"),
+        "is_verified": shop.get("is_verified", False),
+        "subscription_status": shop.get("subscription_status", "inactive"),
+        "subscription_expiry": shop.get("subscription_expiry"),
+        "whatsapp": profile_ext.get("whatsapp", shop.get("whatsapp_number", "")) if profile_ext else shop.get("whatsapp_number", ""),
+        "whatsapp_number": shop.get("whatsapp_number", ""),
+        "instagram": profile_ext.get("instagram", shop.get("instagram_url", "")) if profile_ext else shop.get("instagram_url", ""),
+        "instagram_url": shop.get("instagram_url", ""),
+        "tiktok": profile_ext.get("tiktok", shop.get("tiktok_url", "")) if profile_ext else shop.get("tiktok_url", ""),
+        "tiktok_url": shop.get("tiktok_url", ""),
+        "website_url": shop.get("website_url"),
+        "logo_url": profile_ext.get("logo_url", shop.get("shop_logo", "")) if profile_ext else shop.get("shop_logo", ""),
+        "shop_logo": shop.get("shop_logo"),
+        "qr_code": shop.get("qr_code"),
+        "average_service_time": profile_ext.get("average_service_time", 30) if profile_ext else 30,
+        "services": services if services else (profile_ext.get("services", []) if profile_ext else []),
+        "custom_services": profile_ext.get("custom_services", []) if profile_ext else [],
+        "before_after_images": before_after_images if before_after_images else (profile_ext.get("before_after_images", []) if profile_ext else []),
+        "working_hours": profile_ext.get("working_hours", {
+            "sunday": {"start": "09:00", "end": "21:00"},
+            "monday": {"start": "09:00", "end": "21:00"},
+            "tuesday": {"start": "09:00", "end": "21:00"},
+            "wednesday": {"start": "09:00", "end": "21:00"},
+            "thursday": {"start": "09:00", "end": "21:00"},
+            "friday": {"start": "09:00", "end": "21:00"},
+            "saturday": {"start": "09:00", "end": "21:00"}
+        }) if profile_ext else {
+            "sunday": {"start": "09:00", "end": "21:00"},
+            "monday": {"start": "09:00", "end": "21:00"},
+            "tuesday": {"start": "09:00", "end": "21:00"},
+            "wednesday": {"start": "09:00", "end": "21:00"},
+            "thursday": {"start": "09:00", "end": "21:00"},
+            "friday": {"start": "09:00", "end": "21:00"},
+            "saturday": {"start": "09:00", "end": "21:00"}
+        },
+        "created_at": shop.get("created_at", "")
+    }
+    
+    return enriched
+
+def enrich_booking_for_frontend(booking: Dict) -> Dict:
+    """Transform booking data to match frontend expectations"""
+    return {
+        "id": booking.get("id"),
+        "user_id": booking.get("user_id"),
+        "barber_id": booking.get("barbershop_id"),
+        "barbershop_id": booking.get("barbershop_id"),
+        "barber_name": booking.get("barbershop_name", ""),
+        "barbershop_name": booking.get("barbershop_name", ""),
+        "service_id": booking.get("service_id"),
+        "service_name": booking.get("service_name", ""),
+        "date": booking.get("booking_date", ""),
+        "booking_date": booking.get("booking_date", ""),
+        "time": booking.get("start_time", ""),
+        "start_time": booking.get("start_time", ""),
+        "end_time": booking.get("end_time", ""),
+        "status": booking.get("status", "pending"),
+        "customer_name": booking.get("customer_name", ""),
+        "customer_phone": booking.get("user_phone_for_notification", ""),
+        "user_phone_for_notification": booking.get("user_phone_for_notification", ""),
+        "notes": booking.get("notes", ""),
+        "services": booking.get("services", [{"name": booking.get("service_name", ""), "name_ar": booking.get("service_name", "")}]),
+        "total_price": booking.get("total_price", 0),
+        "created_at": booking.get("created_at", "")
+    }
+
 # ============== AUTH ENDPOINTS ==============
 
 @api_router.post("/auth/register", response_model=TokenResponse)
 async def register_user(user_data: UserCreate):
-    """تسجيل زبون جديد"""
     existing = await db.users.find_one({"phone_number": user_data.phone_number})
     if existing:
         raise HTTPException(status_code=400, detail="Phone number already registered")
@@ -345,13 +491,12 @@ async def register_user(user_data: UserCreate):
     await db.users.insert_one(user_doc)
     
     token = create_token(user_id, 'user')
-    user_response = {k: v for k, v in user_doc.items() if k != 'password'}
+    user_response = {k: v for k, v in user_doc.items() if k not in ('password', '_id')}
     
     return TokenResponse(access_token=token, user_type='user', user=user_response)
 
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(credentials: UserLogin):
-    """تسجيل دخول (زبون أو صالون أو مدير)"""
     # Try user first
     user = await db.users.find_one({"phone_number": credentials.phone_number}, {"_id": 0})
     if user and verify_password(credentials.password, user['password']):
@@ -374,14 +519,12 @@ async def login(credentials: UserLogin):
 
 @api_router.get("/users/me")
 async def get_current_user(entity: Dict = Depends(require_auth)):
-    """الحصول على بيانات المستخدم الحالي"""
     return entity
 
 # ============== BARBERSHOP REGISTRATION ==============
 
 @api_router.post("/auth/register-barbershop", response_model=TokenResponse)
 async def register_barbershop(shop_data: BarbershopCreate):
-    """تسجيل صالون جديد"""
     existing = await db.barbershops.find_one({"phone_number": shop_data.phone_number})
     if existing:
         raise HTTPException(status_code=400, detail="Phone number already registered")
@@ -424,27 +567,25 @@ async def register_barbershop(shop_data: BarbershopCreate):
     await db.barbershops.insert_one(shop_doc)
     
     token = create_token(shop_id, 'barbershop')
-    shop_response = {k: v for k, v in shop_doc.items() if k != 'password'}
+    shop_response = {k: v for k, v in shop_doc.items() if k not in ('password', '_id')}
     
     return TokenResponse(access_token=token, user_type='barbershop', user=shop_response)
 
-# ============== BARBERSHOP ENDPOINTS ==============
+# ============== BARBERSHOP ENDPOINTS (ORIGINAL) ==============
 
 @api_router.get("/barbershops", response_model=List[BarbershopResponse])
 async def list_barbershops(
     type: Optional[str] = None,
     lat: Optional[float] = None,
     lng: Optional[float] = None,
-    radius: Optional[float] = 50,  # km
+    radius: Optional[float] = 50,
     country: Optional[str] = None,
     city: Optional[str] = None,
     district: Optional[str] = None,
     sort_by: str = "ranking_score",
     limit: int = 50
 ):
-    """الحصول على قائمة الصالونات مع البحث والفلترة"""
     query = {}
-    
     if type:
         query["shop_type"] = type
     if country:
@@ -454,13 +595,11 @@ async def list_barbershops(
     if district:
         query["district"] = district
     
-    # Sort options
     sort_field = "ranking_score" if sort_by == "ranking_score" else "created_at"
     sort_order = -1
     
     shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).sort(sort_field, sort_order).limit(limit).to_list(limit)
     
-    # If lat/lng provided, filter by distance
     if lat is not None and lng is not None:
         def calc_distance(shop):
             if not shop.get('latitude') or not shop.get('longitude'):
@@ -474,36 +613,30 @@ async def list_barbershops(
     
     return shops
 
-@api_router.get("/barbershops/{shop_id}", response_model=BarbershopResponse)
+@api_router.get("/barbershops/{shop_id}")
 async def get_barbershop(shop_id: str):
-    """الحصول على تفاصيل صالون معين"""
     shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "password": 0})
     if not shop:
         raise HTTPException(status_code=404, detail="Barbershop not found")
     return shop
 
-@api_router.put("/barbershops/me", response_model=BarbershopResponse)
+@api_router.put("/barbershops/me")
 async def update_barbershop(update_data: BarbershopUpdate, shop: Dict = Depends(require_barbershop)):
-    """تحديث بيانات الصالون"""
     update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
     update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
     
     await db.barbershops.update_one({"id": shop['id']}, {"$set": update_dict})
-    
     updated = await db.barbershops.find_one({"id": shop['id']}, {"_id": 0, "password": 0})
     return updated
 
 @api_router.get("/barbershops/{shop_id}/available-slots")
 async def get_available_slots(shop_id: str, date: str, service_id: str):
-    """الحصول على الأوقات المتاحة للحجز"""
-    # Get service duration
     service = await db.services.find_one({"id": service_id}, {"_id": 0})
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
     
     duration = service['duration_minutes']
     
-    # Get existing bookings for the date
     bookings = await db.bookings.find({
         "barbershop_id": shop_id,
         "booking_date": date,
@@ -512,14 +645,12 @@ async def get_available_slots(shop_id: str, date: str, service_id: str):
     
     booked_times = [(b['start_time'], b['end_time']) for b in bookings]
     
-    # Generate available slots (9:00 - 21:00)
     available_slots = []
     for hour in range(9, 21):
         for minute in [0, 30]:
             start_time = f"{hour:02d}:{minute:02d}"
             end_time = calculate_end_time(start_time, duration)
             
-            # Check if slot overlaps with any booked time
             is_available = True
             for booked_start, booked_end in booked_times:
                 if not (end_time <= booked_start or start_time >= booked_end):
@@ -535,16 +666,206 @@ async def get_available_slots(shop_id: str, date: str, service_id: str):
     
     return {"date": date, "service_id": service_id, "available_slots": available_slots}
 
+# ============== COMPATIBILITY: BARBER ENDPOINTS (for Frontend) ==============
+
+@api_router.get("/barbers/profile/me")
+async def get_barber_profile_me(entity: Dict = Depends(require_barbershop)):
+    """Get current barber's full enriched profile"""
+    shop = await db.barbershops.find_one({"id": entity['id']}, {"_id": 0, "password": 0})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Barbershop not found")
+    return await enrich_barbershop_for_frontend(shop)
+
+@api_router.post("/barbers/profile")
+async def create_or_update_barber_profile(profile_data: BarberProfileCreate, entity: Dict = Depends(require_barbershop)):
+    """Create or update barber extended profile"""
+    shop_id = entity['id']
+    
+    profile_dict = profile_data.model_dump(exclude_none=True)
+    profile_dict["barbershop_id"] = shop_id
+    profile_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    # Update the main barbershop record too
+    shop_update = {}
+    if profile_data.salon_name:
+        shop_update["shop_name"] = profile_data.salon_name
+    if profile_data.description:
+        shop_update["description"] = profile_data.description
+    if profile_data.address:
+        shop_update["address"] = profile_data.address
+    if profile_data.whatsapp:
+        shop_update["whatsapp_number"] = profile_data.whatsapp
+    if profile_data.instagram:
+        shop_update["instagram_url"] = profile_data.instagram
+    if profile_data.tiktok:
+        shop_update["tiktok_url"] = profile_data.tiktok
+    if profile_data.logo_url:
+        shop_update["shop_logo"] = profile_data.logo_url
+    
+    if shop_update:
+        shop_update["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.barbershops.update_one({"id": shop_id}, {"$set": shop_update})
+    
+    # Handle services - save to services collection
+    if profile_data.services:
+        # Clear old services and add new ones
+        await db.services.delete_many({"barbershop_id": shop_id, "category": {"$ne": "custom"}})
+        for svc in profile_data.services:
+            svc_doc = {
+                "id": str(uuid.uuid4()),
+                "barbershop_id": shop_id,
+                "name": svc.get("name", ""),
+                "name_ar": svc.get("name_ar", ""),
+                "description": svc.get("description", ""),
+                "price": float(svc.get("price", 0)),
+                "duration_minutes": int(svc.get("duration_minutes", 30)),
+                "category": svc.get("category", "default"),
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.services.insert_one(svc_doc)
+    
+    # Handle custom services
+    if profile_data.custom_services:
+        await db.services.delete_many({"barbershop_id": shop_id, "category": "custom"})
+        for svc in profile_data.custom_services:
+            svc_doc = {
+                "id": str(uuid.uuid4()),
+                "barbershop_id": shop_id,
+                "name": svc.get("name", ""),
+                "name_ar": svc.get("name_ar", ""),
+                "description": svc.get("description", ""),
+                "price": float(svc.get("price", 0)),
+                "duration_minutes": int(svc.get("duration_minutes", 30)),
+                "category": "custom",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.services.insert_one(svc_doc)
+    
+    # Handle gallery images
+    if profile_data.before_after_images is not None:
+        await db.gallery_images.delete_many({"barbershop_id": shop_id})
+        for img in profile_data.before_after_images[:3]:
+            img_doc = {
+                "id": str(uuid.uuid4()),
+                "barbershop_id": shop_id,
+                "image_before": img.get("before", ""),
+                "image_after": img.get("after", ""),
+                "before": img.get("before", ""),
+                "after": img.get("after", ""),
+                "caption": img.get("caption", ""),
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.gallery_images.insert_one(img_doc)
+    
+    # Upsert extended profile
+    existing = await db.barber_profiles.find_one({"barbershop_id": shop_id})
+    if existing:
+        await db.barber_profiles.update_one(
+            {"barbershop_id": shop_id},
+            {"$set": profile_dict}
+        )
+    else:
+        profile_dict["created_at"] = datetime.now(timezone.utc).isoformat()
+        await db.barber_profiles.insert_one(profile_dict)
+    
+    # Return enriched profile
+    shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "password": 0})
+    return await enrich_barbershop_for_frontend(shop)
+
+@api_router.put("/barbers/profile")
+async def update_barber_profile(profile_data: BarberProfileCreate, entity: Dict = Depends(require_barbershop)):
+    """Update barber profile - same as POST"""
+    return await create_or_update_barber_profile(profile_data, entity)
+
+@api_router.get("/barbers/top/{gender}")
+async def get_top_barbers(gender: str, limit: int = 20):
+    """Get top rated barbers by gender"""
+    query = {"shop_type": gender}
+    shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).sort("ranking_score", -1).limit(limit).to_list(limit)
+    
+    result = []
+    for shop in shops:
+        enriched = await enrich_barbershop_for_frontend(shop)
+        result.append(enriched)
+    
+    return result
+
+@api_router.get("/barbers/nearby")
+async def get_nearby_barbers(
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    radius: float = 50,
+    type: Optional[str] = None,
+    limit: int = 50
+):
+    """Get nearby barbers based on coordinates"""
+    query = {}
+    if type:
+        query["shop_type"] = type
+    
+    shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).limit(limit).to_list(limit)
+    
+    if lat is not None and lng is not None:
+        def calc_distance(shop):
+            if not shop.get('latitude') or not shop.get('longitude'):
+                return float('inf')
+            dlat = abs(shop['latitude'] - lat)
+            dlng = abs(shop['longitude'] - lng)
+            return (dlat**2 + dlng**2)**0.5 * 111
+        
+        shops = [s for s in shops if calc_distance(s) <= radius]
+        shops.sort(key=calc_distance)
+    
+    result = []
+    for shop in shops:
+        enriched = await enrich_barbershop_for_frontend(shop)
+        result.append(enriched)
+    
+    return result
+
+@api_router.get("/barbers/{barber_id}")
+async def get_barber(barber_id: str):
+    """Get barber profile with enriched data for frontend"""
+    shop = await db.barbershops.find_one({"id": barber_id}, {"_id": 0, "password": 0})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Barber not found")
+    return await enrich_barbershop_for_frontend(shop)
+
+@api_router.get("/barbers")
+async def list_barbers(
+    type: Optional[str] = None,
+    country: Optional[str] = None,
+    city: Optional[str] = None,
+    limit: int = 50
+):
+    """List all barbers (alias for barbershops)"""
+    query = {}
+    if type:
+        query["shop_type"] = type
+    if country:
+        query["country"] = country
+    if city:
+        query["city"] = city
+    
+    shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).sort("ranking_score", -1).limit(limit).to_list(limit)
+    
+    result = []
+    for shop in shops:
+        enriched = await enrich_barbershop_for_frontend(shop)
+        result.append(enriched)
+    
+    return result
+
 # ============== SERVICES ENDPOINTS ==============
 
 @api_router.post("/barbershops/me/services", response_model=ServiceResponse)
 async def create_service(service_data: ServiceCreate, shop: Dict = Depends(require_barbershop)):
-    """إضافة خدمة جديدة للصالون"""
     service_id = str(uuid.uuid4())
     service_doc = {
         "id": service_id,
         "barbershop_id": shop['id'],
         "name": service_data.name,
+        "name_ar": service_data.name_ar or service_data.name,
         "description": service_data.description,
         "price": service_data.price,
         "duration_minutes": service_data.duration_minutes,
@@ -555,15 +876,13 @@ async def create_service(service_data: ServiceCreate, shop: Dict = Depends(requi
     await db.services.insert_one(service_doc)
     return service_doc
 
-@api_router.get("/barbershops/{shop_id}/services", response_model=List[ServiceResponse])
+@api_router.get("/barbershops/{shop_id}/services")
 async def get_shop_services(shop_id: str):
-    """الحصول على خدمات صالون معين"""
     services = await db.services.find({"barbershop_id": shop_id}, {"_id": 0}).to_list(100)
     return services
 
 @api_router.delete("/barbershops/me/services/{service_id}")
 async def delete_service(service_id: str, shop: Dict = Depends(require_barbershop)):
-    """حذف خدمة"""
     result = await db.services.delete_one({"id": service_id, "barbershop_id": shop['id']})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Service not found")
@@ -571,10 +890,8 @@ async def delete_service(service_id: str, shop: Dict = Depends(require_barbersho
 
 # ============== GALLERY ENDPOINTS ==============
 
-@api_router.post("/barbershops/me/gallery", response_model=GalleryImageResponse)
+@api_router.post("/barbershops/me/gallery")
 async def add_gallery_image(image_data: GalleryImageCreate, shop: Dict = Depends(require_barbershop)):
-    """إضافة صورة للمعرض"""
-    # Check max 3 images
     count = await db.gallery_images.count_documents({"barbershop_id": shop['id']})
     if count >= 3:
         raise HTTPException(status_code=400, detail="Maximum 3 gallery images allowed")
@@ -583,8 +900,10 @@ async def add_gallery_image(image_data: GalleryImageCreate, shop: Dict = Depends
     image_doc = {
         "id": image_id,
         "barbershop_id": shop['id'],
-        "image_before": image_data.image_before,
-        "image_after": image_data.image_after,
+        "image_before": image_data.image_before or image_data.before or "",
+        "image_after": image_data.image_after or image_data.after or "",
+        "before": image_data.before or image_data.image_before or "",
+        "after": image_data.after or image_data.image_after or "",
         "caption": image_data.caption,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -592,15 +911,13 @@ async def add_gallery_image(image_data: GalleryImageCreate, shop: Dict = Depends
     await db.gallery_images.insert_one(image_doc)
     return image_doc
 
-@api_router.get("/barbershops/{shop_id}/gallery", response_model=List[GalleryImageResponse])
+@api_router.get("/barbershops/{shop_id}/gallery")
 async def get_shop_gallery(shop_id: str):
-    """الحصول على صور معرض الصالون"""
     images = await db.gallery_images.find({"barbershop_id": shop_id}, {"_id": 0}).to_list(10)
     return images
 
 @api_router.delete("/barbershops/me/gallery/{image_id}")
 async def delete_gallery_image(image_id: str, shop: Dict = Depends(require_barbershop)):
-    """حذف صورة من المعرض"""
     result = await db.gallery_images.delete_one({"id": image_id, "barbershop_id": shop['id']})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -608,29 +925,67 @@ async def delete_gallery_image(image_id: str, shop: Dict = Depends(require_barbe
 
 # ============== BOOKING ENDPOINTS ==============
 
-@api_router.post("/bookings", response_model=BookingResponse)
+@api_router.post("/bookings")
 async def create_booking(booking_data: BookingCreate, entity: Dict = Depends(get_current_entity)):
-    """إنشاء حجز جديد"""
-    # Get service details
-    service = await db.services.find_one({"id": booking_data.service_id}, {"_id": 0})
-    if not service:
-        raise HTTPException(status_code=404, detail="Service not found")
+    """Create a booking - supports both old and new field names"""
+    # Normalize field names
+    barbershop_id = booking_data.barbershop_id or booking_data.barber_id
+    booking_date = booking_data.booking_date or booking_data.date
+    start_time = booking_data.start_time or booking_data.time
+    phone = booking_data.user_phone_for_notification or booking_data.customer_phone or ""
+    customer_name = booking_data.customer_name or (entity.get('full_name') if entity else "")
     
-    # Get barbershop details
-    shop = await db.barbershops.find_one({"id": booking_data.barbershop_id}, {"_id": 0, "password": 0})
+    if not barbershop_id:
+        raise HTTPException(status_code=400, detail="Barbershop ID required")
+    if not booking_date:
+        raise HTTPException(status_code=400, detail="Booking date required")
+    if not start_time:
+        raise HTTPException(status_code=400, detail="Start time required")
+    
+    # Get barbershop
+    shop = await db.barbershops.find_one({"id": barbershop_id}, {"_id": 0, "password": 0})
     if not shop:
         raise HTTPException(status_code=404, detail="Barbershop not found")
     
+    # Handle service_ids (multiple) or service_id (single)
+    service_names = []
+    total_duration = 30
+    total_price = 0
+    services_list = []
+    
+    if booking_data.service_id:
+        service = await db.services.find_one({"id": booking_data.service_id}, {"_id": 0})
+        if service:
+            service_names.append(service['name'])
+            total_duration = service['duration_minutes']
+            total_price = service.get('price', 0)
+            services_list.append({"name": service['name'], "name_ar": service.get('name_ar', service['name']), "price": service.get('price', 0)})
+    elif booking_data.service_ids:
+        # Service_ids might be service names from frontend
+        all_services = await db.services.find({"barbershop_id": barbershop_id}, {"_id": 0}).to_list(100)
+        for svc_ref in booking_data.service_ids:
+            # Try matching by id first, then by name
+            matched = None
+            for svc in all_services:
+                if svc['id'] == svc_ref or svc['name'] == svc_ref or svc.get('name_ar') == svc_ref:
+                    matched = svc
+                    break
+            if matched:
+                service_names.append(matched['name'])
+                total_duration += matched.get('duration_minutes', 30)
+                total_price += matched.get('price', 0)
+                services_list.append({"name": matched['name'], "name_ar": matched.get('name_ar', matched['name']), "price": matched.get('price', 0)})
+    
     # Calculate end time
-    end_time = calculate_end_time(booking_data.start_time, service['duration_minutes'])
+    end_time = calculate_end_time(start_time, total_duration)
     
     # Check for conflicting bookings
     existing = await db.bookings.find_one({
-        "barbershop_id": booking_data.barbershop_id,
-        "booking_date": booking_data.booking_date,
+        "barbershop_id": barbershop_id,
+        "booking_date": booking_date,
         "status": {"$in": ["pending", "confirmed"]},
         "$or": [
-            {"start_time": {"$lt": end_time}, "end_time": {"$gt": booking_data.start_time}}
+            {"start_time": {"$lt": end_time}, "end_time": {"$gt": start_time}}
         ]
     })
     
@@ -641,60 +996,128 @@ async def create_booking(booking_data: BookingCreate, entity: Dict = Depends(get
     booking_doc = {
         "id": booking_id,
         "user_id": entity['id'] if entity and entity.get('entity_type') == 'user' else None,
-        "barbershop_id": booking_data.barbershop_id,
+        "barbershop_id": barbershop_id,
         "barbershop_name": shop['shop_name'],
-        "service_id": booking_data.service_id,
-        "service_name": service['name'],
-        "booking_date": booking_data.booking_date,
-        "start_time": booking_data.start_time,
+        "service_id": booking_data.service_id or (booking_data.service_ids[0] if booking_data.service_ids else None),
+        "service_name": ", ".join(service_names) if service_names else "Service",
+        "booking_date": booking_date,
+        "start_time": start_time,
         "end_time": end_time,
         "status": "pending",
-        "user_phone_for_notification": booking_data.user_phone_for_notification,
+        "customer_name": customer_name,
+        "user_phone_for_notification": phone,
+        "notes": booking_data.notes or "",
+        "services": services_list,
+        "total_price": total_price,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.bookings.insert_one(booking_doc)
     
-    # Create notification for barbershop
+    # Create notification
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()),
-        "recipient_id": booking_data.barbershop_id,
+        "recipient_id": barbershop_id,
         "recipient_type": "barbershop",
         "type": "booking_confirmation",
-        "message": f"حجز جديد: {service['name']} - {booking_data.booking_date} {booking_data.start_time}",
+        "message": f"حجز جديد: {', '.join(service_names)} - {booking_date} {start_time}",
         "channel": "whatsapp",
         "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat()
     })
     
-    return booking_doc
+    return enrich_booking_for_frontend(booking_doc)
 
-@api_router.get("/bookings/{booking_id}", response_model=BookingResponse)
+@api_router.get("/bookings/my")
+async def get_my_bookings(entity: Dict = Depends(require_auth)):
+    if entity.get('entity_type') == 'user':
+        bookings = await db.bookings.find({"user_id": entity['id']}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    elif entity.get('entity_type') == 'barbershop':
+        bookings = await db.bookings.find({"barbershop_id": entity['id']}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    else:
+        bookings = []
+    
+    return [enrich_booking_for_frontend(b) for b in bookings]
+
+@api_router.get("/bookings/barber/{barber_id}/schedule")
+async def get_barber_schedule(barber_id: str, date: str):
+    """Get booked times for a barber on a specific date"""
+    bookings = await db.bookings.find({
+        "barbershop_id": barber_id,
+        "booking_date": date,
+        "status": {"$in": ["pending", "confirmed"]}
+    }, {"_id": 0}).to_list(100)
+    
+    booked_times = [b['start_time'] for b in bookings]
+    
+    return {"date": date, "booked_times": booked_times}
+
+@api_router.get("/bookings/{booking_id}")
 async def get_booking(booking_id: str, entity: Dict = Depends(require_auth)):
-    """الحصول على تفاصيل حجز"""
     booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
-    return booking
+    return enrich_booking_for_frontend(booking)
 
-@api_router.put("/bookings/{booking_id}/cancel")
-async def cancel_booking(booking_id: str, entity: Dict = Depends(require_auth)):
-    """إلغاء حجز"""
+@api_router.put("/bookings/{booking_id}/status")
+async def update_booking_status(booking_id: str, status: str, entity: Dict = Depends(require_auth)):
+    """Update booking status - supports confirm, confirmed, complete, completed, cancel, cancelled"""
+    status_map = {
+        "confirm": "confirmed",
+        "confirmed": "confirmed",
+        "complete": "completed",
+        "completed": "completed",
+        "cancel": "cancelled",
+        "cancelled": "cancelled"
+    }
+    
+    new_status = status_map.get(status, status)
+    
     booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     
-    # Check if user owns the booking or is the barbershop
+    # Authorization check
     if entity.get('entity_type') == 'user' and booking['user_id'] != entity['id']:
         raise HTTPException(status_code=403, detail="Not authorized")
     if entity.get('entity_type') == 'barbershop' and booking['barbershop_id'] != entity['id']:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Check if cancellation is allowed (4 hours before)
-    booking_datetime = datetime.strptime(f"{booking['booking_date']} {booking['start_time']}", "%Y-%m-%d %H:%M")
-    if datetime.now() > booking_datetime - timedelta(hours=4):
-        raise HTTPException(status_code=400, detail="Cannot cancel within 4 hours of appointment")
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"status": new_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {"message": f"Booking {new_status}"}
+
+@api_router.put("/bookings/{booking_id}/cancel")
+async def cancel_booking(booking_id: str, entity: Dict = Depends(require_auth)):
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if entity.get('entity_type') == 'user' and booking.get('user_id') != entity['id']:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if entity.get('entity_type') == 'barbershop' and booking['barbershop_id'] != entity['id']:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"status": "cancelled", "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {"message": "Booking cancelled"}
+
+@api_router.delete("/bookings/{booking_id}")
+async def delete_booking(booking_id: str, entity: Dict = Depends(require_auth)):
+    """Cancel booking via DELETE (frontend compatibility)"""
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if entity.get('entity_type') == 'user' and booking.get('user_id') != entity['id']:
+        raise HTTPException(status_code=403, detail="Not authorized")
     
     await db.bookings.update_one(
         {"id": booking_id},
@@ -705,7 +1128,6 @@ async def cancel_booking(booking_id: str, entity: Dict = Depends(require_auth)):
 
 @api_router.put("/bookings/{booking_id}/confirm")
 async def confirm_booking(booking_id: str, shop: Dict = Depends(require_barbershop)):
-    """تأكيد حجز (للصالون)"""
     result = await db.bookings.update_one(
         {"id": booking_id, "barbershop_id": shop['id']},
         {"$set": {"status": "confirmed", "updated_at": datetime.now(timezone.utc).isoformat()}}
@@ -716,7 +1138,6 @@ async def confirm_booking(booking_id: str, shop: Dict = Depends(require_barbersh
 
 @api_router.put("/bookings/{booking_id}/complete")
 async def complete_booking(booking_id: str, shop: Dict = Depends(require_barbershop)):
-    """إتمام حجز (للصالون)"""
     result = await db.bookings.update_one(
         {"id": booking_id, "barbershop_id": shop['id']},
         {"$set": {"status": "completed", "updated_at": datetime.now(timezone.utc).isoformat()}}
@@ -725,30 +1146,101 @@ async def complete_booking(booking_id: str, shop: Dict = Depends(require_barbers
         raise HTTPException(status_code=404, detail="Booking not found")
     return {"message": "Booking completed"}
 
-@api_router.get("/bookings/my")
-async def get_my_bookings(entity: Dict = Depends(require_auth)):
-    """الحصول على حجوزاتي"""
-    if entity.get('entity_type') == 'user':
-        bookings = await db.bookings.find({"user_id": entity['id']}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    elif entity.get('entity_type') == 'barbershop':
-        bookings = await db.bookings.find({"barbershop_id": entity['id']}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    else:
-        bookings = []
-    return bookings
-
 # ============== REVIEW ENDPOINTS ==============
 
-@api_router.post("/bookings/{booking_id}/review", response_model=ReviewResponse)
+@api_router.post("/reviews")
+async def create_review_compat(review_data: ReviewCreate, entity: Dict = Depends(require_auth)):
+    """Create review - frontend compatibility (POST /api/reviews)"""
+    booking_id = review_data.booking_id
+    barbershop_id = review_data.barber_id
+    
+    if booking_id:
+        booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+        if booking:
+            barbershop_id = booking.get('barbershop_id', barbershop_id)
+    
+    if not barbershop_id:
+        raise HTTPException(status_code=400, detail="Barber ID or Booking ID required")
+    
+    # Check if already reviewed (if booking_id provided)
+    if booking_id:
+        existing = await db.reviews.find_one({"booking_id": booking_id}, {"_id": 0})
+        if existing:
+            raise HTTPException(status_code=400, detail="Already reviewed")
+    
+    review_id = str(uuid.uuid4())
+    review_doc = {
+        "id": review_id,
+        "booking_id": booking_id,
+        "user_id": entity['id'] if entity.get('entity_type') == 'user' else None,
+        "user_name": entity.get('full_name', 'Anonymous'),
+        "customer_name": entity.get('full_name', 'Anonymous'),
+        "barbershop_id": barbershop_id,
+        "rating": min(5, max(1, review_data.rating)),
+        "comment": review_data.comment,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.reviews.insert_one(review_doc)
+    
+    # Update barbershop ranking
+    all_reviews = await db.reviews.find({"barbershop_id": barbershop_id}, {"_id": 0}).to_list(1000)
+    if all_reviews:
+        avg_rating = sum(r['rating'] for r in all_reviews) / len(all_reviews)
+        
+        ranking_tier = "normal"
+        if avg_rating >= 4.5 and len(all_reviews) >= 50:
+            ranking_tier = "top"
+        elif avg_rating >= 4.0 and len(all_reviews) >= 20:
+            ranking_tier = "featured"
+        
+        await db.barbershops.update_one(
+            {"id": barbershop_id},
+            {"$set": {
+                "ranking_score": round(avg_rating, 2),
+                "ranking_tier": ranking_tier,
+                "total_reviews": len(all_reviews)
+            }}
+        )
+    
+    # Return a clean copy without any potential ObjectId fields
+    return {
+        "id": review_doc["id"],
+        "booking_id": review_doc["booking_id"],
+        "user_id": review_doc["user_id"],
+        "user_name": review_doc["user_name"],
+        "customer_name": review_doc["customer_name"],
+        "barbershop_id": review_doc["barbershop_id"],
+        "rating": review_doc["rating"],
+        "comment": review_doc["comment"],
+        "created_at": review_doc["created_at"]
+    }
+
+@api_router.get("/reviews/barber/{barber_id}")
+async def get_barber_reviews(barber_id: str, limit: int = 50):
+    """Get reviews for a barber - frontend compatibility"""
+    reviews = await db.reviews.find({"barbershop_id": barber_id}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    
+    # Transform to match frontend expectations
+    result = []
+    for r in reviews:
+        result.append({
+            "id": r["id"],
+            "customer_name": r.get("customer_name") or r.get("user_name", "Anonymous"),
+            "user_name": r.get("user_name", "Anonymous"),
+            "rating": r["rating"],
+            "comment": r.get("comment"),
+            "created_at": r.get("created_at", "")
+        })
+    
+    return result
+
+@api_router.post("/bookings/{booking_id}/review")
 async def create_review(booking_id: str, review_data: ReviewCreate, entity: Dict = Depends(require_auth)):
-    """إضافة تقييم لحجز مكتمل"""
     booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     
-    if booking['status'] != 'completed':
-        raise HTTPException(status_code=400, detail="Can only review completed bookings")
-    
-    # Check if already reviewed
     existing = await db.reviews.find_one({"booking_id": booking_id})
     if existing:
         raise HTTPException(status_code=400, detail="Already reviewed")
@@ -759,6 +1251,7 @@ async def create_review(booking_id: str, review_data: ReviewCreate, entity: Dict
         "booking_id": booking_id,
         "user_id": entity['id'] if entity.get('entity_type') == 'user' else None,
         "user_name": entity.get('full_name', 'Anonymous'),
+        "customer_name": entity.get('full_name', 'Anonymous'),
         "barbershop_id": booking['barbershop_id'],
         "rating": min(5, max(1, review_data.rating)),
         "comment": review_data.comment,
@@ -771,7 +1264,6 @@ async def create_review(booking_id: str, review_data: ReviewCreate, entity: Dict
     all_reviews = await db.reviews.find({"barbershop_id": booking['barbershop_id']}, {"_id": 0}).to_list(1000)
     avg_rating = sum(r['rating'] for r in all_reviews) / len(all_reviews)
     
-    # Determine ranking tier
     ranking_tier = "normal"
     if avg_rating >= 4.5 and len(all_reviews) >= 50:
         ranking_tier = "top"
@@ -789,9 +1281,8 @@ async def create_review(booking_id: str, review_data: ReviewCreate, entity: Dict
     
     return review_doc
 
-@api_router.get("/barbershops/{shop_id}/reviews", response_model=List[ReviewResponse])
+@api_router.get("/barbershops/{shop_id}/reviews")
 async def get_shop_reviews(shop_id: str, limit: int = 50):
-    """الحصول على تقييمات صالون"""
     reviews = await db.reviews.find({"barbershop_id": shop_id}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     return reviews
 
@@ -799,14 +1290,15 @@ async def get_shop_reviews(shop_id: str, limit: int = 50):
 
 @api_router.post("/reports")
 async def create_report(report_data: ReportCreate, entity: Dict = Depends(require_auth)):
-    """إنشاء بلاغ"""
     report_id = str(uuid.uuid4())
     report_doc = {
         "id": report_id,
         "reporter_id": entity['id'],
         "reporter_type": entity.get('entity_type'),
         "reported_entity_id": report_data.reported_entity_id,
+        "reported_user_id": report_data.reported_entity_id,
         "report_type": report_data.report_type,
+        "reason": report_data.report_type,
         "description": report_data.description,
         "status": "pending",
         "penalty_applied": None,
@@ -819,15 +1311,17 @@ async def create_report(report_data: ReportCreate, entity: Dict = Depends(requir
 
 # ============== SUBSCRIPTION ENDPOINTS ==============
 
-@api_router.post("/subscriptions", response_model=SubscriptionResponse)
+@api_router.post("/subscriptions")
 async def create_subscription(sub_data: SubscriptionCreate, shop: Dict = Depends(require_barbershop)):
-    """طلب اشتراك جديد"""
     sub_id = str(uuid.uuid4())
     sub_doc = {
         "id": sub_id,
         "barbershop_id": shop['id'],
-        "plan_type": sub_data.plan_type,
-        "amount": sub_data.amount,
+        "user_id": shop['id'],
+        "plan_type": sub_data.plan_type or "annual",
+        "subscription_type": sub_data.subscription_type or sub_data.plan_type or "annual",
+        "amount": sub_data.amount or sub_data.price or 100.0,
+        "price": sub_data.price or sub_data.amount or 100.0,
         "currency": "EUR",
         "payment_method": sub_data.payment_method,
         "receipt_image": sub_data.receipt_image,
@@ -838,19 +1332,34 @@ async def create_subscription(sub_data: SubscriptionCreate, shop: Dict = Depends
     }
     
     await db.subscriptions.insert_one(sub_doc)
-    return sub_doc
+    
+    # Return a clean copy without any potential ObjectId fields
+    return {
+        "id": sub_doc["id"],
+        "barbershop_id": sub_doc["barbershop_id"],
+        "user_id": sub_doc["user_id"],
+        "plan_type": sub_doc["plan_type"],
+        "subscription_type": sub_doc["subscription_type"],
+        "amount": sub_doc["amount"],
+        "price": sub_doc["price"],
+        "currency": sub_doc["currency"],
+        "payment_method": sub_doc["payment_method"],
+        "receipt_image": sub_doc["receipt_image"],
+        "status": sub_doc["status"],
+        "start_date": sub_doc["start_date"],
+        "end_date": sub_doc["end_date"],
+        "created_at": sub_doc["created_at"]
+    }
 
 # ============== ADMIN ENDPOINTS ==============
 
 @api_router.get("/admin/pending-barbershops")
 async def get_pending_barbershops(admin: Dict = Depends(require_admin)):
-    """الحصول على الصالونات بانتظار التحقق"""
     shops = await db.barbershops.find({"is_verified": False}, {"_id": 0, "password": 0}).to_list(100)
     return shops
 
 @api_router.put("/admin/barbershops/{shop_id}/verify")
 async def verify_barbershop(shop_id: str, admin: Dict = Depends(require_admin)):
-    """التحقق من صالون"""
     result = await db.barbershops.update_one(
         {"id": shop_id},
         {"$set": {"is_verified": True, "updated_at": datetime.now(timezone.utc).isoformat()}}
@@ -861,14 +1370,13 @@ async def verify_barbershop(shop_id: str, admin: Dict = Depends(require_admin)):
 
 @api_router.get("/admin/reports")
 async def get_admin_reports(admin: Dict = Depends(require_admin), status: str = "pending"):
-    """الحصول على البلاغات"""
     reports = await db.reports.find({"status": status}, {"_id": 0}).to_list(100)
     return reports
 
 @api_router.put("/admin/reports/{report_id}/resolve")
 async def resolve_report(report_id: str, action: str, admin: Dict = Depends(require_admin)):
-    """معالجة بلاغ"""
-    if action not in ["dismiss", "warning", "temp_ban", "perm_ban"]:
+    valid_actions = ["dismiss", "warning", "warn", "temp_ban", "ban", "perm_ban"]
+    if action not in valid_actions:
         raise HTTPException(status_code=400, detail="Invalid action")
     
     report = await db.reports.find_one({"id": report_id}, {"_id": 0})
@@ -876,10 +1384,10 @@ async def resolve_report(report_id: str, action: str, admin: Dict = Depends(requ
         raise HTTPException(status_code=404, detail="Report not found")
     
     update = {"status": "resolved"}
-    if action != "dismiss":
+    if action not in ("dismiss",):
         update["penalty_applied"] = action
-        if action == "temp_ban":
-            update["penalty_duration"] = 30  # 30 days
+        if action in ("temp_ban", "ban"):
+            update["penalty_duration"] = 30
     
     await db.reports.update_one({"id": report_id}, {"$set": update})
     
@@ -887,19 +1395,17 @@ async def resolve_report(report_id: str, action: str, admin: Dict = Depends(requ
 
 @api_router.get("/admin/subscriptions")
 async def get_admin_subscriptions(admin: Dict = Depends(require_admin), status: str = "pending"):
-    """الحصول على طلبات الاشتراك"""
     subs = await db.subscriptions.find({"status": status}, {"_id": 0}).to_list(100)
     return subs
 
 @api_router.put("/admin/subscriptions/{sub_id}/approve")
 async def approve_subscription(sub_id: str, admin: Dict = Depends(require_admin)):
-    """الموافقة على اشتراك"""
     sub = await db.subscriptions.find_one({"id": sub_id}, {"_id": 0})
     if not sub:
         raise HTTPException(status_code=404, detail="Subscription not found")
     
     start_date = datetime.now(timezone.utc).date()
-    end_date = start_date + timedelta(days=365 if sub['plan_type'] == 'annual' else 30)
+    end_date = start_date + timedelta(days=365 if sub.get('plan_type') == 'annual' else 30)
     
     await db.subscriptions.update_one(
         {"id": sub_id},
@@ -910,19 +1416,55 @@ async def approve_subscription(sub_id: str, admin: Dict = Depends(require_admin)
         }}
     )
     
-    await db.barbershops.update_one(
-        {"id": sub['barbershop_id']},
-        {"$set": {
-            "subscription_status": "active",
-            "subscription_expiry": end_date.isoformat()
-        }}
-    )
+    barbershop_id = sub.get('barbershop_id') or sub.get('user_id')
+    if barbershop_id:
+        await db.barbershops.update_one(
+            {"id": barbershop_id},
+            {"$set": {
+                "subscription_status": "active",
+                "subscription_expiry": end_date.isoformat()
+            }}
+        )
     
     return {"message": "Subscription approved"}
 
+@api_router.get("/admin/users")
+async def get_admin_users(admin: Dict = Depends(require_admin)):
+    """Get all users (customers + barbershops) for admin dashboard"""
+    result = []
+    
+    # Get all customers
+    users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(500)
+    for u in users:
+        result.append({
+            "id": u["id"],
+            "name": u.get("full_name", ""),
+            "phone": u.get("phone_number", ""),
+            "user_type": "user",
+            "country": u.get("country", ""),
+            "city": u.get("city", ""),
+            "subscription_status": "N/A",
+            "created_at": u.get("created_at", "")
+        })
+    
+    # Get all barbershops
+    shops = await db.barbershops.find({}, {"_id": 0, "password": 0}).to_list(500)
+    for s in shops:
+        result.append({
+            "id": s["id"],
+            "name": s.get("shop_name", s.get("owner_name", "")),
+            "phone": s.get("phone_number", ""),
+            "user_type": "barber" if s.get("shop_type") == "male" else "salon",
+            "country": s.get("country", ""),
+            "city": s.get("city", ""),
+            "subscription_status": s.get("subscription_status", "inactive"),
+            "created_at": s.get("created_at", "")
+        })
+    
+    return result
+
 @api_router.get("/admin/stats")
 async def get_admin_stats(admin: Dict = Depends(require_admin)):
-    """إحصائيات لوحة التحكم"""
     total_users = await db.users.count_documents({})
     total_barbershops = await db.barbershops.count_documents({})
     total_bookings = await db.bookings.count_documents({})
@@ -931,22 +1473,24 @@ async def get_admin_stats(admin: Dict = Depends(require_admin)):
     pending_subs = await db.subscriptions.count_documents({"status": "pending"})
     pending_reports = await db.reports.count_documents({"status": "pending"})
     pending_verification = await db.barbershops.count_documents({"is_verified": False})
+    active_subs = await db.barbershops.count_documents({"subscription_status": "active"})
     
     return {
         "total_users": total_users,
         "total_barbershops": total_barbershops,
+        "total_barbers": total_barbershops,
         "total_bookings": total_bookings,
         "today_bookings": today_bookings,
         "pending_subscriptions": pending_subs,
         "pending_reports": pending_reports,
-        "pending_verification": pending_verification
+        "pending_verification": pending_verification,
+        "active_subscribers": active_subs
     }
 
 # ============== LOCATION ENDPOINTS ==============
 
 @api_router.get("/locations/countries")
 async def get_countries():
-    """الحصول على قائمة الدول"""
     return {
         "countries": [
             {"code": "IQ", "name": "العراق", "name_en": "Iraq"},
@@ -962,30 +1506,77 @@ async def get_countries():
             {"code": "EG", "name": "مصر", "name_en": "Egypt"},
             {"code": "TR", "name": "تركيا", "name_en": "Turkey"},
             {"code": "DE", "name": "ألمانيا", "name_en": "Germany"},
-            {"code": "US", "name": "أمريكا", "name_en": "USA"}
+            {"code": "US", "name": "أمريكا", "name_en": "USA"},
+            {"code": "GB", "name": "بريطانيا", "name_en": "UK"},
+            {"code": "FR", "name": "فرنسا", "name_en": "France"},
+            {"code": "SE", "name": "السويد", "name_en": "Sweden"},
+            {"code": "NL", "name": "هولندا", "name_en": "Netherlands"}
         ]
     }
 
 @api_router.get("/locations/cities/{country_code}")
 async def get_cities(country_code: str):
-    """الحصول على مدن دولة معينة"""
     cities_data = {
-        "IQ": ["بغداد", "البصرة", "الموصل", "أربيل", "كركوك", "النجف", "كربلاء"],
-        "SY": ["دمشق", "حلب", "حمص", "اللاذقية", "الحسكة", "دير الزور", "طرطوس"],
-        "JO": ["عمان", "الزرقاء", "إربد", "العقبة"],
-        "LB": ["بيروت", "طرابلس", "صيدا", "صور"],
-        "SA": ["الرياض", "جدة", "مكة", "المدينة", "الدمام"],
-        "AE": ["دبي", "أبوظبي", "الشارقة", "عجمان"],
-        "KW": ["الكويت", "الجهراء", "حولي"],
-        "QA": ["الدوحة", "الريان"],
-        "BH": ["المنامة", "المحرق"],
-        "OM": ["مسقط", "صلالة"],
-        "EG": ["القاهرة", "الإسكندرية", "الجيزة"],
-        "TR": ["إسطنبول", "أنقرة", "إزمير"],
-        "DE": ["برلين", "ميونخ", "فرانكفورت"],
-        "US": ["نيويورك", "لوس أنجلوس", "شيكاغو"]
+        "IQ": ["بغداد", "البصرة", "الموصل", "أربيل", "كركوك", "النجف", "كربلاء", "السليمانية", "ديالى"],
+        "SY": ["دمشق", "حلب", "حمص", "اللاذقية", "الحسكة", "دير الزور", "طرطوس", "إدلب", "الرقة", "درعا"],
+        "JO": ["عمان", "الزرقاء", "إربد", "العقبة", "مادبا"],
+        "LB": ["بيروت", "طرابلس", "صيدا", "صور", "جبيل"],
+        "SA": ["الرياض", "جدة", "مكة", "المدينة", "الدمام", "الخبر", "تبوك", "أبها"],
+        "AE": ["دبي", "أبوظبي", "الشارقة", "عجمان", "رأس الخيمة", "الفجيرة"],
+        "KW": ["الكويت", "الجهراء", "حولي", "الأحمدي"],
+        "QA": ["الدوحة", "الريان", "الوكرة"],
+        "BH": ["المنامة", "المحرق", "الرفاع"],
+        "OM": ["مسقط", "صلالة", "نزوى"],
+        "EG": ["القاهرة", "الإسكندرية", "الجيزة", "شرم الشيخ", "الأقصر"],
+        "TR": ["إسطنبول", "أنقرة", "إزمير", "أنطاليا", "بورصة"],
+        "DE": ["برلين", "ميونخ", "فرانكفورت", "هامبورغ", "كولن"],
+        "US": ["نيويورك", "لوس أنجلوس", "شيكاغو", "هيوستن", "ديترويت"],
+        "GB": ["لندن", "مانشستر", "برمنغهام", "ليفربول"],
+        "FR": ["باريس", "مارسيليا", "ليون"],
+        "SE": ["ستوكهولم", "مالمو", "يوتيبوري"],
+        "NL": ["أمستردام", "روتردام", "لاهاي"]
     }
     return {"cities": cities_data.get(country_code, [])}
+
+# ============== REFERRAL SYSTEM ==============
+
+@api_router.post("/referrals/generate")
+async def generate_referral(entity: Dict = Depends(require_auth)):
+    """Generate a referral link for the current user"""
+    referral_code = str(uuid.uuid4())[:8].upper()
+    
+    existing = await db.referrals.find_one({"user_id": entity['id']})
+    if existing:
+        return {"referral_code": existing['referral_code'], "referral_link": f"https://barberhub.com/ref/{existing['referral_code']}"}
+    
+    await db.referrals.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": entity['id'],
+        "referral_code": referral_code,
+        "referred_count": 0,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {"referral_code": referral_code, "referral_link": f"https://barberhub.com/ref/{referral_code}"}
+
+@api_router.get("/referrals/my")
+async def get_my_referrals(entity: Dict = Depends(require_auth)):
+    """Get current user's referral stats"""
+    referral = await db.referrals.find_one({"user_id": entity['id']}, {"_id": 0})
+    if not referral:
+        return {"referral_code": None, "referred_count": 0}
+    return referral
+
+# ============== NOTIFICATIONS ==============
+
+@api_router.get("/notifications/my")
+async def get_my_notifications(entity: Dict = Depends(require_auth)):
+    """Get notifications for the current user"""
+    notifications = await db.notifications.find(
+        {"recipient_id": entity['id']},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(50).to_list(50)
+    return notifications
 
 # ============== ROOT ENDPOINT ==============
 
@@ -1018,6 +1609,10 @@ async def startup_db():
     await db.bookings.create_index([("barbershop_id", 1), ("booking_date", 1)])
     await db.reviews.create_index("id", unique=True)
     await db.reviews.create_index("barbershop_id")
+    await db.barber_profiles.create_index("barbershop_id", unique=True)
+    await db.gallery_images.create_index("barbershop_id")
+    await db.referrals.create_index("user_id", unique=True)
+    await db.referrals.create_index("referral_code", unique=True)
     
     # Create admin user if not exists
     admin = await db.admins.find_one({"phone_number": "admin"})

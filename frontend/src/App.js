@@ -32,6 +32,7 @@ function App() {
     return saved ? JSON.parse(saved) : null;
   });
   const [token, setToken] = useState(() => localStorage.getItem('barber_hub_token') || null);
+  const [userType, setUserType] = useState(() => localStorage.getItem('barber_hub_user_type') || null);
   const [language, setLanguage] = useState(() => localStorage.getItem('barber_hub_lang') || 'ar');
 
   useEffect(() => {
@@ -50,22 +51,34 @@ function App() {
   }, [token]);
 
   useEffect(() => {
+    if (userType) localStorage.setItem('barber_hub_user_type', userType);
+    else localStorage.removeItem('barber_hub_user_type');
+  }, [userType]);
+
+  useEffect(() => {
     localStorage.setItem('barber_hub_lang', language);
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = language;
   }, [language]);
 
-  const login = (userData, accessToken) => {
+  const login = (userData, accessToken, type) => {
     setUser(userData);
     setToken(accessToken);
-    setGender(userData.gender);
+    setUserType(type);
+    if (userData.gender) {
+      setGender(userData.gender);
+    } else if (userData.shop_type) {
+      setGender(userData.shop_type);
+    }
   };
 
   const logout = () => {
     setUser(null);
     setToken(null);
+    setUserType(null);
     localStorage.removeItem('barber_hub_user');
     localStorage.removeItem('barber_hub_token');
+    localStorage.removeItem('barber_hub_user_type');
   };
 
   const themeClass = gender === 'female' ? 'theme-women' : 'theme-men';
@@ -76,6 +89,7 @@ function App() {
     user,
     setUser,
     token,
+    userType,
     login,
     logout,
     language,
@@ -83,8 +97,9 @@ function App() {
     API,
     themeClass,
     isAuthenticated: !!token,
-    isBarber: user?.user_type === 'barber' || user?.user_type === 'salon',
-    isAdmin: user?.user_type === 'admin'
+    isBarber: userType === 'barbershop',
+    isAdmin: userType === 'admin',
+    isUser: userType === 'user'
   };
 
   return (

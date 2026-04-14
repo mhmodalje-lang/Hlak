@@ -8,24 +8,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { ArrowRight, Phone, User, MapPin, Lock, Loader2, ArrowLeft } from 'lucide-react';
+import { ArrowRight, Phone, User, MapPin, Lock, Loader2, ArrowLeft, Store } from 'lucide-react';
 
 const AuthPage = () => {
   const navigate = useNavigate();
   const { API, login, gender, language, themeClass } = useApp();
   const [isLoading, setIsLoading] = useState(false);
+  const [authType, setAuthType] = useState('user'); // 'user' or 'barbershop'
   const [countries, setCountries] = useState([]);
   const [cities, setCities] = useState([]);
 
-  const [loginData, setLoginData] = useState({ phone: '', password: '' });
+  const [loginData, setLoginData] = useState({ phone_number: '', password: '' });
   const [registerData, setRegisterData] = useState({
-    phone: '',
+    phone_number: '',
     password: '',
-    name: '',
+    full_name: '',
+    email: '',
     country: '',
     city: '',
-    gender: gender || 'male',
-    user_type: 'customer'
+    district: '',
+    gender: gender || 'male'
+  });
+  const [shopRegisterData, setShopRegisterData] = useState({
+    phone_number: '',
+    password: '',
+    owner_name: '',
+    shop_name: '',
+    email: '',
+    country: '',
+    city: '',
+    district: '',
+    shop_type: gender || 'male',
+    whatsapp_number: ''
   });
 
   const texts = {
@@ -35,19 +49,23 @@ const AuthPage = () => {
       phone: 'رقم الهاتف',
       password: 'كلمة المرور',
       name: 'الاسم الكامل',
+      ownerName: 'اسم صاحب الصالون',
+      shopName: 'اسم الصالون',
+      email: 'البريد الإلكتروني (اختياري)',
       country: 'الدولة',
       city: 'المدينة',
+      district: 'الحي (اختياري)',
       selectCountry: 'اختر الدولة',
       selectCity: 'اختر المدينة',
+      whatsapp: 'رقم واتساب',
       accountType: 'نوع الحساب',
       customer: 'زبون',
-      barber: 'حلاق',
-      salon: 'صالون نسائي',
+      barbershop: 'صالون / حلاق',
       loginBtn: 'دخول',
       registerBtn: 'إنشاء حساب',
-      noAccount: 'ليس لديك حساب؟',
-      hasAccount: 'لديك حساب؟',
-      back: 'رجوع'
+      back: 'رجوع',
+      asCustomer: 'كزبون',
+      asBarbershop: 'كصالون'
     },
     en: {
       login: 'Login',
@@ -55,19 +73,23 @@ const AuthPage = () => {
       phone: 'Phone Number',
       password: 'Password',
       name: 'Full Name',
+      ownerName: 'Owner Name',
+      shopName: 'Shop Name',
+      email: 'Email (optional)',
       country: 'Country',
       city: 'City',
+      district: 'District (optional)',
       selectCountry: 'Select Country',
       selectCity: 'Select City',
+      whatsapp: 'WhatsApp Number',
       accountType: 'Account Type',
       customer: 'Customer',
-      barber: 'Barber',
-      salon: 'Women Salon',
+      barbershop: 'Barbershop',
       loginBtn: 'Login',
       registerBtn: 'Create Account',
-      noAccount: "Don't have an account?",
-      hasAccount: 'Already have an account?',
-      back: 'Back'
+      back: 'Back',
+      asCustomer: 'As Customer',
+      asBarbershop: 'As Barbershop'
     }
   };
 
@@ -101,12 +123,12 @@ const AuthPage = () => {
     setIsLoading(true);
     try {
       const res = await axios.post(`${API}/auth/login`, loginData);
-      login(res.data.user, res.data.access_token);
+      login(res.data.user, res.data.access_token, res.data.user_type);
       toast.success(language === 'ar' ? 'تم تسجيل الدخول بنجاح' : 'Login successful');
       
-      if (res.data.user.user_type === 'admin') {
+      if (res.data.user_type === 'admin') {
         navigate('/admin');
-      } else if (res.data.user.user_type === 'barber' || res.data.user.user_type === 'salon') {
+      } else if (res.data.user_type === 'barbershop') {
         navigate('/dashboard');
       } else {
         navigate('/home');
@@ -118,23 +140,38 @@ const AuthPage = () => {
     }
   };
 
-  const handleRegister = async (e) => {
+  const handleRegisterUser = async (e) => {
     e.preventDefault();
-    if (!registerData.phone || !registerData.password || !registerData.name || !registerData.country || !registerData.city) {
-      toast.error(language === 'ar' ? 'يرجى ملء جميع الحقول' : 'Please fill all fields');
+    if (!registerData.phone_number || !registerData.password || !registerData.full_name || !registerData.country || !registerData.city) {
+      toast.error(language === 'ar' ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields');
       return;
     }
     setIsLoading(true);
     try {
       const res = await axios.post(`${API}/auth/register`, registerData);
-      login(res.data.user, res.data.access_token);
+      login(res.data.user, res.data.access_token, res.data.user_type);
       toast.success(language === 'ar' ? 'تم إنشاء الحساب بنجاح' : 'Account created successfully');
-      
-      if (res.data.user.user_type === 'barber' || res.data.user.user_type === 'salon') {
-        navigate('/profile-setup');
-      } else {
-        navigate('/home');
-      }
+      navigate('/home');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || (language === 'ar' ? 'فشل إنشاء الحساب' : 'Registration failed'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegisterBarbershop = async (e) => {
+    e.preventDefault();
+    if (!shopRegisterData.phone_number || !shopRegisterData.password || !shopRegisterData.owner_name || 
+        !shopRegisterData.shop_name || !shopRegisterData.country || !shopRegisterData.city) {
+      toast.error(language === 'ar' ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await axios.post(`${API}/auth/register-barbershop`, shopRegisterData);
+      login(res.data.user, res.data.access_token, res.data.user_type);
+      toast.success(language === 'ar' ? 'تم إنشاء حساب الصالون بنجاح' : 'Barbershop account created successfully');
+      navigate('/profile-setup');
     } catch (err) {
       toast.error(err.response?.data?.detail || (language === 'ar' ? 'فشل إنشاء الحساب' : 'Registration failed'));
     } finally {
@@ -208,8 +245,8 @@ const AuthPage = () => {
                     <Input
                       type="tel"
                       placeholder="+963 xxx xxx xxx"
-                      value={loginData.phone}
-                      onChange={(e) => setLoginData({ ...loginData, phone: e.target.value })}
+                      value={loginData.phone_number}
+                      onChange={(e) => setLoginData({ ...loginData, phone_number: e.target.value })}
                       className={`${inputClass} ${language === 'ar' ? 'pr-10' : 'pl-10'}`}
                       data-testid="login-phone"
                     />
@@ -244,120 +281,219 @@ const AuthPage = () => {
 
             {/* Register Form */}
             <TabsContent value="register">
-              <form onSubmit={handleRegister} className="space-y-5">
-                <div className="space-y-2">
-                  <Label className={labelClass}>{t.name}</Label>
-                  <div className="relative">
-                    <User className={`absolute ${language === 'ar' ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-5 h-5 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`} />
+              {/* Account Type Toggle */}
+              <div className="flex gap-2 mb-6">
+                <Button
+                  type="button"
+                  variant={authType === 'user' ? 'default' : 'outline'}
+                  onClick={() => setAuthType('user')}
+                  className={`flex-1 ${authType === 'user' ? (isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white') : ''}`}
+                >
+                  <User className="w-4 h-4 me-2" />
+                  {t.asCustomer}
+                </Button>
+                <Button
+                  type="button"
+                  variant={authType === 'barbershop' ? 'default' : 'outline'}
+                  onClick={() => setAuthType('barbershop')}
+                  className={`flex-1 ${authType === 'barbershop' ? (isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white') : ''}`}
+                >
+                  <Store className="w-4 h-4 me-2" />
+                  {t.asBarbershop}
+                </Button>
+              </div>
+
+              {/* User Registration */}
+              {authType === 'user' && (
+                <form onSubmit={handleRegisterUser} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className={labelClass}>{t.name} *</Label>
                     <Input
-                      type="text"
-                      placeholder={language === 'ar' ? 'أحمد محمد' : 'John Doe'}
-                      value={registerData.name}
-                      onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
-                      className={`${inputClass} ${language === 'ar' ? 'pr-10' : 'pl-10'}`}
+                      value={registerData.full_name}
+                      onChange={(e) => setRegisterData({ ...registerData, full_name: e.target.value })}
+                      className={inputClass}
                       data-testid="register-name"
                     />
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label className={labelClass}>{t.phone}</Label>
-                  <div className="relative">
-                    <Phone className={`absolute ${language === 'ar' ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-5 h-5 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`} />
+                  <div className="space-y-2">
+                    <Label className={labelClass}>{t.phone} *</Label>
                     <Input
                       type="tel"
-                      placeholder="+963 xxx xxx xxx"
-                      value={registerData.phone}
-                      onChange={(e) => setRegisterData({ ...registerData, phone: e.target.value })}
-                      className={`${inputClass} ${language === 'ar' ? 'pr-10' : 'pl-10'}`}
+                      value={registerData.phone_number}
+                      onChange={(e) => setRegisterData({ ...registerData, phone_number: e.target.value })}
+                      className={inputClass}
                       data-testid="register-phone"
                     />
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label className={labelClass}>{t.password}</Label>
-                  <div className="relative">
-                    <Lock className={`absolute ${language === 'ar' ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-5 h-5 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`} />
+                  <div className="space-y-2">
+                    <Label className={labelClass}>{t.password} *</Label>
                     <Input
                       type="password"
-                      placeholder="••••••••"
                       value={registerData.password}
                       onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
-                      className={`${inputClass} ${language === 'ar' ? 'pr-10' : 'pl-10'}`}
+                      className={inputClass}
                       data-testid="register-password"
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className={labelClass}>{t.country}</Label>
-                    <Select
-                      value={registerData.country}
-                      onValueChange={(val) => {
-                        setRegisterData({ ...registerData, country: val, city: '' });
-                        fetchCities(val);
-                      }}
-                    >
-                      <SelectTrigger className={inputClass} data-testid="register-country">
-                        <SelectValue placeholder={t.selectCountry} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {countries.map((c) => (
-                          <SelectItem key={c.code} value={c.code}>
-                            {language === 'ar' ? c.name : c.name_en}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className={labelClass}>{t.country} *</Label>
+                      <Select
+                        value={registerData.country}
+                        onValueChange={(val) => {
+                          setRegisterData({ ...registerData, country: val, city: '' });
+                          fetchCities(val);
+                        }}
+                      >
+                        <SelectTrigger className={inputClass}>
+                          <SelectValue placeholder={t.selectCountry} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {countries.map((c) => (
+                            <SelectItem key={c.code} value={c.code}>
+                              {language === 'ar' ? c.name : c.name_en}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className={labelClass}>{t.city} *</Label>
+                      <Select
+                        value={registerData.city}
+                        onValueChange={(val) => setRegisterData({ ...registerData, city: val })}
+                        disabled={!registerData.country}
+                      >
+                        <SelectTrigger className={inputClass}>
+                          <SelectValue placeholder={t.selectCity} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cities.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className={labelClass}>{t.city}</Label>
-                    <Select
-                      value={registerData.city}
-                      onValueChange={(val) => setRegisterData({ ...registerData, city: val })}
-                      disabled={!registerData.country}
-                    >
-                      <SelectTrigger className={inputClass} data-testid="register-city">
-                        <SelectValue placeholder={t.selectCity} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cities.map((c) => (
-                          <SelectItem key={c} value={c}>{c}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className={labelClass}>{t.accountType}</Label>
-                  <Select
-                    value={registerData.user_type}
-                    onValueChange={(val) => setRegisterData({ ...registerData, user_type: val })}
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className={`w-full ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
+                    data-testid="register-submit"
                   >
-                    <SelectTrigger className={inputClass} data-testid="register-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="customer">{t.customer}</SelectItem>
-                      {gender === 'male' && <SelectItem value="barber">{t.barber}</SelectItem>}
-                      {gender === 'female' && <SelectItem value="salon">{t.salon}</SelectItem>}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : t.registerBtn}
+                  </Button>
+                </form>
+              )}
 
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  className={`w-full ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
-                  data-testid="register-submit"
-                >
-                  {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : t.registerBtn}
-                </Button>
-              </form>
+              {/* Barbershop Registration */}
+              {authType === 'barbershop' && (
+                <form onSubmit={handleRegisterBarbershop} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className={labelClass}>{t.shopName} *</Label>
+                    <Input
+                      value={shopRegisterData.shop_name}
+                      onChange={(e) => setShopRegisterData({ ...shopRegisterData, shop_name: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className={labelClass}>{t.ownerName} *</Label>
+                    <Input
+                      value={shopRegisterData.owner_name}
+                      onChange={(e) => setShopRegisterData({ ...shopRegisterData, owner_name: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className={labelClass}>{t.phone} *</Label>
+                    <Input
+                      type="tel"
+                      value={shopRegisterData.phone_number}
+                      onChange={(e) => setShopRegisterData({ ...shopRegisterData, phone_number: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className={labelClass}>{t.password} *</Label>
+                    <Input
+                      type="password"
+                      value={shopRegisterData.password}
+                      onChange={(e) => setShopRegisterData({ ...shopRegisterData, password: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className={labelClass}>{t.whatsapp}</Label>
+                    <Input
+                      type="tel"
+                      value={shopRegisterData.whatsapp_number}
+                      onChange={(e) => setShopRegisterData({ ...shopRegisterData, whatsapp_number: e.target.value })}
+                      className={inputClass}
+                      placeholder="+963935964158"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className={labelClass}>{t.country} *</Label>
+                      <Select
+                        value={shopRegisterData.country}
+                        onValueChange={(val) => {
+                          setShopRegisterData({ ...shopRegisterData, country: val, city: '' });
+                          fetchCities(val);
+                        }}
+                      >
+                        <SelectTrigger className={inputClass}>
+                          <SelectValue placeholder={t.selectCountry} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {countries.map((c) => (
+                            <SelectItem key={c.code} value={c.code}>
+                              {language === 'ar' ? c.name : c.name_en}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className={labelClass}>{t.city} *</Label>
+                      <Select
+                        value={shopRegisterData.city}
+                        onValueChange={(val) => setShopRegisterData({ ...shopRegisterData, city: val })}
+                        disabled={!shopRegisterData.country}
+                      >
+                        <SelectTrigger className={inputClass}>
+                          <SelectValue placeholder={t.selectCity} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cities.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className={`w-full ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
+                  >
+                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : t.registerBtn}
+                  </Button>
+                </form>
+              )}
             </TabsContent>
           </Tabs>
         </div>

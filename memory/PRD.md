@@ -3,18 +3,6 @@
 ## Project Overview
 BARBER HUB is a global booking platform connecting barbers, salons, and customers. The platform features a gender-separated interface (Men/Women) with distinct themes.
 
-## Original Problem Statement
-منصة عالمية للحجوزات تربط الحلاقين والصالونات بالزبائن مع:
-- فصل كامل بين واجهات الرجال والنساء
-- نظام تسجيل برقم الهاتف
-- ملفات شخصية للحلاقين مع صور قبل/بعد
-- نظام حجز مواعيد
-- تقييم وترتيب
-- خريطة Google Maps
-- QR Code لكل صالون
-- لوحة تحكم للمدير
-- نظام دفع يدوي
-
 ## Architecture
 - **Frontend**: React 19 + Tailwind CSS + Shadcn UI
 - **Backend**: FastAPI (Python)
@@ -27,90 +15,95 @@ BARBER HUB is a global booking platform connecting barbers, salons, and customer
 3. **Salon (صالون نسائي)**: Female salon with profile
 4. **Admin (مدير)**: Platform administrator
 
-## Core Requirements (Static)
-- [x] Gender selection page (50/50 split)
-- [x] Phone number registration
-- [x] Barber/Salon profiles with services & prices
-- [x] Booking system with calendar
-- [x] Rating & review system
-- [x] QR Code generation for each salon
-- [x] Admin dashboard
-- [x] Manual payment page
-- [x] Multi-language support (AR/EN)
+## Core Features Implemented
 
-## Design Update (April 14, 2026)
-- Updated landing page with GENTLEMEN/LADIES split design (💈💅 emojis)
-- Added demo barber cards with TOP #1, #2, #3 ranking badges
-- Redesigned admin dashboard with "لوحة تحكم المدير الملكي 👑"
-- New payment page with 4 subscription packages (75€-175€)
-- Quick navigation buttons at bottom of all pages
-- Improved card design with 3-image gallery slots
+### Backend API Endpoints
 
-## What's Been Implemented (April 14, 2026)
+#### Authentication
+- `POST /api/auth/register` - User registration
+- `POST /api/auth/login` - Login (user/barber/admin)
+- `POST /api/auth/register-barbershop` - Barbershop registration with QR code
+- `GET /api/users/me` - Current user profile
 
-### Backend APIs
-- `/api/auth/register` - User registration
-- `/api/auth/login` - User login
-- `/api/auth/me` - Get current user
-- `/api/barbers` - List barbers
-- `/api/barbers/{id}` - Get barber profile
-- `/api/barbers/profile` - Create/Update barber profile
-- `/api/barbers/top/{gender}` - Top rated barbers
-- `/api/barbers/nearby` - Nearby barbers (location-based)
-- `/api/bookings` - Create/Get bookings
-- `/api/bookings/barber/{id}/schedule` - Get booked slots
-- `/api/reviews` - Create/Get reviews
-- `/api/reports` - Create reports
-- `/api/subscriptions/request` - Request subscription
-- `/api/admin/*` - Admin endpoints
-- `/api/locations/countries` - Get countries
-- `/api/locations/cities/{code}` - Get cities
+#### Barber Profiles (Compatibility Layer)
+- `GET /api/barbers/{id}` - Enriched barber profile (services, gallery, reviews aggregated)
+- `GET /api/barbers/profile/me` - Current barber's full profile
+- `POST /api/barbers/profile` - Create/update barber extended profile
+- `PUT /api/barbers/profile` - Update barber profile
+- `GET /api/barbers/top/{gender}` - Top rated barbers by gender
+- `GET /api/barbers/nearby` - Nearby barbers (location-based)
+- `GET /api/barbers` - List all barbers
+
+#### Barbershops (Original Endpoints)
+- `GET /api/barbershops` - List barbershops with filtering
+- `GET /api/barbershops/{id}` - Get barbershop details
+- `PUT /api/barbershops/me` - Update barbershop
+- `GET /api/barbershops/{id}/available-slots` - Available booking slots
+
+#### Services
+- `POST /api/barbershops/me/services` - Add service
+- `GET /api/barbershops/{id}/services` - List services
+- `DELETE /api/barbershops/me/services/{id}` - Delete service
+
+#### Gallery
+- `POST /api/barbershops/me/gallery` - Add gallery image (max 3)
+- `GET /api/barbershops/{id}/gallery` - Get gallery
+- `DELETE /api/barbershops/me/gallery/{id}` - Delete image
+
+#### Bookings
+- `POST /api/bookings` - Create booking (supports both old/new field names)
+- `GET /api/bookings/my` - My bookings
+- `GET /api/bookings/barber/{id}/schedule` - Barber's booked times
+- `GET /api/bookings/{id}` - Get booking details
+- `PUT /api/bookings/{id}/status` - Update status (confirm/complete/cancel)
+- `PUT /api/bookings/{id}/cancel` - Cancel booking
+- `DELETE /api/bookings/{id}` - Cancel booking (frontend compat)
+- `PUT /api/bookings/{id}/confirm` - Confirm booking
+- `PUT /api/bookings/{id}/complete` - Complete booking
+
+#### Reviews
+- `POST /api/reviews` - Create review (frontend compat)
+- `GET /api/reviews/barber/{id}` - Reviews by barber
+- `POST /api/bookings/{id}/review` - Review a booking
+- `GET /api/barbershops/{id}/reviews` - Shop reviews
+
+#### Admin
+- `GET /api/admin/stats` - Dashboard statistics
+- `GET /api/admin/users` - All users (customers + barbershops)
+- `GET /api/admin/subscriptions` - Pending subscriptions
+- `PUT /api/admin/subscriptions/{id}/approve` - Approve subscription
+- `GET /api/admin/reports` - Pending reports
+- `PUT /api/admin/reports/{id}/resolve` - Resolve report
+- `GET /api/admin/pending-barbershops` - Pending verification
+- `PUT /api/admin/barbershops/{id}/verify` - Verify barbershop
+
+#### Other
+- `POST /api/subscriptions` - Create subscription request
+- `POST /api/reports` - Create report
+- `POST /api/referrals/generate` - Generate referral code
+- `GET /api/referrals/my` - My referral stats
+- `GET /api/notifications/my` - My notifications
+- `GET /api/locations/countries` - Countries list (18 countries)
+- `GET /api/locations/cities/{code}` - Cities by country
 
 ### Frontend Pages
-- `GenderSelection.jsx` - 50/50 split entry page
+- `GenderSelection.jsx` - 50/50 split entry page (Men/Women)
 - `AuthPage.jsx` - Login/Register with phone
-- `HomePage.jsx` - Main listing page
-- `BarberProfile.jsx` - Detailed barber view
+- `HomePage.jsx` - Main listing page with search & filter
+- `BarberProfile.jsx` - Detailed barber view with QR code
 - `BookingPage.jsx` - 3-step booking flow
 - `TopBarbers.jsx` - Leaderboard
-- `MapPage.jsx` - Map view (pending API key)
-- `MyBookings.jsx` - Customer bookings
-- `BarberDashboard.jsx` - Barber management
-- `AdminDashboard.jsx` - Admin panel
-- `PaymentPage.jsx` - Manual payment instructions
-- `ProfileSetup.jsx` - Barber profile creation
-
-## Prioritized Backlog
-
-### P0 (Critical - Done)
-- [x] Gender selection & theme switching
-- [x] User authentication
-- [x] Barber listing & profiles
-- [x] Booking system
-- [x] Rating system
-
-### P1 (High Priority - Pending)
-- [ ] WhatsApp Business API integration (awaiting key)
-- [ ] Google Maps API integration (awaiting key)
-- [ ] Push notifications
-- [ ] Image upload for profiles
-
-### P2 (Medium Priority)
-- [ ] Referral system
-- [ ] Mini store feature (5 products)
-- [ ] Shipping integration
-- [ ] Advanced analytics
-
-### P3 (Low Priority)
-- [ ] Crypto payment option
-- [ ] Mobile app version
-- [ ] SMS notifications
+- `MapPage.jsx` - Map view (pending Google Maps API key)
+- `MyBookings.jsx` - Customer bookings with review capability
+- `BarberDashboard.jsx` - Barber management panel
+- `AdminDashboard.jsx` - Admin panel with subscription management
+- `PaymentPage.jsx` - Manual payment instructions (WhatsApp: +963 935 964 158)
+- `ProfileSetup.jsx` - Barber profile creation with services, gallery, hours
 
 ## Test Credentials
 - Admin: phone=`admin`, password=`admin123`
 
-## Next Tasks
-1. Add Google Maps API key for map functionality
-2. Add WhatsApp Business API for notifications
-3. Create sample barber profiles for demo
-4. Test complete booking flow end-to-end
+## Pending (Awaiting API Keys)
+- Google Maps API integration
+- WhatsApp Business API integration
+- Push notifications

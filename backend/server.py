@@ -1396,6 +1396,17 @@ async def resolve_report(report_id: str, action: str, admin: Dict = Depends(requ
 @api_router.get("/admin/subscriptions")
 async def get_admin_subscriptions(admin: Dict = Depends(require_admin), status: str = "pending"):
     subs = await db.subscriptions.find({"status": status}, {"_id": 0}).to_list(100)
+    
+    # Enrich with barbershop names
+    for sub in subs:
+        shop_id = sub.get('barbershop_id') or sub.get('user_id')
+        if shop_id:
+            shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "shop_name": 1, "owner_name": 1})
+            if shop:
+                sub['shop_name'] = shop.get('shop_name', '')
+                sub['owner_name'] = shop.get('owner_name', '')
+                sub['user_id'] = shop.get('shop_name', shop_id)
+    
     return subs
 
 @api_router.put("/admin/subscriptions/{sub_id}/approve")

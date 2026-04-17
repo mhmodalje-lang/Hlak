@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import axios from 'axios';
 import { ServicesManagement, SocialMediaManagement } from '@/components/DashboardExtras';
+import UsageStats from '@/components/UsageStats';
 import { 
   ArrowRight, ArrowLeft, Calendar, Clock, Star, 
   Check, X, Loader2, Settings, QrCode, Users,
@@ -378,6 +379,11 @@ const BarberDashboard = () => {
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <Package className={`w-5 h-5 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`} />
+
+        {/* AI Usage Stats */}
+        <UsageStats API={API} token={token} isMen={isMen} language={language} />
+
+        {/* Products Management */}
                         </div>
                       )}
                     </div>

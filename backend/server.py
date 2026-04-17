@@ -2807,7 +2807,7 @@ async def share_advice_whatsapp(payload: ShareWhatsAppRequest, entity: Dict = De
 
 # ============== AI TRY-ON ENDPOINTS (GEMINI NANO BANANA) ==============
 
-MAX_TRYON_ATTEMPTS_PER_BOOKING = 5
+MAX_TRYON_ATTEMPTS_PER_BOOKING = 1  # ONE-SHOT POLICY: Strictly 1 attempt per booking for cost efficiency
 
 @api_router.get("/ai-tryon/eligibility")
 async def ai_tryon_eligibility(entity: Dict = Depends(require_auth)):
@@ -3012,6 +3012,76 @@ async def get_tryon_presets(gender: str = "male", language: str = "en"):
         return []
     
     return get_preset_hairstyles(gender, language)
+
+
+# ============== ADMIN USAGE STATS ==============
+
+@api_router.get("/admin/usage-stats")
+async def get_usage_stats(entity: Dict = Depends(require_barbershop)):
+    """
+    Get AI usage statistics for monitoring API credits consumption.
+    Returns total AI Advisor calls and AI Try-On generations.
+    """
+    # Get all AI Advisor analyses
+    total_ai_advisor = await db.style_advices.count_documents({})
+    
+    # Get all AI Try-On generations
+    total_ai_tryon = await db.ai_tryon_sessions.count_documents({})
+    
+    # Get recent activity (last 30 days)
+    from datetime import timedelta
+    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    
+    recent_advisor = await db.style_advices.count_documents({
+        "created_at": {"$gte": thirty_days_ago}
+    })
+    
+    recent_tryon = await db.ai_tryon_sessions.count_documents({
+        "created_at": {"$gte": thirty_days_ago}
+    })
+    
+    # Get per-user breakdown (top 10 users)
+    advisor_pipeline = [
+        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]
+    
+    tryon_pipeline = [
+        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]
+    
+    top_advisor_users = await db.style_advices.aggregate(advisor_pipeline).to_list(10)
+    top_tryon_users = await db.ai_tryon_sessions.aggregate(tryon_pipeline).to_list(10)
+    
+    # Estimated cost (rough estimate)
+    # AI Advisor (GPT-5 Vision): ~$0.01 per call
+    # AI Try-On (Gemini Nano Banana): ~$0.005 per generation
+    estimated_cost = (total_ai_advisor * 0.01) + (total_ai_tryon * 0.005)
+    
+    return {
+        "total_api_calls": {
+            "ai_advisor": total_ai_advisor,
+            "ai_tryon": total_ai_tryon,
+            "total": total_ai_advisor + total_ai_tryon
+        },
+        "last_30_days": {
+            "ai_advisor": recent_advisor,
+            "ai_tryon": recent_tryon,
+            "total": recent_advisor + recent_tryon
+        },
+        "top_users": {
+            "ai_advisor": top_advisor_users,
+            "ai_tryon": top_tryon_users
+        },
+        "estimated_cost_usd": round(estimated_cost, 2),
+        "policy": {
+            "ai_advisor": "1 analysis per confirmed booking",
+            "ai_tryon": f"1 attempt per confirmed booking (ONE-SHOT POLICY)"
+        }
+    }
 
 
 # ============== ROOT ENDPOINT ==============

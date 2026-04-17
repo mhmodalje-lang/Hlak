@@ -932,13 +932,74 @@ async def delete_service(service_id: str, shop: Dict = Depends(require_barbersho
         raise HTTPException(status_code=404, detail="Service not found")
     return {"message": "Service deleted"}
 
+
+@api_router.put("/barbershops/me/services/{service_id}")
+async def update_service(service_id: str, service_data: ServiceCreate, shop: Dict = Depends(require_barbershop)):
+    """Update an existing service"""
+    update_dict = service_data.model_dump(exclude_none=True)
+    update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = await db.services.update_one(
+        {"id": service_id, "barbershop_id": shop['id']},
+        {"$set": update_dict},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Service not found")
+    updated = await db.services.find_one({"id": service_id}, {"_id": 0})
+    return updated
+
+
+class SocialMediaUpdate(BaseModel):
+    instagram: Optional[str] = None
+    tiktok: Optional[str] = None
+    facebook: Optional[str] = None
+    twitter: Optional[str] = None
+    snapchat: Optional[str] = None
+    youtube: Optional[str] = None
+    website: Optional[str] = None
+    whatsapp: Optional[str] = None
+
+
+@api_router.put("/barbershops/me/social")
+async def update_social_media(payload: SocialMediaUpdate, shop: Dict = Depends(require_barbershop)):
+    """Quick update of just the social media / contact fields."""
+    shop_id = shop['id']
+    data = payload.model_dump(exclude_none=True)
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Update both barbershops collection (legacy fields) and barber_profiles (new fields)
+    shop_update = {"updated_at": now}
+    if "instagram" in data: shop_update["instagram_url"] = data["instagram"]
+    if "tiktok" in data: shop_update["tiktok_url"] = data["tiktok"]
+    if "facebook" in data: shop_update["facebook"] = data["facebook"]
+    if "twitter" in data: shop_update["twitter"] = data["twitter"]
+    if "snapchat" in data: shop_update["snapchat"] = data["snapchat"]
+    if "youtube" in data: shop_update["youtube"] = data["youtube"]
+    if "whatsapp" in data: shop_update["whatsapp_number"] = data["whatsapp"]
+    if "website" in data: shop_update["website"] = data["website"]
+    await db.barbershops.update_one({"id": shop_id}, {"$set": shop_update})
+
+    profile_update = {"barbershop_id": shop_id, "updated_at": now, **data}
+    await db.barber_profiles.update_one(
+        {"barbershop_id": shop_id},
+        {"$set": profile_update},
+        upsert=True,
+    )
+    return {"message": "Social media updated", **data}
+
+
+@api_router.get("/barbershops/me/services")
+async def get_my_services(shop: Dict = Depends(require_barbershop)):
+    """List services owned by the authenticated salon"""
+    services = await db.services.find({"barbershop_id": shop['id']}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return services
+
 # ============== GALLERY ENDPOINTS ==============
 
 @api_router.post("/barbershops/me/gallery")
 async def add_gallery_image(image_data: GalleryImageCreate, shop: Dict = Depends(require_barbershop)):
     count = await db.gallery_images.count_documents({"barbershop_id": shop['id']})
-    if count >= 3:
-        raise HTTPException(status_code=400, detail="Maximum 3 gallery images allowed")
+    if count >= 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 gallery images allowed")
     
     image_id = str(uuid.uuid4())
     image_doc = {

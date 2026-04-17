@@ -205,7 +205,7 @@ const AIAdvisor = () => {
       {/* Header */}
       <div className={`sticky top-0 z-50 ${isMen ? 'glass-nav-men' : 'glass-nav-women'} px-4 py-4`}>
         <div className="container mx-auto flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`} data-testid="back-btn">
+          <button onClick={() => navigate(-1)} className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`} data-testid="back-btn">
             {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
           </button>
           <div className="flex-1">
@@ -238,7 +238,7 @@ const AIAdvisor = () => {
               {eligibility && !eligibility.eligible && !eligibility.has_saved_advice && (
                 <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }}
                   className={`p-8 rounded-3xl text-center ${isMen ? 'glass-card-men' : 'glass-card-women'}`}>
-                  <div className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-4 ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                  <div className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-4 ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                     <Lock className={`w-12 h-12 ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`} />
                   </div>
                   <h3 className={`text-2xl font-bold mb-3 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>{t.locked}</h3>
@@ -254,7 +254,7 @@ const AIAdvisor = () => {
                       { icon: Zap, label: language === 'ar' ? 'نتائج فورية' : 'Instant Results' },
                       { icon: Shield, label: language === 'ar' ? 'توصيات حصرية' : 'Exclusive Tips' },
                     ].map((f, i) => (
-                      <div key={i} className={`p-4 rounded-2xl opacity-60 ${isMen ? 'bg-[#1F1F1F]' : 'bg-white'}`}>
+                      <div key={i} className={`p-4 rounded-2xl opacity-60 ${isMen ? 'bg-[#2A1F14]' : 'bg-white'}`}>
                         <f.icon className={`w-6 h-6 mx-auto mb-2 ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`} />
                         <p className={`text-xs ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{f.label}</p>
                       </div>
@@ -285,7 +285,7 @@ const AIAdvisor = () => {
                   <div onClick={() => fileInputRef.current?.click()}
                     onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
                     onDragOver={(e) => e.preventDefault()}
-                    className={`${imagePreview ? '' : 'ai-scanner ' + (isMen ? '' : 'ai-scanner-women')} relative cursor-pointer rounded-2xl border-2 border-dashed p-6 flex flex-col items-center justify-center gap-3 min-h-[260px] ${isMen ? 'border-[#D4AF37]/40 bg-[#1F1F1F]/50' : 'border-[#B76E79]/40 bg-white/50'}`}>
+                    className={`${imagePreview ? '' : 'ai-scanner ' + (isMen ? '' : 'ai-scanner-women')} relative cursor-pointer rounded-2xl border-2 border-dashed p-6 flex flex-col items-center justify-center gap-3 min-h-[260px] ${isMen ? 'border-[#D4AF37]/40 bg-[#2A1F14]/50' : 'border-[#B76E79]/40 bg-white/50'}`}>
                     {imagePreview ? (
                       <>
                         {!analyzing && <div className="ai-scanner-line hidden"></div>}
@@ -389,13 +389,13 @@ const ResultView = ({ result, t, isMen, language, navigate, shareWhatsApp, downl
       {/* Face Analysis */}
       <div className={`p-6 rounded-3xl ${isMen ? 'glass-card-men' : 'glass-card-women'}`}>
         <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className={`p-4 rounded-xl ${isMen ? 'bg-[#1F1F1F]' : 'bg-white'}`}>
+          <div className={`p-4 rounded-xl ${isMen ? 'bg-[#2A1F14]' : 'bg-white'}`}>
             <div className={`text-xs mb-1 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.faceShape}</div>
             <div className={`text-xl font-bold ${isMen ? 'gradient-text-men' : 'gradient-text-women'}`}>
               {language === 'ar' ? (a.face_shape_ar || a.face_shape) : a.face_shape}
             </div>
           </div>
-          <div className={`p-4 rounded-xl ${isMen ? 'bg-[#1F1F1F]' : 'bg-white'}`}>
+          <div className={`p-4 rounded-xl ${isMen ? 'bg-[#2A1F14]' : 'bg-white'}`}>
             <div className={`text-xs mb-1 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.skinTone}</div>
             <div className={`text-xl font-bold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>{a.skin_tone}</div>
           </div>
@@ -423,8 +423,8 @@ const ResultView = ({ result, t, isMen, language, navigate, shareWhatsApp, downl
                 {language === 'ar' ? (s.description_ar || s.description) : s.description}
               </p>
               <div className="flex gap-2 flex-wrap">
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${isMen ? 'bg-[#262626] text-[#F3E5AB]' : 'bg-[#FAFAFA] text-[#9E5B66]'}`}>{t.difficulty}: {t.difficulties[s.difficulty] || s.difficulty}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${isMen ? 'bg-[#262626] text-[#F3E5AB]' : 'bg-[#FAFAFA] text-[#9E5B66]'}`}>{t.maintenance}: {t.maintenances[s.maintenance] || s.maintenance}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${isMen ? 'bg-[#3A2E1F] text-[#F3E5AB]' : 'bg-[#FAFAFA] text-[#9E5B66]'}`}>{t.difficulty}: {t.difficulties[s.difficulty] || s.difficulty}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${isMen ? 'bg-[#3A2E1F] text-[#F3E5AB]' : 'bg-[#FAFAFA] text-[#9E5B66]'}`}>{t.maintenance}: {t.maintenances[s.maintenance] || s.maintenance}</span>
               </div>
             </motion.div>
           ))}
@@ -476,7 +476,7 @@ const ResultView = ({ result, t, isMen, language, navigate, shareWhatsApp, downl
               <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
                 onClick={() => navigate(`/barber/${m.id}`)}
                 className={`p-4 rounded-2xl cursor-pointer flex items-center gap-3 ${isMen ? 'glass-card-men' : 'glass-card-women'}`}>
-                <div className={`w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                <div className={`w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                   {m.shop_logo ? <img src={m.shop_logo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">{isMen ? '💈' : '✨'}</div>}
                 </div>
                 <div className="flex-1 min-w-0">

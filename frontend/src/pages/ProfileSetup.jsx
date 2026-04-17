@@ -228,7 +228,7 @@ const ProfileSetup = () => {
   };
 
   const inputClass = isMen 
-    ? 'bg-[#1F1F1F] border-[#262626] text-white placeholder:text-[#94A3B8]' 
+    ? 'bg-[#2A1F14] border-[#3A2E1F] text-white placeholder:text-[#94A3B8]' 
     : 'bg-white border-[#E7E5E4] text-[#1C1917] placeholder:text-[#57534E]';
 
   const labelClass = isMen ? 'text-[#94A3B8]' : 'text-[#57534E]';
@@ -261,7 +261,7 @@ const ProfileSetup = () => {
         <div className="flex items-center gap-4 mb-8">
           <button
             onClick={() => navigate(-1)}
-            className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
+            className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
           >
             {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
           </button>
@@ -433,7 +433,7 @@ const ProfileSetup = () => {
             <p className={`text-sm mb-2 ${labelClass}`}>{t.defaultServices}:</p>
             <div className="flex flex-wrap gap-2 mb-4">
               {formData.services.map((s, i) => (
-                <span key={i} className={`px-3 py-1 rounded-full text-sm ${isMen ? 'bg-[#262626] text-white' : 'bg-[#E7E5E4] text-[#1C1917]'}`}>
+                <span key={i} className={`px-3 py-1 rounded-full text-sm ${isMen ? 'bg-[#3A2E1F] text-white' : 'bg-[#E7E5E4] text-[#1C1917]'}`}>
                   {language === 'ar' ? s.name_ar : s.name} - {s.price}€
                 </span>
               ))}
@@ -443,7 +443,7 @@ const ProfileSetup = () => {
             <p className={`text-sm mb-2 ${labelClass}`}>{t.customServices}:</p>
             <div className="space-y-2 mb-4">
               {formData.custom_services.map((s, i) => (
-                <div key={i} className={`flex items-center justify-between p-2 rounded ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                <div key={i} className={`flex items-center justify-between p-2 rounded ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                   <span className={isMen ? 'text-white' : 'text-[#1C1917]'}>
                     {language === 'ar' ? s.name_ar : s.name} - {s.price}€ ({s.duration_minutes}min)
                   </span>
@@ -491,7 +491,7 @@ const ProfileSetup = () => {
             
             <div className="space-y-4 mb-4">
               {formData.before_after_images.map((img, i) => (
-                <div key={i} className={`flex items-center gap-4 p-3 rounded ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                <div key={i} className={`flex items-center gap-4 p-3 rounded ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                   <div className="flex gap-2 flex-1">
                     <img src={img.before} alt="Before" className="w-16 h-16 object-cover rounded" />
                     <img src={img.after} alt="After" className="w-16 h-16 object-cover rounded" />

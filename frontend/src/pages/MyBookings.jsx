@@ -167,7 +167,7 @@ const MyBookings = () => {
         <div className="flex items-center gap-4 mb-8">
           <button
             onClick={() => navigate(-1)}
-            className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
+            className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
             data-testid="back-btn"
           >
             {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
@@ -208,11 +208,11 @@ const MyBookings = () => {
                 </div>
 
                 {/* Services */}
-                <div className={`p-3 rounded-lg mb-4 ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                <div className={`p-3 rounded-lg mb-4 ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                   <p className={`text-sm mb-2 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.services}:</p>
                   <div className="flex flex-wrap gap-2">
                     {booking.services?.map((s, i) => (
-                      <span key={i} className={`text-xs px-2 py-1 rounded ${isMen ? 'bg-[#262626] text-white' : 'bg-[#E7E5E4] text-[#1C1917]'}`}>
+                      <span key={i} className={`text-xs px-2 py-1 rounded ${isMen ? 'bg-[#3A2E1F] text-white' : 'bg-[#E7E5E4] text-[#1C1917]'}`}>
                         {language === 'ar' ? s.name_ar : s.name}
                       </span>
                     ))}
@@ -257,7 +257,7 @@ const MyBookings = () => {
           </div>
         ) : (
           <div className="text-center py-16">
-            <Calendar className={`w-16 h-16 mx-auto mb-4 ${isMen ? 'text-[#262626]' : 'text-[#E7E5E4]'}`} />
+            <Calendar className={`w-16 h-16 mx-auto mb-4 ${isMen ? 'text-[#3A2E1F]' : 'text-[#E7E5E4]'}`} />
             <p className={`text-xl ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
               {t.noBookings}
             </p>
@@ -267,7 +267,7 @@ const MyBookings = () => {
 
       {/* Review Dialog */}
       <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
-        <DialogContent className={isMen ? 'bg-[#141414] border-[#262626]' : 'bg-white border-[#E7E5E4]'}>
+        <DialogContent className={isMen ? 'bg-[#1A120A] border-[#3A2E1F]' : 'bg-white border-[#E7E5E4]'}>
           <DialogHeader>
             <DialogTitle className={isMen ? 'text-white' : 'text-[#1C1917]'}>
               {t.reviewTitle}
@@ -285,7 +285,7 @@ const MyBookings = () => {
                   <Star 
                     className={`w-8 h-8 ${star <= reviewRating 
                       ? (isMen ? 'text-[#D4AF37] fill-[#D4AF37]' : 'text-[#B76E79] fill-[#B76E79]')
-                      : (isMen ? 'text-[#262626]' : 'text-[#E7E5E4]')
+                      : (isMen ? 'text-[#3A2E1F]' : 'text-[#E7E5E4]')
                     }`}
                   />
                 </button>
@@ -297,7 +297,7 @@ const MyBookings = () => {
               value={reviewComment}
               onChange={(e) => setReviewComment(e.target.value)}
               placeholder={language === 'ar' ? 'اكتب تعليقك...' : 'Write your comment...'}
-              className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : 'bg-[#FAFAFA] border-[#E7E5E4] text-[#1C1917]'}
+              className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : 'bg-[#FAFAFA] border-[#E7E5E4] text-[#1C1917]'}
               rows={3}
             />
 

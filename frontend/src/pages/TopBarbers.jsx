@@ -69,7 +69,7 @@ const TopBarbers = () => {
     if (index === 0) return { bg: 'bg-gradient-to-r from-yellow-400 to-yellow-600', text: '🥇' };
     if (index === 1) return { bg: 'bg-gradient-to-r from-gray-300 to-gray-500', text: '🥈' };
     if (index === 2) return { bg: 'bg-gradient-to-r from-amber-600 to-amber-800', text: '🥉' };
-    return { bg: isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]', text: `#${index + 1}` };
+    return { bg: isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]', text: `#${index + 1}` };
   };
 
   return (
@@ -79,7 +79,7 @@ const TopBarbers = () => {
         <div className="flex items-center gap-4 mb-8">
           <button
             onClick={() => navigate(-1)}
-            className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
+            className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
             data-testid="back-btn"
           >
             {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
@@ -180,7 +180,7 @@ const TopBarbers = () => {
           </div>
         ) : (
           <div className="text-center py-16">
-            <Trophy className={`w-16 h-16 mx-auto mb-4 ${isMen ? 'text-[#262626]' : 'text-[#E7E5E4]'}`} />
+            <Trophy className={`w-16 h-16 mx-auto mb-4 ${isMen ? 'text-[#3A2E1F]' : 'text-[#E7E5E4]'}`} />
             <p className={`text-xl ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
               {t.noResults}
             </p>

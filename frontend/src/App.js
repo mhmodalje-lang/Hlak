@@ -3,6 +3,7 @@ import "@/App.css";
 import "@/premium.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
+import { detectLanguage, saveLanguage, isRTL } from "@/lib/i18n";
 
 // Pages
 import GenderSelection from "@/pages/GenderSelection";
@@ -65,12 +66,6 @@ function App() {
     else localStorage.removeItem('barber_hub_user_type');
   }, [userType]);
 
-  useEffect(() => {
-    localStorage.setItem('barber_hub_lang', language);
-    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
-    document.documentElement.lang = language;
-  }, [language]);
-
   const login = (userData, accessToken, type) => {
     setUser(userData);
     setToken(accessToken);
@@ -114,7 +109,7 @@ function App() {
 
   return (
     <AppContext.Provider value={contextValue}>
-      <div className={`App min-h-screen ${gender ? themeClass : ''}`} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className={`App min-h-screen ${gender ? themeClass : ''}`} dir={isRTL(language) ? 'rtl' : 'ltr'}>
         <BrowserRouter>
           <Routes>
             {/* Gender Selection - Entry Point */}

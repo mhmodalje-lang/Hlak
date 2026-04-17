@@ -61,7 +61,7 @@ const FavoritesPage = () => {
     <div className={`min-h-screen ${themeClass} ${isMen ? 'bg-luxury-men' : 'bg-luxury-women'}`} data-testid="favorites-page">
       <div className={`sticky top-0 z-50 ${isMen ? 'glass-nav-men' : 'glass-nav-women'} px-4 py-4`}>
         <div className="container mx-auto flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`} data-testid="back-btn">
+          <button onClick={() => navigate(-1)} className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`} data-testid="back-btn">
             {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
           </button>
           <h1 className={`text-xl font-bold ${isMen ? 'gradient-text-men' : 'gradient-text-women'}`}>
@@ -90,7 +90,7 @@ const FavoritesPage = () => {
                 className={`p-4 rounded-2xl ${isMen ? 'glass-card-men' : 'glass-card-women'} cursor-pointer`}
                 onClick={() => navigate(`/barber/${shop.id}`)}>
                 <div className="relative">
-                  <div className={`h-36 rounded-xl overflow-hidden ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                  <div className={`h-36 rounded-xl overflow-hidden ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                     {shop.before_after_images?.[0]?.after ? (
                       <img src={shop.before_after_images[0].after} className="w-full h-full object-cover" />
                     ) : shop.shop_logo ? (

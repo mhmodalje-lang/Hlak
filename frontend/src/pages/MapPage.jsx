@@ -131,7 +131,7 @@ const MapPage = () => {
       {/* Header */}
       <div className={`sticky top-0 z-[1000] ${isMen ? 'glass-nav-men' : 'glass-nav-women'} px-4 py-4`}>
         <div className="container mx-auto flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`} data-testid="back-btn">
+          <button onClick={() => navigate(-1)} className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`} data-testid="back-btn">
             {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
           </button>
           <div className="flex-1">
@@ -145,13 +145,13 @@ const MapPage = () => {
 
         {/* Search + Radius */}
         <div className="container mx-auto mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isMen ? 'bg-[#141414] border border-[#262626]' : 'bg-white border border-[#E7E5E4]'}`}>
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isMen ? 'bg-[#1A120A] border border-[#3A2E1F]' : 'bg-white border border-[#E7E5E4]'}`}>
             <Search className={`w-4 h-4 ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`} />
             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder={t.searchPlaceholder}
               className={`bg-transparent outline-none flex-1 text-sm ${isMen ? 'text-white placeholder:text-[#64748b]' : 'text-[#1C1917] placeholder:text-[#a8a29e]'}`}
             />
           </div>
-          <div className={`flex items-center gap-3 px-3 py-2 rounded-xl ${isMen ? 'bg-[#141414] border border-[#262626]' : 'bg-white border border-[#E7E5E4]'}`}>
+          <div className={`flex items-center gap-3 px-3 py-2 rounded-xl ${isMen ? 'bg-[#1A120A] border border-[#3A2E1F]' : 'bg-white border border-[#E7E5E4]'}`}>
             <span className={`text-xs font-medium ${isMen ? 'text-[#F3E5AB]' : 'text-[#9E5B66]'}`}>{t.radiusLabel}</span>
             <input type="range" min="5" max="500" step="5" value={maxDistance} onChange={e => setMaxDistance(Number(e.target.value))}
               className={`range-slider flex-1 ${isMen ? 'range-slider-men text-[#D4AF37]' : 'range-slider-women text-[#B76E79]'}`}
@@ -222,7 +222,7 @@ const MapPage = () => {
               className={`p-3 rounded-xl cursor-pointer ${isMen ? 'glass-card-men' : 'glass-card-women'} ${selectedShop?.id === shop.id ? (isMen ? 'ring-2 ring-[#D4AF37]' : 'ring-2 ring-[#B76E79]') : ''}`}
             >
               <div className="flex gap-3 items-center">
-                <div className={`w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                <div className={`w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                   {shop.shop_logo ? <img src={shop.shop_logo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">{isMen ? '💈' : '✨'}</div>}
                 </div>
                 <div className="flex-1 min-w-0">

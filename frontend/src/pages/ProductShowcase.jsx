@@ -237,7 +237,7 @@ const ProductShowcase = () => {
                 key={product.id}
                 className={`group rounded-3xl overflow-hidden border transition-all duration-300 hover:-translate-y-1 ${
                   isMen 
-                    ? 'bg-[#141414] border-[#262626] hover:border-yellow-500/30 hover:shadow-lg hover:shadow-yellow-500/5' 
+                    ? 'bg-[#1A120A] border-[#3A2E1F] hover:border-yellow-500/30 hover:shadow-lg hover:shadow-yellow-500/5' 
                     : 'bg-white border-gray-200 hover:border-rose-300 hover:shadow-xl'
                 }`}
                 data-testid={`product-card-${product.id}`}
@@ -250,7 +250,7 @@ const ProductShowcase = () => {
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     onError={(e) => { e.target.src = defaultImage; }}
                   />
-                  <div className={`absolute inset-0 ${isMen ? 'bg-gradient-to-t from-[#141414] to-transparent' : 'bg-gradient-to-t from-white/80 to-transparent'} opacity-60`} />
+                  <div className={`absolute inset-0 ${isMen ? 'bg-gradient-to-t from-[#1A120A] to-transparent' : 'bg-gradient-to-t from-white/80 to-transparent'} opacity-60`} />
                   
                   {/* Badges */}
                   <div className={`absolute top-3 ${language === 'ar' ? 'right-3' : 'left-3'} flex flex-col gap-2`}>

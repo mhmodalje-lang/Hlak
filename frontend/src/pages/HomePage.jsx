@@ -98,7 +98,11 @@ const HomePage = () => {
     } catch (e) { /* ignore */ }
   }, [API, token, isAuthenticated]);
 
-  useEffect(() => { fetchFavorites(); }, [fetchFavorites]);
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchFavorites();
+    }
+  }, [isAuthenticated, fetchFavorites]);
 
   const fetchBarbersAdvanced = useCallback(async () => {
     setIsLoading(true);
@@ -130,9 +134,11 @@ const HomePage = () => {
     }
   }, [API, gender, sortBy, searchQuery, selectedCity, selectedCountry, minRating, priceRange, userLocation, maxDistance]);
 
-  useEffect(() => { fetchBarbersAdvanced(); }, [fetchBarbersAdvanced]);
+  useEffect(() => {
+    fetchBarbersAdvanced();
+  }, [fetchBarbersAdvanced]);
 
-  const fetchLocations = async () => {
+  const fetchLocations = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/locations/countries`);
       setCountries(res.data.countries || []);
@@ -145,8 +151,11 @@ const HomePage = () => {
       }
       setCities([...new Set(allCities)]);
     } catch (err) { console.error(err); }
-  };
-  useEffect(() => { fetchLocations(); }, []);
+  }, [API]);
+
+  useEffect(() => {
+    fetchLocations();
+  }, [fetchLocations]);
 
   const toggleFavorite = async (e, shopId) => {
     e.stopPropagation();
@@ -240,7 +249,7 @@ const HomePage = () => {
                 <span className="truncate">{barber.city}{barber.district ? ` • ${barber.district}` : ''}</span>
               </p>
             </div>
-            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg flex-shrink-0 ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg flex-shrink-0 ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
               <Star className={`w-4 h-4 luxury-star ${isMen ? 'text-[#D4AF37] fill-[#D4AF37]' : 'text-[#B76E79] fill-[#B76E79]'}`} />
               <span className={`font-bold text-sm ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>{rating.toFixed(1)}</span>
               <span className={`text-[10px] ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>({barber.total_reviews || 0})</span>
@@ -251,13 +260,13 @@ const HomePage = () => {
             <div className="flex flex-wrap gap-1.5 mb-3">
               {barber.services.slice(0, 3).map((svc, i) => (
                 <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${
-                  isMen ? 'bg-[#1F1F1F] text-[#F3E5AB] border border-[#D4AF37]/20' : 'bg-[#FDF2F4] text-[#9E5B66] border border-[#B76E79]/20'
+                  isMen ? 'bg-[#2A1F14] text-[#F3E5AB] border border-[#D4AF37]/20' : 'bg-[#FDF2F4] text-[#9E5B66] border border-[#B76E79]/20'
                 }`}>
                   {language === 'ar' ? (svc.name_ar || svc.name) : svc.name}
                 </span>
               ))}
               {barber.services.length > 3 && (
-                <span className={`text-xs px-2 py-0.5 rounded-full ${isMen ? 'bg-[#1F1F1F] text-[#94A3B8]' : 'bg-[#FAFAFA] text-[#57534E]'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${isMen ? 'bg-[#2A1F14] text-[#94A3B8]' : 'bg-[#FAFAFA] text-[#57534E]'}`}>
                   +{barber.services.length - 3}
                 </span>
               )}
@@ -349,7 +358,7 @@ const HomePage = () => {
           </div>
 
           {isMenuOpen && (
-            <div className={`md:hidden mt-4 py-4 border-t ${isMen ? 'border-[#262626]' : 'border-[#E7E5E4]'}`}>
+            <div className={`md:hidden mt-4 py-4 border-t ${isMen ? 'border-[#3A2E1F]' : 'border-[#E7E5E4]'}`}>
               <div className="flex flex-col gap-3">
                 <Link to="/top-barbers" className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'} onClick={() => setIsMenuOpen(false)}>🏆 {isMen ? t.topBarbers : t.topSalons}</Link>
                 <Link to="/map" className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'} onClick={() => setIsMenuOpen(false)}>🗺️ {t.map}</Link>
@@ -413,7 +422,7 @@ const HomePage = () => {
                 <Input
                   type="text" placeholder={t.search} value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`${language === 'ar' ? 'pr-10' : 'pl-10'} h-11 ${isMen ? 'bg-[#141414] border-[#262626] text-white' : 'bg-white border-[#E7E5E4] text-[#1C1917]'}`}
+                  className={`${language === 'ar' ? 'pr-10' : 'pl-10'} h-11 ${isMen ? 'bg-[#1A120A] border-[#3A2E1F] text-white' : 'bg-white border-[#E7E5E4] text-[#1C1917]'}`}
                   data-testid="search-input"
                 />
               </div>
@@ -431,7 +440,7 @@ const HomePage = () => {
                   <div>
                     <label className={`text-xs font-medium mb-1 block ${isMen ? 'text-[#F3E5AB]' : 'text-[#9E5B66]'}`}>{t.sortBy}</label>
                     <Select value={sortBy} onValueChange={setSortBy}>
-                      <SelectTrigger className={isMen ? 'bg-[#141414] border-[#262626] text-white' : 'bg-white border-[#E7E5E4]'}><SelectValue /></SelectTrigger>
+                      <SelectTrigger className={isMen ? 'bg-[#1A120A] border-[#3A2E1F] text-white' : 'bg-white border-[#E7E5E4]'}><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="rating">⭐ {t.sortRating}</SelectItem>
                         <SelectItem value="distance" disabled={!userLocation}>📍 {t.sortDistance}</SelectItem>
@@ -443,7 +452,7 @@ const HomePage = () => {
                   <div>
                     <label className={`text-xs font-medium mb-1 block ${isMen ? 'text-[#F3E5AB]' : 'text-[#9E5B66]'}`}>🌍 {t.allCountries}</label>
                     <Select value={selectedCountry} onValueChange={setSelectedCountry}>
-                      <SelectTrigger className={isMen ? 'bg-[#141414] border-[#262626] text-white' : 'bg-white border-[#E7E5E4]'}><SelectValue placeholder={t.allCountries} /></SelectTrigger>
+                      <SelectTrigger className={isMen ? 'bg-[#1A120A] border-[#3A2E1F] text-white' : 'bg-white border-[#E7E5E4]'}><SelectValue placeholder={t.allCountries} /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">{t.allCountries}</SelectItem>
                         {countries.map(c => <SelectItem key={c.code} value={c.name}>{language === 'ar' ? (c.name_ar || c.name) : c.name}</SelectItem>)}
@@ -453,7 +462,7 @@ const HomePage = () => {
                   <div>
                     <label className={`text-xs font-medium mb-1 block ${isMen ? 'text-[#F3E5AB]' : 'text-[#9E5B66]'}`}>🏙️ {t.allCities}</label>
                     <Select value={selectedCity} onValueChange={setSelectedCity}>
-                      <SelectTrigger className={isMen ? 'bg-[#141414] border-[#262626] text-white' : 'bg-white border-[#E7E5E4]'}><SelectValue placeholder={t.allCities} /></SelectTrigger>
+                      <SelectTrigger className={isMen ? 'bg-[#1A120A] border-[#3A2E1F] text-white' : 'bg-white border-[#E7E5E4]'}><SelectValue placeholder={t.allCities} /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">{t.allCities}</SelectItem>
                         {cities.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -535,7 +544,7 @@ const HomePage = () => {
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {[...Array(8)].map((_, i) => (
-                <div key={i} className={`h-80 skeleton-card ${isMen ? 'bg-[#1F1F1F]/50' : 'bg-[#F5F5F4]'}`} />
+                <div key={i} className={`h-80 skeleton-card ${isMen ? 'bg-[#2A1F14]/50' : 'bg-[#F5F5F4]'}`} />
               ))}
             </div>
           ) : barbers.length > 0 ? (
@@ -554,7 +563,7 @@ const HomePage = () => {
         </div>
       </section>
 
-      <footer className={`py-10 border-t mt-8 ${isMen ? 'border-[#262626]' : 'border-[#E7E5E4]'}`}>
+      <footer className={`py-10 border-t mt-8 ${isMen ? 'border-[#3A2E1F]' : 'border-[#E7E5E4]'}`}>
         <div className="container mx-auto px-4 text-center">
           <div className="flex items-center justify-center gap-2 mb-3">
             {isMen ? <Scissors className="w-5 h-5 text-[#D4AF37]" /> : <Sparkles className="w-5 h-5 text-[#B76E79]" />}

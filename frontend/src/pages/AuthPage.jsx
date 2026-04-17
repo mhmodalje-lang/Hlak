@@ -180,7 +180,7 @@ const AuthPage = () => {
   };
 
   const inputClass = isMen 
-    ? 'bg-[#1F1F1F] border-[#262626] text-white placeholder:text-[#94A3B8] focus:border-[#D4AF37] focus:ring-[#D4AF37]/20' 
+    ? 'bg-[#2A1F14] border-[#3A2E1F] text-white placeholder:text-[#94A3B8] focus:border-[#D4AF37] focus:ring-[#D4AF37]/20' 
     : 'bg-white border-[#E7E5E4] text-[#1C1917] placeholder:text-[#57534E] focus:border-[#B76E79] focus:ring-[#B76E79]/20';
 
   const labelClass = isMen ? 'text-[#94A3B8]' : 'text-[#57534E]';
@@ -218,7 +218,7 @@ const AuthPage = () => {
         {/* Auth Card */}
         <div className={`${isMen ? 'card-men' : 'card-women'} p-8 animate-scale-in`}>
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className={`grid w-full grid-cols-2 mb-8 ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#F5F5F4]'}`}>
+            <TabsList className={`grid w-full grid-cols-2 mb-8 ${isMen ? 'bg-[#2A1F14]' : 'bg-[#F5F5F4]'}`}>
               <TabsTrigger 
                 value="login" 
                 className={`${isMen ? 'data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black' : 'data-[state=active]:bg-[#B76E79] data-[state=active]:text-white'}`}

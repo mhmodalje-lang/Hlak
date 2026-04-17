@@ -215,7 +215,7 @@ const BookingPage = () => {
   if (!barber) return null;
 
   const inputClass = isMen 
-    ? 'bg-[#1F1F1F] border-[#262626] text-white placeholder:text-[#94A3B8] focus:border-[#D4AF37]' 
+    ? 'bg-[#2A1F14] border-[#3A2E1F] text-white placeholder:text-[#94A3B8] focus:border-[#D4AF37]' 
     : 'bg-white border-[#E7E5E4] text-[#1C1917] placeholder:text-[#57534E] focus:border-[#B76E79]';
 
   return (
@@ -225,7 +225,7 @@ const BookingPage = () => {
         <div className="flex items-center gap-4 mb-8">
           <button
             onClick={() => step > 1 ? setStep(step - 1) : navigate(-1)}
-            className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
+            className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
             data-testid="back-btn"
           >
             {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
@@ -248,13 +248,13 @@ const BookingPage = () => {
                 className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
                   s <= step 
                     ? (isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white')
-                    : (isMen ? 'bg-[#1F1F1F] text-[#94A3B8]' : 'bg-[#FAFAFA] text-[#57534E]')
+                    : (isMen ? 'bg-[#2A1F14] text-[#94A3B8]' : 'bg-[#FAFAFA] text-[#57534E]')
                 }`}
               >
                 {s < step ? <Check className="w-5 h-5" /> : s}
               </div>
               {s < 3 && (
-                <div className={`w-12 h-1 rounded ${s < step ? (isMen ? 'bg-[#D4AF37]' : 'bg-[#B76E79]') : (isMen ? 'bg-[#262626]' : 'bg-[#E7E5E4]')}`} />
+                <div className={`w-12 h-1 rounded ${s < step ? (isMen ? 'bg-[#D4AF37]' : 'bg-[#B76E79]') : (isMen ? 'bg-[#3A2E1F]' : 'bg-[#E7E5E4]')}`} />
               )}
             </React.Fragment>
           ))}
@@ -274,7 +274,7 @@ const BookingPage = () => {
                   className={`flex items-center justify-between p-4 rounded-lg cursor-pointer transition-all ${
                     selectedServices.includes(service.name) || selectedServices.includes(service.name_ar)
                       ? (isMen ? 'bg-[#D4AF37]/20 border-2 border-[#D4AF37]' : 'bg-[#B76E79]/20 border-2 border-[#B76E79]')
-                      : (isMen ? 'bg-[#1F1F1F] hover:bg-[#262626]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F4]')
+                      : (isMen ? 'bg-[#2A1F14] hover:bg-[#3A2E1F]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F4]')
                   }`}
                   data-testid={`service-${i}`}
                 >
@@ -302,7 +302,7 @@ const BookingPage = () => {
 
             {/* Summary */}
             {selectedServices.length > 0 && (
-              <div className={`mt-6 p-4 rounded-lg ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+              <div className={`mt-6 p-4 rounded-lg ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                 <div className="flex justify-between mb-2">
                   <span className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.total}</span>
                   <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
@@ -367,7 +367,7 @@ const BookingPage = () => {
                       disabled={isBooked}
                       className={`time-slot ${isSelected ? 'selected' : ''} ${isBooked ? 'booked' : ''} ${
                         isMen 
-                          ? `${isSelected ? 'bg-[#D4AF37] text-black' : 'bg-[#1F1F1F] text-white'} border-[#262626]`
+                          ? `${isSelected ? 'bg-[#D4AF37] text-black' : 'bg-[#2A1F14] text-white'} border-[#3A2E1F]`
                           : `${isSelected ? 'bg-[#B76E79] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'} border-[#E7E5E4]`
                       }`}
                       data-testid={`time-${time}`}
@@ -444,7 +444,7 @@ const BookingPage = () => {
             </div>
 
             {/* Booking Summary */}
-            <div className={`mt-6 p-4 rounded-lg ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+            <div className={`mt-6 p-4 rounded-lg ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
               <h3 className={`font-semibold mb-3 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
                 {language === 'ar' ? 'ملخص الحجز' : 'Booking Summary'}
               </h3>
@@ -469,7 +469,7 @@ const BookingPage = () => {
                   </span>
                   <span className={isMen ? 'text-white' : 'text-[#1C1917]'}>{selectedServices.length}</span>
                 </div>
-                <div className={`flex justify-between pt-2 border-t ${isMen ? 'border-[#262626]' : 'border-[#E7E5E4]'}`}>
+                <div className={`flex justify-between pt-2 border-t ${isMen ? 'border-[#3A2E1F]' : 'border-[#E7E5E4]'}`}>
                   <span className={`font-semibold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>{t.total}</span>
                   <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
                     {totalPrice} {t.currency}

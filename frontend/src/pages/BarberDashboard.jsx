@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import axios from 'axios';
+import { ServicesManagement, SocialMediaManagement } from '@/components/DashboardExtras';
 import { 
   ArrowRight, ArrowLeft, Calendar, Clock, Star, 
   Check, X, Loader2, Settings, QrCode, Users,
@@ -266,7 +267,7 @@ const BarberDashboard = () => {
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/home')}
-              className={`p-2 rounded-full ${isMen ? 'bg-[#1F1F1F] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
+              className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
             >
               {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
             </button>
@@ -369,9 +370,9 @@ const BarberDashboard = () => {
           {products.length > 0 ? (
             <div className="space-y-3">
               {products.map((product) => (
-                <div key={product.id} className={`flex items-center justify-between p-3 rounded-xl ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                <div key={product.id} className={`flex items-center justify-between p-3 rounded-xl ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${isMen ? 'bg-[#262626]' : 'bg-[#E7E5E4]'}`}>
+                    <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${isMen ? 'bg-[#3A2E1F]' : 'bg-[#E7E5E4]'}`}>
                       {product.image_url ? (
                         <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
                       ) : (
@@ -390,7 +391,7 @@ const BarberDashboard = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>{product.price}€</span>
-                    <button onClick={() => openEditProduct(product)} className={`p-1.5 rounded-lg ${isMen ? 'hover:bg-[#262626] text-[#94A3B8]' : 'hover:bg-[#E7E5E4] text-[#57534E]'}`}>
+                    <button onClick={() => openEditProduct(product)} className={`p-1.5 rounded-lg ${isMen ? 'hover:bg-[#3A2E1F] text-[#94A3B8]' : 'hover:bg-[#E7E5E4] text-[#57534E]'}`}>
                       <Edit size={14} />
                     </button>
                     <button onClick={() => handleDeleteProduct(product.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500">
@@ -402,15 +403,18 @@ const BarberDashboard = () => {
             </div>
           ) : (
             <div className="text-center py-6">
-              <Package className={`w-10 h-10 mx-auto mb-2 ${isMen ? 'text-[#262626]' : 'text-[#E7E5E4]'}`} />
+              <Package className={`w-10 h-10 mx-auto mb-2 ${isMen ? 'text-[#3A2E1F]' : 'text-[#E7E5E4]'}`} />
               <p className={`text-sm ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.noProducts}</p>
             </div>
           )}
         </div>
 
         {/* Bookings Tabs */}
+        <ServicesManagement API={API} token={token} isMen={isMen} language={language} />
+        <SocialMediaManagement API={API} token={token} isMen={isMen} language={language} profile={profile} onUpdate={() => window.location.reload()} />
+
         <Tabs defaultValue="pending" className="w-full">
-          <TabsList className={`grid w-full grid-cols-3 mb-4 ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#F5F5F4]'}`}>
+          <TabsList className={`grid w-full grid-cols-3 mb-4 ${isMen ? 'bg-[#2A1F14]' : 'bg-[#F5F5F4]'}`}>
             <TabsTrigger value="pending" className={isMen ? 'data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black' : 'data-[state=active]:bg-[#B76E79] data-[state=active]:text-white'}>
               {t.pending} ({pendingBookings.length})
             </TabsTrigger>
@@ -446,7 +450,7 @@ const BarberDashboard = () => {
                         </div>
                         <div className="flex flex-wrap gap-2 mb-3">
                           {booking.services?.map((s, i) => (
-                            <span key={i} className={`text-xs px-2 py-1 rounded ${isMen ? 'bg-[#262626] text-white' : 'bg-[#E7E5E4] text-[#1C1917]'}`}>
+                            <span key={i} className={`text-xs px-2 py-1 rounded ${isMen ? 'bg-[#3A2E1F] text-white' : 'bg-[#E7E5E4] text-[#1C1917]'}`}>
                               {language === 'ar' ? s.name_ar : s.name}
                             </span>
                           ))}
@@ -478,7 +482,7 @@ const BarberDashboard = () => {
                   </div>
                 ) : (
                   <div className="text-center py-8">
-                    <Calendar className={`w-12 h-12 mx-auto mb-2 ${isMen ? 'text-[#262626]' : 'text-[#E7E5E4]'}`} />
+                    <Calendar className={`w-12 h-12 mx-auto mb-2 ${isMen ? 'text-[#3A2E1F]' : 'text-[#E7E5E4]'}`} />
                     <p className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.noBookings}</p>
                   </div>
                 )}
@@ -490,7 +494,7 @@ const BarberDashboard = () => {
 
       {/* Product Form Dialog */}
       <Dialog open={showProductForm} onOpenChange={setShowProductForm}>
-        <DialogContent className={`${isMen ? 'bg-[#141414] border-[#262626] text-white' : 'bg-white'} max-w-md`}>
+        <DialogContent className={`${isMen ? 'bg-[#1A120A] border-[#3A2E1F] text-white' : 'bg-white'} max-w-md`}>
           <DialogHeader>
             <DialogTitle>{editingProduct ? t.editProduct : t.addProduct}</DialogTitle>
           </DialogHeader>
@@ -501,7 +505,7 @@ const BarberDashboard = () => {
                 value={productForm.name}
                 onChange={(e) => setProductForm({...productForm, name: e.target.value})}
                 placeholder="Product name"
-                className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+                className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : ''}
                 data-testid="product-name-input"
               />
             </div>
@@ -512,7 +516,7 @@ const BarberDashboard = () => {
                 onChange={(e) => setProductForm({...productForm, name_ar: e.target.value})}
                 placeholder="اسم المنتج"
                 dir="rtl"
-                className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+                className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : ''}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -523,14 +527,14 @@ const BarberDashboard = () => {
                   value={productForm.price}
                   onChange={(e) => setProductForm({...productForm, price: e.target.value})}
                   placeholder="0"
-                  className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+                  className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : ''}
                   data-testid="product-price-input"
                 />
               </div>
               <div>
                 <label className={`text-sm font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productCategory}</label>
                 <Select value={productForm.category} onValueChange={(v) => setProductForm({...productForm, category: v})}>
-                  <SelectTrigger className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}>
+                  <SelectTrigger className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : ''}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -552,7 +556,7 @@ const BarberDashboard = () => {
                 value={productForm.description}
                 onChange={(e) => setProductForm({...productForm, description: e.target.value})}
                 placeholder="Product description"
-                className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+                className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : ''}
               />
             </div>
             <div>
@@ -561,7 +565,7 @@ const BarberDashboard = () => {
                 value={productForm.image_url}
                 onChange={(e) => setProductForm({...productForm, image_url: e.target.value})}
                 placeholder="https://..."
-                className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+                className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : ''}
               />
             </div>
             <div className="flex items-center gap-2">

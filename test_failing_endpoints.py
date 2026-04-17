@@ -7,7 +7,7 @@ import requests
 import json
 import uuid
 
-BASE_URL = "https://salon-connect-104.preview.emergentagent.com/api"
+BASE_URL = "https://tech-state-doc.preview.emergentagent.com/api"
 
 def test_review_and_subscription():
     # Register a new user

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import sys
 
 # Configuration
-BASE_URL = "https://salon-connect-104.preview.emergentagent.com/api"
+BASE_URL = "https://tech-state-doc.preview.emergentagent.com/api"
 ADMIN_PHONE = "admin"
 ADMIN_PASSWORD = "admin123"
 

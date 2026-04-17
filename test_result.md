@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "BARBER HUB - Global barber booking platform. Fix all API endpoint mismatches between frontend and backend to make the full platform functional."
+user_problem_statement: "BARBER HUB - Global barber booking platform. Seed data, ranking engine, functional booking with conflict prevention, WhatsApp integration, and admin dashboard."
 
 backend:
   - task: "Auth - User Registration"
@@ -113,12 +113,9 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "POST /api/auth/register endpoint implemented"
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - User registration working correctly. Successfully registers users with phone, password, name, gender, country, city. Returns JWT token and user data."
+        - comment: "✅ PASS - User registration working correctly."
 
   - task: "Auth - Login (user/barber/admin)"
     implemented: true
@@ -128,14 +125,11 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "POST /api/auth/login - supports user, barbershop, admin login"
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - Login working for all user types (user, barbershop, admin). Admin credentials (admin/admin123) working correctly."
+        - comment: "✅ PASS - Login working for all user types."
 
-  - task: "Auth - Barbershop Registration"
+  - task: "Seed Data Injection"
     implemented: true
     working: true
     file: "backend/server.py"
@@ -145,12 +139,12 @@ backend:
     status_history:
         - working: "NA"
         - agent: "main"
-        - comment: "POST /api/auth/register-barbershop with QR code generation"
+        - comment: "POST /api/seed - Creates 10 barbershops (5 male, 5 female) across 6 countries with services, reviews, profiles, and 2 fake bookings. Includes ranking tiers and verified statuses."
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - Barbershop registration working correctly. Creates barbershop with QR code, returns JWT token."
+        - comment: "✅ PASS - Seed data endpoint working correctly. Returns 10 barbershops with test credentials. Handles both new seeding and existing data scenarios."
 
-  - task: "Barber Profile - Get by ID"
+  - task: "WhatsApp Link Generator"
     implemented: true
     working: true
     file: "backend/server.py"
@@ -160,12 +154,12 @@ backend:
     status_history:
         - working: "NA"
         - agent: "main"
-        - comment: "GET /api/barbers/{id} - returns enriched profile with services, gallery, reviews"
+        - comment: "GET /api/generate-booking-link - Returns wa.me URL with pre-filled Arabic booking message. Parameters: shop_phone, customer_name, service, time, date, shop_name."
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - GET /api/barbers/{id} returns enriched profile data with salon_name, services, ratings, etc."
+        - comment: "✅ PASS - WhatsApp link generator working correctly. Generates valid wa.me URLs with Arabic booking messages including customer name, salon, service, date, and time."
 
-  - task: "Barber Profile - My Profile"
+  - task: "Enriched Barber Listing"
     implemented: true
     working: true
     file: "backend/server.py"
@@ -175,12 +169,27 @@ backend:
     status_history:
         - working: "NA"
         - agent: "main"
-        - comment: "GET /api/barbers/profile/me - barbershop auth required"
+        - comment: "GET /api/barbers - Returns enriched barber data with services, ratings, social links. Frontend now uses this instead of /api/barbershops."
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - GET /api/barbers/profile/me returns own profile with authentication check."
+        - comment: "✅ PASS - Enriched barber listing working perfectly. Returns 5 male/female shops with full enrichment (services array, ratings, social links, ranking tiers). Properly sorted by rating (highest first)."
 
-  - task: "Barber Profile - Create/Update"
+  - task: "Booking System with Conflict Prevention"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "main"
+        - comment: "Booking flow verified: 14:00 and 16:00 slots correctly grayed out for first salon on tomorrow's date. POST /api/bookings creates bookings, GET /api/bookings/barber/{id}/schedule returns booked_times."
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - Booking system with conflict prevention working correctly. GET /api/bookings/barber/{id}/schedule returns expected booked times [14:00, 16:00] for tomorrow's date on first male shop."
+
+  - task: "Ranking Engine"
     implemented: true
     working: true
     file: "backend/server.py"
@@ -190,70 +199,10 @@ backend:
     status_history:
         - working: "NA"
         - agent: "main"
-        - comment: "POST/PUT /api/barbers/profile - saves extended profile data"
+        - comment: "Salons sorted by rating (highest first), then by total_reviews. Top Ranked badge for > 4.5 stars, Featured badge for 4.0-4.5. ranking_tier computed on seed."
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - POST /api/barbers/profile successfully creates/updates profile with services, working hours, description."
-
-  - task: "Top Barbers"
-    implemented: true
-    working: true
-    file: "backend/server.py"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "GET /api/barbers/top/{gender} - returns ranked barbers"
-        - working: true
-        - agent: "testing"
-        - comment: "✅ PASS - GET /api/barbers/top/male returns list of top-rated barbers sorted by ranking score."
-
-  - task: "Booking System"
-    implemented: true
-    working: true
-    file: "backend/server.py"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "POST /api/bookings - supports both old and new field names. GET /api/bookings/my"
-        - working: true
-        - agent: "testing"
-        - comment: "✅ PASS - Booking creation and retrieval working. POST /api/bookings creates bookings, GET /api/bookings/my returns user bookings."
-
-  - task: "Booking Schedule"
-    implemented: true
-    working: true
-    file: "backend/server.py"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "GET /api/bookings/barber/{id}/schedule?date=YYYY-MM-DD - returns booked_times"
-        - working: true
-        - agent: "testing"
-        - comment: "✅ PASS - GET /api/bookings/barber/{id}/schedule returns booked times for specific date."
-
-  - task: "Booking Status Update"
-    implemented: true
-    working: true
-    file: "backend/server.py"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "PUT /api/bookings/{id}/status?status=confirmed|completed. DELETE /api/bookings/{id} for cancel"
-        - working: true
-        - agent: "testing"
-        - comment: "✅ PASS - Booking status updates working. PUT /api/bookings/{id}/status updates status, DELETE /api/bookings/{id} cancels booking."
+        - comment: "✅ PASS - Ranking engine working correctly. Shops properly sorted by rating (highest first). Ranking tiers assigned correctly: 'top' for 4.5+ stars, 'featured' for 4.0-4.5 stars."
 
   - task: "Reviews System"
     implemented: true
@@ -263,12 +212,9 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "POST /api/reviews, GET /api/reviews/barber/{id}"
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - Reviews system working. POST /api/reviews creates reviews, GET /api/reviews/barber/{id} retrieves reviews. Fixed ObjectId serialization issue."
+        - comment: "✅ PASS - Reviews system working. Seed data added 500+ reviews across 10 salons."
 
   - task: "Admin Dashboard APIs"
     implemented: true
@@ -278,12 +224,9 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "GET /api/admin/stats, /api/admin/users, /api/admin/subscriptions, /api/admin/reports"
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - All admin APIs working. Stats, users list, subscriptions, and reports endpoints all functional with admin authentication."
+        - comment: "✅ PASS - Admin APIs all working. Login: admin/admin123."
 
   - task: "Subscription System"
     implemented: true
@@ -293,12 +236,9 @@ backend:
     priority: "medium"
     needs_retesting: false
     status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "POST /api/subscriptions, PUT /api/admin/subscriptions/{id}/approve"
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - Subscription creation working. POST /api/subscriptions creates pending subscriptions. Fixed ObjectId serialization issue."
+        - comment: "✅ PASS"
 
   - task: "Location API"
     implemented: true
@@ -308,12 +248,9 @@ backend:
     priority: "medium"
     needs_retesting: false
     status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "GET /api/locations/countries, /api/locations/cities/{code}"
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - Location APIs working. Countries and cities endpoints return proper data for 18 countries including Syria."
+        - comment: "✅ PASS"
 
   - task: "Referral System"
     implemented: true
@@ -323,17 +260,14 @@ backend:
     priority: "low"
     needs_retesting: false
     status_history:
-        - working: "NA"
-        - agent: "main"
-        - comment: "POST /api/referrals/generate, GET /api/referrals/my"
         - working: true
         - agent: "testing"
-        - comment: "✅ PASS - Referral system working. POST /api/referrals/generate creates referral codes, GET /api/referrals/my retrieves user referral stats."
+        - comment: "✅ PASS"
 
 metadata:
   created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 2
+  version: "2.0"
+  test_sequence: 3
   run_ui: false
 
 test_plan:
@@ -344,6 +278,6 @@ test_plan:
 
 agent_communication:
     - agent: "main"
-    - message: "Complete backend rewrite with compatibility endpoints. All frontend API calls now have matching backend endpoints. Key changes: Added /api/barbers/{id}, /api/barbers/profile/me, /api/barbers/top/{gender}, /api/bookings/barber/{id}/schedule, /api/reviews, /api/admin/users, PUT /api/bookings/{id}/status, DELETE /api/bookings/{id}. Test credentials: admin/admin123. Please test all endpoints comprehensively."
+    - message: "Major update: Added seed data (10 salons, 500+ reviews, fake bookings), WhatsApp link generator, ranking engine. Frontend updated to use enriched /api/barbers endpoint with service tags and social links. Test credentials in /app/memory/test_credentials.md. Key new endpoints: POST /api/seed, GET /api/generate-booking-link, GET /api/barbers (enriched). Focus testing on these new endpoints. Admin: admin/admin123. Salon: 0935964158/salon123."
     - agent: "testing"
-    - message: "✅ COMPREHENSIVE BACKEND TESTING COMPLETED - All 24 API endpoints tested and working correctly. Fixed 2 critical ObjectId serialization issues in reviews and subscriptions endpoints. All authentication flows (user, barbershop, admin) working. All CRUD operations for bookings, reviews, profiles working. Admin dashboard APIs functional. Location and referral systems operational. Backend is fully functional and ready for production."
+    - message: "✅ ALL BACKEND TESTS PASSED (9/9) - All new endpoints working correctly: 1) Seed data injection creates/manages 10 barbershops with reviews and test credentials, 2) WhatsApp link generator produces valid wa.me URLs with Arabic messages, 3) Enriched barber listings return properly sorted shops with full service/social data, 4) Booking conflict prevention shows expected booked times, 5) Admin stats and reviews system working. Authentication working for both admin and salon owner. Ready for production."

@@ -8,7 +8,7 @@ import axios from 'axios';
 import { 
   Search, MapPin, Star, Clock, Scissors, Sparkles, 
   Crown, ArrowLeft, ArrowRight, User, LogOut, Menu, X,
-  Trophy, Calendar, Map
+  Trophy, Calendar, Map, Check, Instagram, MessageCircle
 } from 'lucide-react';
 
 const HomePage = () => {
@@ -79,12 +79,19 @@ const HomePage = () => {
   const fetchBarbers = async () => {
     setIsLoading(true);
     try {
-      const res = await axios.get(`${API}/barbershops`, {
-        params: { type: gender, limit: 20, sort_by: 'ranking_score' }
+      const res = await axios.get(`${API}/barbers`, {
+        params: { type: gender, limit: 30 }
       });
-      setBarbers(res.data);
-      // Top barbers are those with ranking_tier = 'top' or 'featured'
-      setTopBarbers(res.data.filter(b => b.ranking_tier === 'top' || b.ranking_tier === 'featured').slice(0, 5));
+      // Sort by rating (highest first), then by total_reviews
+      const sorted = [...res.data].sort((a, b) => {
+        if (b.rating !== a.rating) return (b.rating || 0) - (a.rating || 0);
+        return (b.total_reviews || 0) - (a.total_reviews || 0);
+      });
+      setBarbers(sorted);
+      // Top barbers: rating >= 4.5 OR ranking_tier = 'top' or 'featured'
+      setTopBarbers(sorted.filter(b => 
+        b.ranking_tier === 'top' || b.ranking_tier === 'featured' || (b.rating || b.ranking_score || 0) >= 4.5
+      ).slice(0, 5));
     } catch (err) {
       console.error('Failed to fetch barbers:', err);
     } finally {
@@ -114,53 +121,70 @@ const HomePage = () => {
     return matchesSearch && matchesCity;
   });
 
-  const BarberCard = ({ barber, index }) => (
+  const BarberCard = ({ barber, index }) => {
+    const barberRating = barber.rating || barber.ranking_score || 0;
+    const isTopRanked = barberRating >= 4.5;
+    const isFeatured = barber.ranking_tier === 'featured' || (barberRating >= 4.0 && barberRating < 4.5);
+    
+    return (
     <div 
-      className={`${isMen ? 'card-men' : 'card-women'} overflow-hidden animate-fade-in`}
+      className={`${isMen ? 'card-men' : 'card-women'} overflow-hidden animate-fade-in group`}
       style={{ animationDelay: `${index * 0.1}s` }}
       data-testid={`barber-card-${barber.id}`}
     >
       {/* Image */}
       <div className="relative h-48 overflow-hidden">
         <img 
-          src={barber.shop_logo || (isMen 
+          src={barber.logo_url || barber.shop_logo || (isMen 
             ? 'https://images.unsplash.com/photo-1764670687832-6dc25615fdf3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwxfHxiYXJiZXIlMjB0b29scyUyMHZpbnRhZ2V8ZW58MHx8fHwxNzc2MTY4NDUxfDA&ixlib=rb-4.1.0&q=85'
             : 'https://images.pexels.com/photos/7195799/pexels-photo-7195799.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940'
           )}
-          alt={barber.shop_name}
+          alt={barber.salon_name || barber.shop_name}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         />
-        {/* Badge */}
-        {barber.ranking_tier === 'top' && (
-          <div className="absolute top-3 left-3 badge-top flex items-center gap-1">
-            <Crown className="w-3 h-3" />
-            <span>{t.top}</span>
+        {/* Top Ranked Badge - Gold Crown for > 4.5 stars */}
+        {isTopRanked && (
+          <div className={`absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-lg ${
+            isMen ? 'bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB] text-black' : 'bg-gradient-to-r from-[#B76E79] to-[#D8A7B1] text-white'
+          }`}>
+            <Crown className="w-3.5 h-3.5" />
+            <span>{language === 'ar' ? 'الأفضل' : 'Top Ranked'}</span>
           </div>
         )}
-        {barber.ranking_tier === 'featured' && (
-          <div className="absolute top-3 left-3 badge-featured flex items-center gap-1">
-            <Star className="w-3 h-3" />
-            <span>{t.featured}</span>
+        {!isTopRanked && isFeatured && (
+          <div className={`absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${
+            isMen ? 'bg-[#1F1F1F]/80 text-[#D4AF37] border border-[#D4AF37]/50' : 'bg-white/80 text-[#B76E79] border border-[#B76E79]/50'
+          }`}>
+            <Star className="w-3 h-3 fill-current" />
+            <span>{language === 'ar' ? 'مميز' : 'Featured'}</span>
+          </div>
+        )}
+        {/* Verified Badge */}
+        {barber.is_verified && (
+          <div className={`absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center ${
+            isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white'
+          }`} title={language === 'ar' ? 'موثق' : 'Verified'}>
+            <Check className="w-4 h-4" strokeWidth={3} />
           </div>
         )}
       </div>
 
       {/* Content */}
       <div className="p-5">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h3 className={`text-lg font-bold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-              {barber.shop_name}
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex-1 min-w-0">
+            <h3 className={`text-lg font-bold truncate ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
+              {barber.salon_name || barber.shop_name}
             </h3>
             <p className={`text-sm flex items-center gap-1 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-              <MapPin className="w-3 h-3" />
-              {barber.city}, {barber.country}
+              <MapPin className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{barber.city}{barber.district ? ` - ${barber.district}` : ''}, {barber.country}</span>
             </p>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-shrink-0 ml-2">
             <Star className={`w-4 h-4 ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'} fill-current`} />
             <span className={`font-semibold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-              {barber.ranking_score?.toFixed(1) || '0.0'}
+              {barberRating.toFixed(1)}
             </span>
             <span className={`text-xs ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
               ({barber.total_reviews || 0})
@@ -169,11 +193,49 @@ const HomePage = () => {
         </div>
 
         {/* Description */}
-        {barber.description && (
-          <p className={`text-sm mb-4 line-clamp-2 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-            {barber.description}
+        {(barber.description || barber.description_ar) && (
+          <p className={`text-sm mb-3 line-clamp-2 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
+            {language === 'ar' ? (barber.description_ar || barber.description) : barber.description}
           </p>
         )}
+
+        {/* Services preview */}
+        {barber.services && barber.services.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {barber.services.slice(0, 3).map((svc, i) => (
+              <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${
+                isMen ? 'bg-[#1F1F1F] text-[#D4AF37] border border-[#262626]' : 'bg-[#FDF2F4] text-[#B76E79] border border-[#F5E1E5]'
+              }`}>
+                {language === 'ar' ? (svc.name_ar || svc.name) : svc.name}
+              </span>
+            ))}
+            {barber.services.length > 3 && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                isMen ? 'bg-[#1F1F1F] text-[#94A3B8]' : 'bg-[#FAFAFA] text-[#57534E]'
+              }`}>
+                +{barber.services.length - 3}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Social Links */}
+        <div className="flex items-center gap-2 mb-3">
+          {barber.whatsapp && (
+            <a href={`https://wa.me/${(barber.whatsapp || '').replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
+              className={`p-1.5 rounded-full transition-colors ${isMen ? 'bg-[#1F1F1F] text-green-500 hover:bg-green-500/20' : 'bg-[#FAFAFA] text-green-600 hover:bg-green-50'}`}
+              onClick={(e) => e.stopPropagation()}>
+              <MessageCircle className="w-3.5 h-3.5" />
+            </a>
+          )}
+          {barber.instagram && (
+            <a href={barber.instagram} target="_blank" rel="noreferrer"
+              className={`p-1.5 rounded-full transition-colors ${isMen ? 'bg-[#1F1F1F] text-pink-500 hover:bg-pink-500/20' : 'bg-[#FAFAFA] text-pink-600 hover:bg-pink-50'}`}
+              onClick={(e) => e.stopPropagation()}>
+              <Instagram className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
 
         {/* Action */}
         <Button
@@ -186,7 +248,8 @@ const HomePage = () => {
         </Button>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <div className={`min-h-screen ${themeClass}`} data-testid="home-page">

@@ -1589,6 +1589,555 @@ async def get_my_notifications(entity: Dict = Depends(require_auth)):
     ).sort("created_at", -1).limit(50).to_list(50)
     return notifications
 
+# ============== WHATSAPP LINK GENERATOR ==============
+
+@api_router.get("/generate-booking-link")
+async def generate_booking_link(
+    shop_phone: str,
+    customer_name: str,
+    service: str,
+    time: str,
+    date: str = "",
+    shop_name: str = ""
+):
+    """Generate WhatsApp booking confirmation link with pre-filled message"""
+    msg = (
+        f"حجز جديد من BARBER HUB 🏆\n"
+        f"الاسم: {customer_name}\n"
+        f"الصالون: {shop_name}\n"
+        f"الخدمة: {service}\n"
+        f"التاريخ: {date}\n"
+        f"الوقت: {time}\n"
+        f"---\n"
+        f"New Booking via Barber Hub"
+    )
+    import urllib.parse
+    encoded = urllib.parse.quote(msg)
+    clean_phone = ''.join(c for c in shop_phone if c.isdigit() or c == '+')
+    if clean_phone.startswith('+'):
+        clean_phone = clean_phone[1:]
+    return {
+        "url": f"https://wa.me/{clean_phone}?text={encoded}",
+        "message": msg,
+        "phone": clean_phone
+    }
+
+# ============== SEED DATA ==============
+
+@api_router.post("/seed")
+async def seed_database():
+    """Inject seed data: 10 salons (5 men, 5 women) with services, reviews, bookings"""
+    import random
+    
+    # Check if seed data already exists
+    existing_count = await db.barbershops.count_documents({})
+    if existing_count >= 10:
+        return {"message": "Seed data already exists", "barbershop_count": existing_count}
+    
+    # ===== MALE BARBERSHOPS (5) =====
+    male_shops = [
+        {
+            "owner_name": "أحمد الرجب",
+            "shop_name": "صالون الأناقة الملكية",
+            "description": "أفضل صالون حلاقة رجالي في المدينة - خبرة 15 عاماً في الحلاقة الاحترافية والعناية بالشعر واللحية",
+            "shop_type": "male",
+            "phone_number": "0935964158",
+            "password": "salon123",
+            "country": "سوريا",
+            "city": "الحسكة",
+            "district": "الناصرة",
+            "address": "شارع الكورنيش - مقابل حديقة المدينة",
+            "latitude": 36.4887,
+            "longitude": 40.7464,
+            "whatsapp_number": "+963935964158",
+            "instagram_url": "https://instagram.com/elite_barber_sy",
+            "tiktok_url": "https://tiktok.com/@elite_barber",
+            "target_rating": 4.9,
+            "target_reviews": 87,
+            "services": [
+                {"name": "Haircut", "name_ar": "قص شعر", "price": 10, "duration_minutes": 30, "category": "hair"},
+                {"name": "Beard Trim", "name_ar": "تشذيب اللحية", "price": 5, "duration_minutes": 15, "category": "beard"},
+                {"name": "Hair Color", "name_ar": "صبغة شعر", "price": 20, "duration_minutes": 45, "category": "color"},
+                {"name": "Full Package", "name_ar": "الباقة الكاملة", "price": 30, "duration_minutes": 60, "category": "package"},
+                {"name": "Kids Haircut", "name_ar": "قص شعر أطفال", "price": 7, "duration_minutes": 20, "category": "kids"},
+            ]
+        },
+        {
+            "owner_name": "محمد العلي",
+            "shop_name": "THE KING BARBER",
+            "description": "صالون ذا كينج - تصاميم عصرية وأحدث قصات الشعر العالمية مع خدمة VIP",
+            "shop_type": "male",
+            "phone_number": "07701234567",
+            "password": "salon123",
+            "country": "العراق",
+            "city": "بغداد",
+            "district": "الكرادة",
+            "address": "شارع أبو نواس - بناية المنصور",
+            "latitude": 33.3128,
+            "longitude": 44.3615,
+            "whatsapp_number": "+9647701234567",
+            "instagram_url": "https://instagram.com/theking_barber_iq",
+            "target_rating": 4.7,
+            "target_reviews": 65,
+            "services": [
+                {"name": "Classic Cut", "name_ar": "قصة كلاسيكية", "price": 8, "duration_minutes": 25, "category": "hair"},
+                {"name": "Modern Fade", "name_ar": "فيد عصري", "price": 12, "duration_minutes": 35, "category": "hair"},
+                {"name": "Hot Towel Shave", "name_ar": "حلاقة بالمنشفة الساخنة", "price": 10, "duration_minutes": 20, "category": "shave"},
+                {"name": "Hair Wash & Style", "name_ar": "غسل وتصفيف", "price": 6, "duration_minutes": 15, "category": "hair"},
+            ]
+        },
+        {
+            "owner_name": "Mehmet Yılmaz",
+            "shop_name": "ISTANBUL GENTLEMAN",
+            "description": "Turkish barber experience with traditional hot towel shaves and premium grooming",
+            "shop_type": "male",
+            "phone_number": "+905321234567",
+            "password": "salon123",
+            "country": "تركيا",
+            "city": "إسطنبول",
+            "district": "Beyoğlu",
+            "address": "İstiklal Caddesi No:42",
+            "latitude": 41.0337,
+            "longitude": 28.9784,
+            "whatsapp_number": "+905321234567",
+            "instagram_url": "https://instagram.com/istanbul_gentleman",
+            "target_rating": 4.5,
+            "target_reviews": 43,
+            "services": [
+                {"name": "Turkish Haircut", "name_ar": "قصة تركية", "price": 15, "duration_minutes": 30, "category": "hair"},
+                {"name": "Turkish Shave", "name_ar": "حلاقة تركية", "price": 12, "duration_minutes": 25, "category": "shave"},
+                {"name": "Face Mask", "name_ar": "ماسك الوجه", "price": 10, "duration_minutes": 20, "category": "skin"},
+                {"name": "Ear & Nose Wax", "name_ar": "شمع الأذن والأنف", "price": 5, "duration_minutes": 10, "category": "grooming"},
+            ]
+        },
+        {
+            "owner_name": "Ali Hassan",
+            "shop_name": "BERLIN CUTS",
+            "description": "Premium barbershop in Berlin - Arabic & German speaking. Spezialisiert auf moderne Herrenhaarschnitte",
+            "shop_type": "male",
+            "phone_number": "+491751234567",
+            "password": "salon123",
+            "country": "ألمانيا",
+            "city": "برلين",
+            "district": "Neukölln",
+            "address": "Sonnenallee 55",
+            "latitude": 52.4834,
+            "longitude": 13.4331,
+            "whatsapp_number": "+491751234567",
+            "instagram_url": "https://instagram.com/berlin_cuts",
+            "target_rating": 4.2,
+            "target_reviews": 31,
+            "services": [
+                {"name": "Herrenhaarschnitt", "name_ar": "قصة رجالية", "price": 25, "duration_minutes": 30, "category": "hair"},
+                {"name": "Bart Trimmen", "name_ar": "تشذيب اللحية", "price": 15, "duration_minutes": 15, "category": "beard"},
+                {"name": "Komplett Paket", "name_ar": "الباقة الكاملة", "price": 45, "duration_minutes": 60, "category": "package"},
+            ]
+        },
+        {
+            "owner_name": "خالد العتيبي",
+            "shop_name": "ROYAL GROOM الملكي",
+            "description": "أرقى صالون رجالي في الرياض - خدمات VIP وحجز خاص مع أفضل الحلاقين",
+            "shop_type": "male",
+            "phone_number": "+966551234567",
+            "password": "salon123",
+            "country": "السعودية",
+            "city": "الرياض",
+            "district": "العليا",
+            "address": "طريق الملك فهد - برج المملكة",
+            "latitude": 24.7113,
+            "longitude": 46.6742,
+            "whatsapp_number": "+966551234567",
+            "instagram_url": "https://instagram.com/royal_groom_sa",
+            "target_rating": 3.8,
+            "target_reviews": 22,
+            "services": [
+                {"name": "Royal Haircut", "name_ar": "القصة الملكية", "price": 50, "duration_minutes": 40, "category": "hair"},
+                {"name": "Beard Design", "name_ar": "تصميم اللحية", "price": 30, "duration_minutes": 25, "category": "beard"},
+                {"name": "VIP Package", "name_ar": "باقة VIP", "price": 100, "duration_minutes": 90, "category": "package"},
+                {"name": "Hair Treatment", "name_ar": "علاج الشعر", "price": 40, "duration_minutes": 30, "category": "treatment"},
+            ]
+        }
+    ]
+    
+    # ===== FEMALE SALONS (5) =====
+    female_shops = [
+        {
+            "owner_name": "فاطمة الأحمد",
+            "shop_name": "GLAMOUR صالون غلامور",
+            "description": "صالون نسائي فاخر - متخصصات في التسريحات العالمية والمكياج الاحترافي والعناية بالبشرة",
+            "shop_type": "female",
+            "phone_number": "+963991234567",
+            "password": "salon123",
+            "country": "سوريا",
+            "city": "دمشق",
+            "district": "المزة",
+            "address": "شارع الحمرا - بناية الياسمين",
+            "latitude": 33.5138,
+            "longitude": 36.2765,
+            "whatsapp_number": "+963991234567",
+            "instagram_url": "https://instagram.com/glamour_damascus",
+            "target_rating": 4.8,
+            "target_reviews": 95,
+            "services": [
+                {"name": "Bridal Package", "name_ar": "باقة العروس", "price": 150, "duration_minutes": 180, "category": "bridal"},
+                {"name": "Hair Style", "name_ar": "تسريحة شعر", "price": 25, "duration_minutes": 45, "category": "hair"},
+                {"name": "Makeup", "name_ar": "مكياج كامل", "price": 35, "duration_minutes": 60, "category": "makeup"},
+                {"name": "Manicure & Pedicure", "name_ar": "مانيكير وبديكير", "price": 20, "duration_minutes": 40, "category": "nails"},
+                {"name": "Facial Treatment", "name_ar": "علاج البشرة", "price": 30, "duration_minutes": 45, "category": "skin"},
+            ]
+        },
+        {
+            "owner_name": "نور الهاشمي",
+            "shop_name": "BEAUTY QUEEN ملكة الجمال",
+            "description": "أفضل صالون نسائي في عمّان - خدمات حصرية وأجواء راقية مع أحدث التقنيات",
+            "shop_type": "female",
+            "phone_number": "+962791234567",
+            "password": "salon123",
+            "country": "الأردن",
+            "city": "عمان",
+            "district": "عبدون",
+            "address": "شارع الملكة رانيا",
+            "latitude": 31.9539,
+            "longitude": 35.9106,
+            "whatsapp_number": "+962791234567",
+            "instagram_url": "https://instagram.com/beauty_queen_jo",
+            "target_rating": 4.6,
+            "target_reviews": 72,
+            "services": [
+                {"name": "Keratin Treatment", "name_ar": "علاج الكيراتين", "price": 60, "duration_minutes": 90, "category": "treatment"},
+                {"name": "Hair Highlights", "name_ar": "هايلايت الشعر", "price": 45, "duration_minutes": 60, "category": "color"},
+                {"name": "Blowout", "name_ar": "سشوار", "price": 15, "duration_minutes": 30, "category": "hair"},
+                {"name": "Eyebrow Threading", "name_ar": "رسم الحواجب", "price": 8, "duration_minutes": 15, "category": "eyebrows"},
+            ]
+        },
+        {
+            "owner_name": "Ayşe Demir",
+            "shop_name": "ROSE BEAUTY روز بيوتي",
+            "description": "Luxury women's salon in Istanbul - Expert hair care, bridal services, and skincare",
+            "shop_type": "female",
+            "phone_number": "+905551234567",
+            "password": "salon123",
+            "country": "تركيا",
+            "city": "إسطنبول",
+            "district": "Nişantaşı",
+            "address": "Abdi İpekçi Caddesi No:15",
+            "latitude": 41.0487,
+            "longitude": 28.9933,
+            "whatsapp_number": "+905551234567",
+            "instagram_url": "https://instagram.com/rose_beauty_ist",
+            "target_rating": 4.4,
+            "target_reviews": 55,
+            "services": [
+                {"name": "Luxury Hair Spa", "name_ar": "سبا الشعر الفاخر", "price": 40, "duration_minutes": 60, "category": "treatment"},
+                {"name": "Color & Style", "name_ar": "صبغة وتصفيف", "price": 55, "duration_minutes": 75, "category": "color"},
+                {"name": "Bridal Makeup", "name_ar": "مكياج عروس", "price": 80, "duration_minutes": 90, "category": "bridal"},
+                {"name": "Waxing Full Body", "name_ar": "إزالة شعر كامل", "price": 35, "duration_minutes": 60, "category": "wax"},
+            ]
+        },
+        {
+            "owner_name": "Sara Schmidt",
+            "shop_name": "ELEGANCE STUDIO أناقة",
+            "description": "Modernes Damenstudio in Berlin - Haarpflege, Styling und Make-up von Profis",
+            "shop_type": "female",
+            "phone_number": "+491761234567",
+            "password": "salon123",
+            "country": "ألمانيا",
+            "city": "برلين",
+            "district": "Mitte",
+            "address": "Friedrichstraße 100",
+            "latitude": 52.5244,
+            "longitude": 13.3884,
+            "whatsapp_number": "+491761234567",
+            "instagram_url": "https://instagram.com/elegance_berlin",
+            "target_rating": 4.1,
+            "target_reviews": 28,
+            "services": [
+                {"name": "Hairstyling", "name_ar": "تصفيف الشعر", "price": 35, "duration_minutes": 40, "category": "hair"},
+                {"name": "Balayage", "name_ar": "بالاياج", "price": 80, "duration_minutes": 90, "category": "color"},
+                {"name": "Professionelles Makeup", "name_ar": "مكياج احترافي", "price": 50, "duration_minutes": 45, "category": "makeup"},
+            ]
+        },
+        {
+            "owner_name": "مريم السعيد",
+            "shop_name": "DIAMOND LADIES دايموند",
+            "description": "صالون نسائي في دبي - نجمات ومشاهير - خدمات VIP مع أفخم المنتجات العالمية",
+            "shop_type": "female",
+            "phone_number": "+971501234567",
+            "password": "salon123",
+            "country": "الإمارات",
+            "city": "دبي",
+            "district": "جميرا",
+            "address": "شارع الجميرا بيتش - برج الأميرة",
+            "latitude": 25.2048,
+            "longitude": 55.2708,
+            "whatsapp_number": "+971501234567",
+            "instagram_url": "https://instagram.com/diamond_ladies_dxb",
+            "target_rating": 3.5,
+            "target_reviews": 18,
+            "services": [
+                {"name": "Diamond Facial", "name_ar": "علاج الألماس للبشرة", "price": 120, "duration_minutes": 60, "category": "skin"},
+                {"name": "Full Bridal", "name_ar": "باقة العروس الكاملة", "price": 500, "duration_minutes": 240, "category": "bridal"},
+                {"name": "Lash Extensions", "name_ar": "رموش صناعية", "price": 60, "duration_minutes": 45, "category": "lashes"},
+                {"name": "Gel Nails", "name_ar": "أظافر جل", "price": 40, "duration_minutes": 45, "category": "nails"},
+            ]
+        }
+    ]
+    
+    all_shops = male_shops + female_shops
+    created_shops = []
+    
+    # Positive Arabic review comments
+    positive_comments = [
+        "خدمة ممتازة وراقية! أنصح الجميع بزيارة هذا الصالون",
+        "أفضل حلاق زرته في حياتي، احترافية عالية",
+        "نتيجة رائعة والأسعار مناسبة جداً",
+        "أجواء مريحة وطاقم عمل محترف",
+        "تجربة فاخرة من البداية للنهاية",
+        "أنا زبون دائم هنا منذ سنوات، لا يخيّب الظن أبداً",
+        "قصة شعر مثالية! سأعود بالتأكيد",
+        "أحببت الاهتمام بالتفاصيل والنظافة",
+        "خدمة سريعة وجودة ممتازة",
+        "أفضل صالون في المنطقة بلا منازع",
+        "Excellent service! Best barber I've been to",
+        "Amazing experience, very professional staff",
+        "Perfect haircut every single time",
+        "Great atmosphere and reasonable prices",
+        "Highly recommended! 5 stars well deserved",
+        "The best barbershop in the city, period.",
+        "العناية بالتفاصيل رائعة، شكراً",
+        "صالون راقي جداً وأسعار معقولة",
+        "تعامل محترم وخدمة سريعة ونتيجة مبهرة",
+        "أنصح الكل يجرب هالصالون 💯",
+    ]
+    
+    # Some neutral/negative comments for realism
+    mixed_comments = [
+        "خدمة جيدة لكن الانتظار طويل أحياناً",
+        "الأسعار مرتفعة قليلاً مقارنة بالمنطقة",
+        "Good but could be better with the waiting time",
+        "Average experience, nothing special"
+    ]
+    
+    # Create fake user for reviews
+    review_user_names = [
+        "عمر المحمد", "سارة الحسن", "أحمد خليل", "فاطمة نور", "ياسر العبد",
+        "رنا إبراهيم", "محمود الشامي", "ليلى حسين", "طارق الرشيد", "هدى العلي",
+        "John Smith", "Emma Wilson", "Max Müller", "Ali Özcan", "Fatma Demir",
+        "بسام الكردي", "نادية الصالح", "زياد حمود", "عبير القاسم", "وسام الدين"
+    ]
+    
+    for shop_data in all_shops:
+        shop_id = str(uuid.uuid4())
+        target_rating = shop_data.pop("target_rating")
+        target_reviews = shop_data.pop("target_reviews")
+        services_data = shop_data.pop("services")
+        raw_password = shop_data.pop("password")
+        
+        qr_code_data = f"https://barberhub.com/shop/{shop_id}"
+        qr_code = generate_qr_code(qr_code_data)
+        
+        # Determine ranking tier based on rating
+        ranking_tier = "normal"
+        if target_rating >= 4.5 and target_reviews >= 50:
+            ranking_tier = "top"
+        elif target_rating >= 4.0 and target_reviews >= 20:
+            ranking_tier = "featured"
+        
+        shop_doc = {
+            "id": shop_id,
+            "owner_name": shop_data["owner_name"],
+            "shop_name": shop_data["shop_name"],
+            "shop_logo": None,
+            "description": shop_data["description"],
+            "shop_type": shop_data["shop_type"],
+            "phone_number": shop_data["phone_number"],
+            "password": hash_password(raw_password),
+            "email": None,
+            "country": shop_data["country"],
+            "city": shop_data["city"],
+            "district": shop_data.get("district"),
+            "address": shop_data.get("address"),
+            "latitude": shop_data.get("latitude"),
+            "longitude": shop_data.get("longitude"),
+            "whatsapp_number": shop_data.get("whatsapp_number"),
+            "instagram_url": shop_data.get("instagram_url"),
+            "tiktok_url": shop_data.get("tiktok_url"),
+            "website_url": None,
+            "qr_code": qr_code,
+            "subscription_status": "active" if target_rating >= 4.5 else "inactive",
+            "subscription_expiry": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat() if target_rating >= 4.5 else None,
+            "ranking_score": target_rating,
+            "ranking_tier": ranking_tier,
+            "is_verified": target_rating >= 4.0,
+            "total_reviews": target_reviews,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Check if phone exists
+        existing = await db.barbershops.find_one({"phone_number": shop_data["phone_number"]})
+        if existing:
+            created_shops.append({"id": existing["id"], "name": shop_data["shop_name"], "status": "already_exists"})
+            continue
+            
+        await db.barbershops.insert_one(shop_doc)
+        
+        # Create services
+        for svc in services_data:
+            svc_doc = {
+                "id": str(uuid.uuid4()),
+                "barbershop_id": shop_id,
+                "name": svc["name"],
+                "name_ar": svc["name_ar"],
+                "description": "",
+                "price": float(svc["price"]),
+                "duration_minutes": int(svc["duration_minutes"]),
+                "category": svc.get("category", "default"),
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.services.insert_one(svc_doc)
+        
+        # Create extended barber profile
+        profile_doc = {
+            "barbershop_id": shop_id,
+            "salon_name": shop_data["shop_name"],
+            "salon_name_ar": shop_data["shop_name"],
+            "description": shop_data["description"],
+            "description_ar": shop_data["description"],
+            "logo_url": None,
+            "whatsapp": shop_data.get("whatsapp_number", ""),
+            "instagram": shop_data.get("instagram_url", ""),
+            "tiktok": shop_data.get("tiktok_url", ""),
+            "address": shop_data.get("address", ""),
+            "neighborhood": shop_data.get("district", ""),
+            "average_service_time": 30,
+            "services": services_data,
+            "custom_services": [],
+            "before_after_images": [],
+            "working_hours": {
+                "sunday": {"start": "09:00", "end": "21:00"},
+                "monday": {"start": "09:00", "end": "21:00"},
+                "tuesday": {"start": "09:00", "end": "21:00"},
+                "wednesday": {"start": "09:00", "end": "21:00"},
+                "thursday": {"start": "09:00", "end": "21:00"},
+                "friday": {"start": "10:00", "end": "22:00"},
+                "saturday": {"start": "10:00", "end": "22:00"}
+            },
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        existing_profile = await db.barber_profiles.find_one({"barbershop_id": shop_id})
+        if not existing_profile:
+            await db.barber_profiles.insert_one(profile_doc)
+        
+        # Create reviews
+        num_reviews = target_reviews
+        for i in range(num_reviews):
+            # Weight ratings toward the target
+            if target_rating >= 4.5:
+                rating = random.choices([5, 4, 3], weights=[70, 25, 5])[0]
+            elif target_rating >= 4.0:
+                rating = random.choices([5, 4, 3, 2], weights=[50, 35, 10, 5])[0]
+            elif target_rating >= 3.5:
+                rating = random.choices([5, 4, 3, 2, 1], weights=[30, 30, 25, 10, 5])[0]
+            else:
+                rating = random.choices([5, 4, 3, 2, 1], weights=[15, 25, 30, 20, 10])[0]
+            
+            comment = random.choice(positive_comments if rating >= 4 else mixed_comments)
+            reviewer_name = random.choice(review_user_names)
+            
+            days_ago = random.randint(1, 180)
+            review_date = datetime.now(timezone.utc) - timedelta(days=days_ago)
+            
+            review_doc = {
+                "id": str(uuid.uuid4()),
+                "booking_id": None,
+                "user_id": str(uuid.uuid4()),
+                "user_name": reviewer_name,
+                "customer_name": reviewer_name,
+                "barbershop_id": shop_id,
+                "rating": rating,
+                "comment": comment,
+                "created_at": review_date.isoformat()
+            }
+            await db.reviews.insert_one(review_doc)
+        
+        created_shops.append({
+            "id": shop_id,
+            "name": shop_data["shop_name"],
+            "type": shop_data["shop_type"],
+            "city": shop_data["city"],
+            "country": shop_data["country"],
+            "rating": target_rating,
+            "reviews": target_reviews,
+            "ranking_tier": ranking_tier,
+            "phone": shop_data["phone_number"],
+            "password": raw_password,
+            "status": "created"
+        })
+    
+    # Create 2 fake bookings for the first male shop (conflict testing)
+    if created_shops and created_shops[0].get("status") == "created":
+        first_shop_id = created_shops[0]["id"]
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        fake_bookings = [
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": str(uuid.uuid4()),
+                "barbershop_id": first_shop_id,
+                "barbershop_name": created_shops[0]["name"],
+                "service_id": None,
+                "service_name": "قص شعر",
+                "booking_date": tomorrow,
+                "start_time": "14:00",
+                "end_time": "14:30",
+                "status": "confirmed",
+                "customer_name": "زبون تجريبي ١",
+                "user_phone_for_notification": "+963900000001",
+                "notes": "حجز تجريبي",
+                "services": [{"name": "Haircut", "name_ar": "قص شعر", "price": 10}],
+                "total_price": 10,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": str(uuid.uuid4()),
+                "barbershop_id": first_shop_id,
+                "barbershop_name": created_shops[0]["name"],
+                "service_id": None,
+                "service_name": "تشذيب اللحية",
+                "booking_date": tomorrow,
+                "start_time": "16:00",
+                "end_time": "16:30",
+                "status": "pending",
+                "customer_name": "زبون تجريبي ٢",
+                "user_phone_for_notification": "+963900000002",
+                "notes": "",
+                "services": [{"name": "Beard Trim", "name_ar": "تشذيب اللحية", "price": 5}],
+                "total_price": 5,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        ]
+        
+        for booking in fake_bookings:
+            await db.bookings.insert_one(booking)
+    
+    return {
+        "message": "Seed data created successfully!",
+        "shops_created": len([s for s in created_shops if s.get("status") == "created"]),
+        "shops": created_shops,
+        "fake_bookings": 2,
+        "test_credentials": {
+            "admin": {"phone": "admin", "password": "admin123"},
+            "salon_owner_1": {"phone": "0935964158", "password": "salon123", "name": "صالون الأناقة الملكية"},
+            "all_salon_password": "salon123"
+        }
+    }
+
 # ============== ROOT ENDPOINT ==============
 
 @api_router.get("/")

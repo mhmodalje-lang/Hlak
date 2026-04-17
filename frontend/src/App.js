@@ -33,7 +33,13 @@ function App() {
   });
   const [token, setToken] = useState(() => localStorage.getItem('barber_hub_token') || null);
   const [userType, setUserType] = useState(() => localStorage.getItem('barber_hub_user_type') || null);
-  const [language, setLanguage] = useState(() => localStorage.getItem('barber_hub_lang') || 'ar');
+  const [language, setLanguage] = useState(() => {
+    const saved = localStorage.getItem('barber_hub_lang');
+    if (saved) return saved;
+    // Auto-detect language from browser
+    const browserLang = navigator.language || navigator.userLanguage || 'ar';
+    return browserLang.startsWith('ar') ? 'ar' : 'en';
+  });
 
   useEffect(() => {
     if (gender) localStorage.setItem('barber_hub_gender', gender);

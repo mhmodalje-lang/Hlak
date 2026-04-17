@@ -6,9 +6,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, Lock, Unlock, Camera, Upload, Loader2, ArrowRight, ArrowLeft,
   Scissors, Crown, Star, MapPin, MessageCircle, Share2, CheckCircle2, Download,
-  Brain, Zap, Award, Shield, X
+  Brain, Zap, Award, Shield, X, Wand2
 } from 'lucide-react';
 import { toast } from 'sonner';
+import AITryOn from '@/components/AITryOn';
 
 const AIAdvisor = () => {
   const navigate = useNavigate();
@@ -22,7 +23,8 @@ const AIAdvisor = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [savedAdvices, setSavedAdvices] = useState([]);
-  const [viewMode, setViewMode] = useState('analyze'); // analyze | saved
+  const [viewMode, setViewMode] = useState('analyze'); // analyze | saved | tryon
+  const [tryonEligibility, setTryonEligibility] = useState(null);
 
   const t = language === 'ar' ? {
     title: 'المستشار الذكي للجمال',
@@ -53,6 +55,7 @@ const AIAdvisor = () => {
     noMatched: 'لا يوجد تطابق حالياً',
     savedAdvice: 'استشاراتي المحفوظة',
     startNew: 'بدء تحليل جديد',
+    virtualTryon: 'جرّب القصة افتراضياً',
     downloadCard: 'حمّل بطاقة الستايل',
     shareWhatsapp: 'أرسل إلى الواتساب',
     difficulty: 'الصعوبة',
@@ -93,6 +96,7 @@ const AIAdvisor = () => {
     noMatched: 'No matches yet',
     savedAdvice: 'My Saved Advice',
     startNew: 'Start New Analysis',
+    virtualTryon: 'Virtual Try-On',
     downloadCard: 'Download Style Card',
     shareWhatsapp: 'Send to WhatsApp',
     difficulty: 'Difficulty',
@@ -110,6 +114,7 @@ const AIAdvisor = () => {
     if (!isAuthenticated) return;
     fetchEligibility();
     fetchSavedAdvices();
+    fetchTryonEligibility();
   }, [isAuthenticated]);
 
   const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
@@ -129,6 +134,16 @@ const AIAdvisor = () => {
       setSavedAdvices(res.data || []);
     } catch (e) { console.error(e); }
   };
+
+  const fetchTryonEligibility = async () => {
+    try {
+      const res = await axios.get(`${API}/ai-tryon/eligibility`, authHeaders);
+      setTryonEligibility(res.data);
+    } catch (e) {
+      console.error('Try-On eligibility error:', e);
+    }
+  };
+
 
   const handleFile = (file) => {
     if (!file) return;
@@ -224,6 +239,9 @@ const AIAdvisor = () => {
           <button onClick={() => setViewMode('analyze')} className={`filter-chip ${isMen ? 'filter-chip-men' : 'filter-chip-women'} ${viewMode === 'analyze' ? 'active' : ''}`}>
             <Brain className="w-4 h-4" /> {t.startNew}
           </button>
+          <button onClick={() => setViewMode('tryon')} className={`filter-chip ${isMen ? 'filter-chip-men' : 'filter-chip-women'} ${viewMode === 'tryon' ? 'active' : ''}`}>
+            <Wand2 className="w-4 h-4" /> {t.virtualTryon}
+          </button>
           <button onClick={() => setViewMode('saved')} className={`filter-chip ${isMen ? 'filter-chip-men' : 'filter-chip-women'} ${viewMode === 'saved' ? 'active' : ''}`}>
             <Award className="w-4 h-4" /> {t.savedAdvice} ({savedAdvices.length})
           </button>
@@ -232,6 +250,9 @@ const AIAdvisor = () => {
 
       <div className="container mx-auto px-4 py-6 max-w-5xl relative z-10">
         <AnimatePresence mode="wait">
+          {viewMode === 'tryon' && (
+            <AITryOn eligibilityData={tryonEligibility} onRefreshEligibility={fetchTryonEligibility} />
+          )}
           {viewMode === 'analyze' ? (
             <motion.div key="analyze" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               {/* Locked state */}

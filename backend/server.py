@@ -28,6 +28,14 @@ except Exception as _ai_err:
     AI_SERVICES_OK = False
     _AI_IMPORT_ERROR = str(_ai_err)
 
+# AI Try-On Services (Gemini Nano Banana)
+try:
+    from ai_tryon_service import generate_tryon_image, get_preset_hairstyles
+    AI_TRYON_OK = True
+except Exception as _tryon_err:
+    AI_TRYON_OK = False
+    _TRYON_IMPORT_ERROR = str(_tryon_err)
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -310,6 +318,24 @@ class ProductUpdate(BaseModel):
     image_url: Optional[str] = None
     in_stock: Optional[bool] = None
     featured: Optional[bool] = None
+
+# --- AI Try-On ---
+class AITryOnRequest(BaseModel):
+    booking_id: str
+    hairstyle_name: str
+    hairstyle_description: str
+    user_image_base64: Optional[str] = None  # If not provided, use saved image from AI Advisor
+
+class AITryOnResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    user_id: str
+    booking_id: str
+    hairstyle_name: str
+    hairstyle_description: str
+    result_image_base64: str
+    remaining_tries: int
+    created_at: str
 
 # ============== UTILITY FUNCTIONS ==============
 
@@ -2779,6 +2805,215 @@ async def share_advice_whatsapp(payload: ShareWhatsAppRequest, entity: Dict = De
     }
 
 
+# ============== AI TRY-ON ENDPOINTS (GEMINI NANO BANANA) ==============
+
+MAX_TRYON_ATTEMPTS_PER_BOOKING = 5
+
+@api_router.get("/ai-tryon/eligibility")
+async def ai_tryon_eligibility(entity: Dict = Depends(require_auth)):
+    """
+    Check whether user is eligible to use AI Try-On.
+    Logic:
+      - User must have at least one booking with status in {confirmed, completed}.
+      - Each booking grants 5 try-on attempts.
+      - Returns available booking, remaining tries, and saved image if exists.
+    """
+    if entity.get('entity_type') != 'user':
+        return {
+            "eligible": False,
+            "reason": "not_a_user",
+            "locked_reason_ar": "هذه الميزة للزبائن فقط",
+            "locked_reason_en": "This feature is for customers only"
+        }
+
+    # Find eligible bookings (confirmed/completed)
+    bookings = await db.bookings.find(
+        {
+            "user_id": entity['id'],
+            "status": {"$in": ["confirmed", "completed"]},
+        },
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(100)
+
+    if not bookings:
+        return {
+            "eligible": False,
+            "available_booking_id": None,
+            "remaining_tries": 0,
+            "total_bookings": 0,
+            "locked_reason_ar": "قم بإتمام حجز أولاً لفتح ميزة التجربة الافتراضية",
+            "locked_reason_en": "Complete a booking first to unlock AI Try-On"
+        }
+
+    # Count used attempts per booking
+    tryon_sessions = await db.ai_tryon_sessions.find({"user_id": entity['id']}, {"_id": 0}).to_list(500)
+    
+    # Find booking with remaining tries
+    available_booking = None
+    remaining_tries = 0
+    
+    for booking in bookings:
+        used_count = sum(1 for s in tryon_sessions if s.get("booking_id") == booking["id"])
+        if used_count < MAX_TRYON_ATTEMPTS_PER_BOOKING:
+            available_booking = booking
+            remaining_tries = MAX_TRYON_ATTEMPTS_PER_BOOKING - used_count
+            break
+
+    # Get saved image from AI Advisor if exists
+    saved_advice = await db.style_advices.find_one(
+        {"user_id": entity['id']},
+        {"_id": 0, "original_image_base64": 1, "analysis": 1},
+        sort=[("created_at", -1)]
+    )
+    
+    # Get AI Advisor recommendations for easy access
+    recommended_styles = []
+    if saved_advice and saved_advice.get("analysis"):
+        analysis = saved_advice["analysis"]
+        styles = analysis.get("recommended_styles", [])
+        recommended_styles = [
+            {
+                "name": s.get("name", ""),
+                "name_ar": s.get("name_ar", ""),
+                "description": s.get("description", "")
+            }
+            for s in styles[:3]
+        ]
+
+    return {
+        "eligible": available_booking is not None,
+        "available_booking_id": available_booking["id"] if available_booking else None,
+        "available_booking_shop": available_booking.get("barbershop_name") if available_booking else None,
+        "remaining_tries": remaining_tries,
+        "max_tries_per_booking": MAX_TRYON_ATTEMPTS_PER_BOOKING,
+        "total_bookings": len(bookings),
+        "has_saved_image": bool(saved_advice and saved_advice.get("original_image_base64")),
+        "saved_image_base64": saved_advice.get("original_image_base64") if saved_advice else None,
+        "recommended_styles": recommended_styles,
+        "locked_reason_ar": None if available_booking else "لقد استخدمت جميع المحاولات. احجز موعداً جديداً للحصول على 5 محاولات إضافية",
+        "locked_reason_en": None if available_booking else f"You've used all attempts. Book again to get {MAX_TRYON_ATTEMPTS_PER_BOOKING} more tries",
+    }
+
+
+@api_router.post("/ai-tryon/generate", response_model=AITryOnResponse)
+async def ai_tryon_generate(payload: AITryOnRequest, entity: Dict = Depends(require_auth)):
+    """Generate AI Try-On image (LIMITED to 5 attempts per booking)"""
+    if entity.get('entity_type') != 'user':
+        raise HTTPException(status_code=403, detail="Only users can use AI Try-On")
+
+    if not AI_TRYON_OK:
+        raise HTTPException(status_code=500, detail=f"AI Try-On unavailable: {_TRYON_IMPORT_ERROR if '_TRYON_IMPORT_ERROR' in globals() else 'unknown'}")
+
+    # Validate booking
+    booking = await db.bookings.find_one({"id": payload.booking_id, "user_id": entity['id']}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found or not yours")
+    if booking.get("status") not in ("confirmed", "completed"):
+        raise HTTPException(status_code=403, detail="Booking must be confirmed to use AI Try-On")
+
+    # Check remaining attempts
+    used_count = await db.ai_tryon_sessions.count_documents({
+        "user_id": entity['id'],
+        "booking_id": payload.booking_id
+    })
+    
+    if used_count >= MAX_TRYON_ATTEMPTS_PER_BOOKING:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Maximum {MAX_TRYON_ATTEMPTS_PER_BOOKING} try-on attempts reached for this booking. Book again for more tries."
+        )
+
+    # Get user image
+    user_image = payload.user_image_base64
+    if not user_image:
+        # Try to get saved image from AI Advisor
+        saved_advice = await db.style_advices.find_one(
+            {"user_id": entity['id']},
+            {"_id": 0, "original_image_base64": 1},
+            sort=[("created_at", -1)]
+        )
+        if saved_advice and saved_advice.get("original_image_base64"):
+            user_image = saved_advice["original_image_base64"]
+        else:
+            raise HTTPException(status_code=400, detail="No image provided and no saved image found. Please upload your photo.")
+
+    # Clean base64 (remove data URL prefix if present)
+    if user_image.startswith('data:'):
+        user_image = user_image.split(',', 1)[1]
+
+    # Detect gender
+    gender = entity.get("gender", "male")
+
+    # Generate try-on image
+    session_id = f"tryon_{entity['id']}_{payload.booking_id}_{used_count}"
+    try:
+        result_image = await generate_tryon_image(
+            user_image_base64=user_image,
+            hairstyle_name=payload.hairstyle_name,
+            hairstyle_description=payload.hairstyle_description,
+            gender=gender,
+            session_id=session_id
+        )
+    except Exception as e:
+        logger.error(f"AI Try-On failed: {e}")
+        raise HTTPException(status_code=500, detail=f"AI Try-On failed: {str(e)[:200]}")
+
+    if not result_image:
+        raise HTTPException(status_code=500, detail="Failed to generate try-on image")
+
+    # Save to database
+    tryon_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    
+    tryon_doc = {
+        "id": tryon_id,
+        "user_id": entity['id'],
+        "booking_id": payload.booking_id,
+        "hairstyle_name": payload.hairstyle_name,
+        "hairstyle_description": payload.hairstyle_description,
+        "result_image_base64": result_image,
+        "created_at": now,
+    }
+    
+    await db.ai_tryon_sessions.insert_one(tryon_doc)
+    
+    remaining_tries = MAX_TRYON_ATTEMPTS_PER_BOOKING - (used_count + 1)
+    
+    return AITryOnResponse(
+        id=tryon_id,
+        user_id=entity['id'],
+        booking_id=payload.booking_id,
+        hairstyle_name=payload.hairstyle_name,
+        hairstyle_description=payload.hairstyle_description,
+        result_image_base64=result_image,
+        remaining_tries=remaining_tries,
+        created_at=now
+    )
+
+
+@api_router.get("/ai-tryon/my-sessions")
+async def get_my_tryon_sessions(entity: Dict = Depends(require_auth)):
+    """Get all user's AI Try-On sessions"""
+    if entity.get('entity_type') != 'user':
+        return []
+    
+    sessions = await db.ai_tryon_sessions.find(
+        {"user_id": entity['id']},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    return sessions
+
+
+@api_router.get("/ai-tryon/presets")
+async def get_tryon_presets(gender: str = "male", language: str = "en"):
+    """Get preset hairstyle options"""
+    if not AI_TRYON_OK:
+        return []
+    
+    return get_preset_hairstyles(gender, language)
+
+
 # ============== ROOT ENDPOINT ==============
 
 @api_router.get("/")
@@ -2819,6 +3054,7 @@ async def startup_db():
     await db.referrals.create_index("referral_code", unique=True)
     await db.favorites.create_index([("user_id", 1), ("shop_id", 1)], unique=True)
     await db.style_advices.create_index([("user_id", 1), ("booking_id", 1)])
+    await db.ai_tryon_sessions.create_index([("user_id", 1), ("booking_id", 1)])
     
     # Create admin user if not exists
     admin = await db.admins.find_one({"phone_number": "admin"})

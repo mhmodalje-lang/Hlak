@@ -1,0 +1,431 @@
+/* ==========================================================================
+   BARBER HUB — PREMIUM DESIGN SYSTEM (Luxury Black/Gold + Pearl/Rose)
+   ========================================================================== */
+
+@import url('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+
+/* ---------- Cinematic Gradients ---------- */
+.bg-luxury-men {
+  background: radial-gradient(ellipse at top, #1a1304 0%, #0a0a0a 50%, #000 100%);
+  position: relative;
+}
+.bg-luxury-men::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 30%, rgba(212,175,55,0.08), transparent 50%),
+              radial-gradient(circle at 80% 70%, rgba(212,175,55,0.06), transparent 50%);
+  pointer-events: none;
+}
+
+.bg-luxury-women {
+  background: radial-gradient(ellipse at top, #faf0eb 0%, #fdfbf7 50%, #fff 100%);
+  position: relative;
+}
+.bg-luxury-women::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 30%, rgba(183,110,121,0.08), transparent 50%),
+              radial-gradient(circle at 80% 70%, rgba(216,167,177,0.08), transparent 50%);
+  pointer-events: none;
+}
+
+/* ---------- Glassmorphism Cards ---------- */
+.glass-card-men {
+  background: rgba(20, 20, 20, 0.6);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(212, 175, 55, 0.15);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+.glass-card-men::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212,175,55,0.6), transparent);
+}
+.glass-card-men:hover {
+  transform: translateY(-6px);
+  border-color: rgba(212, 175, 55, 0.5);
+  box-shadow: 0 20px 60px rgba(212, 175, 55, 0.2), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.glass-card-women {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(183, 110, 121, 0.15);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(183, 110, 121, 0.08), inset 0 1px 0 rgba(255,255,255,0.6);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+.glass-card-women::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(183,110,121,0.4), transparent);
+}
+.glass-card-women:hover {
+  transform: translateY(-6px);
+  border-color: rgba(183, 110, 121, 0.4);
+  box-shadow: 0 20px 60px rgba(183, 110, 121, 0.2);
+}
+
+/* ---------- Premium Buttons ---------- */
+.btn-luxury-men {
+  background: linear-gradient(135deg, #D4AF37 0%, #F3E5AB 50%, #D4AF37 100%);
+  background-size: 200% 200%;
+  color: #0a0a0a;
+  font-weight: 700;
+  padding: 12px 28px;
+  border-radius: 12px;
+  border: none;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s ease;
+  box-shadow: 0 4px 20px rgba(212,175,55,0.3), inset 0 1px 0 rgba(255,255,255,0.4);
+  cursor: pointer;
+}
+.btn-luxury-men:hover {
+  background-position: 100% 100%;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(212,175,55,0.5), inset 0 1px 0 rgba(255,255,255,0.4);
+}
+.btn-luxury-men::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  transition: left 0.6s ease;
+}
+.btn-luxury-men:hover::after { left: 100%; }
+
+.btn-luxury-women {
+  background: linear-gradient(135deg, #B76E79 0%, #D8A7B1 50%, #B76E79 100%);
+  background-size: 200% 200%;
+  color: #fff;
+  font-weight: 700;
+  padding: 12px 28px;
+  border-radius: 12px;
+  border: none;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s ease;
+  box-shadow: 0 4px 20px rgba(183,110,121,0.3), inset 0 1px 0 rgba(255,255,255,0.3);
+  cursor: pointer;
+}
+.btn-luxury-women:hover {
+  background-position: 100% 100%;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(183,110,121,0.5);
+}
+.btn-luxury-women::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  transition: left 0.6s ease;
+}
+.btn-luxury-women:hover::after { left: 100%; }
+
+/* ---------- Neon Glow Effects ---------- */
+.glow-gold {
+  box-shadow: 0 0 20px rgba(212,175,55,0.4), 0 0 40px rgba(212,175,55,0.2);
+}
+.glow-rose {
+  box-shadow: 0 0 20px rgba(183,110,121,0.4), 0 0 40px rgba(183,110,121,0.2);
+}
+
+/* ---------- Gradient Text ---------- */
+.gradient-text-men {
+  background: linear-gradient(135deg, #D4AF37 0%, #F3E5AB 50%, #D4AF37 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.gradient-text-women {
+  background: linear-gradient(135deg, #B76E79 0%, #D8A7B1 50%, #B76E79 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ---------- Heart Favorite Animation ---------- */
+.heart-btn {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(10px);
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.heart-btn:hover { transform: scale(1.1); background: rgba(255,255,255,0.25); }
+.heart-btn.favorited { animation: heartBeat 0.6s ease; }
+.heart-btn.favorited svg { color: #ef4444; fill: #ef4444; }
+
+@keyframes heartBeat {
+  0%,100% { transform: scale(1); }
+  15% { transform: scale(1.4); }
+  30% { transform: scale(1); }
+  45% { transform: scale(1.3); }
+  60% { transform: scale(1); }
+}
+
+/* ---------- AI Advisor Lock Badge ---------- */
+.ai-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.ai-badge-unlocked {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  box-shadow: 0 0 15px rgba(16,185,129,0.5);
+  animation: pulse-green 2s infinite;
+}
+.ai-badge-locked {
+  background: linear-gradient(135deg, #64748b, #475569);
+  color: white;
+}
+
+@keyframes pulse-green {
+  0%,100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.5); }
+  50% { box-shadow: 0 0 0 10px rgba(16,185,129,0); }
+}
+
+/* ---------- Floating Orbs (Decorative Background) ---------- */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.4;
+  pointer-events: none;
+  animation: orbFloat 20s ease-in-out infinite;
+}
+.orb-gold {
+  background: radial-gradient(circle, #D4AF37, transparent);
+}
+.orb-rose {
+  background: radial-gradient(circle, #B76E79, transparent);
+}
+@keyframes orbFloat {
+  0%,100% { transform: translate(0,0) scale(1); }
+  33% { transform: translate(30px,-40px) scale(1.1); }
+  66% { transform: translate(-30px,30px) scale(0.95); }
+}
+
+/* ---------- Hero Parallax ---------- */
+.hero-premium {
+  position: relative;
+  min-height: 65vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0 0 40px 40px;
+}
+.hero-premium::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transform: scale(1.1);
+  filter: brightness(0.35);
+  transition: transform 8s ease;
+}
+.hero-premium:hover::before { transform: scale(1.15); }
+.hero-men::before {
+  background-image: url('https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=1920&q=80');
+}
+.hero-women::before {
+  background-image: url('https://images.unsplash.com/photo-1560066984-138dadb4c035?w=1920&q=80');
+  filter: brightness(0.55) saturate(1.2);
+}
+
+/* ---------- Premium Filter Chip ---------- */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.filter-chip-men {
+  background: rgba(212,175,55,0.08);
+  border-color: rgba(212,175,55,0.2);
+  color: #F3E5AB;
+}
+.filter-chip-men:hover, .filter-chip-men.active {
+  background: linear-gradient(135deg, #D4AF37, #F3E5AB);
+  color: #0a0a0a;
+  border-color: #D4AF37;
+  box-shadow: 0 4px 15px rgba(212,175,55,0.3);
+}
+.filter-chip-women {
+  background: rgba(183,110,121,0.08);
+  border-color: rgba(183,110,121,0.2);
+  color: #9E5B66;
+}
+.filter-chip-women:hover, .filter-chip-women.active {
+  background: linear-gradient(135deg, #B76E79, #D8A7B1);
+  color: #fff;
+  border-color: #B76E79;
+  box-shadow: 0 4px 15px rgba(183,110,121,0.3);
+}
+
+/* ---------- Range Slider ---------- */
+.range-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  cursor: pointer;
+}
+.range-slider-men { background: linear-gradient(to right, #D4AF37 0%, #D4AF37 var(--value, 50%), #262626 var(--value, 50%), #262626 100%); }
+.range-slider-women { background: linear-gradient(to right, #B76E79 0%, #B76E79 var(--value, 50%), #E7E5E4 var(--value, 50%), #E7E5E4 100%); }
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid currentColor;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* ---------- Leaflet Custom Marker ---------- */
+.leaflet-container {
+  border-radius: 20px;
+  font-family: inherit;
+}
+.custom-marker-men {
+  background: linear-gradient(135deg, #D4AF37, #F3E5AB);
+  border: 3px solid #0a0a0a;
+  box-shadow: 0 4px 15px rgba(212,175,55,0.5);
+}
+.custom-marker-women {
+  background: linear-gradient(135deg, #B76E79, #D8A7B1);
+  border: 3px solid #fff;
+  box-shadow: 0 4px 15px rgba(183,110,121,0.5);
+}
+.custom-marker-pin {
+  width: 44px; height: 44px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+.custom-marker-pin > * { transform: rotate(45deg); }
+
+.custom-marker-user {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 8px rgba(59,130,246,0.25);
+  animation: userPulse 2s infinite;
+}
+@keyframes userPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+  50% { box-shadow: 0 0 0 16px rgba(59,130,246,0); }
+}
+
+/* ---------- AI Advisor Specific ---------- */
+.ai-scanner {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.ai-scanner-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+  animation: scannerMove 2s linear infinite;
+  box-shadow: 0 0 20px #D4AF37;
+}
+.ai-scanner-women .ai-scanner-line {
+  background: linear-gradient(90deg, transparent, #B76E79, transparent);
+  box-shadow: 0 0 20px #B76E79;
+}
+@keyframes scannerMove {
+  0% { top: 0%; }
+  50% { top: 100%; }
+  100% { top: 0%; }
+}
+
+/* ---------- Star Rating Display ---------- */
+.luxury-star {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* ---------- Empty State ---------- */
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+}
+.empty-state-icon {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 1.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.empty-state-icon-men {
+  background: linear-gradient(135deg, rgba(212,175,55,0.1), rgba(212,175,55,0.02));
+  border: 2px dashed rgba(212,175,55,0.3);
+}
+.empty-state-icon-women {
+  background: linear-gradient(135deg, rgba(183,110,121,0.1), rgba(183,110,121,0.02));
+  border: 2px dashed rgba(183,110,121,0.3);
+}
+
+/* ---------- Skeleton Loader ---------- */
+.skeleton-card {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 100%);
+  background-size: 200% 100%;
+  animation: skel 1.5s infinite;
+  border-radius: 16px;
+}
+@keyframes skel { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+/* ---------- Responsive tweaks ---------- */
+@media (max-width: 768px) {
+  .hero-premium { min-height: 50vh; border-radius: 0 0 24px 24px; }
+}

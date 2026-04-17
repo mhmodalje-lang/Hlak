@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import "@/App.css";
+import "@/premium.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -17,6 +18,8 @@ import AdminDashboard from "@/pages/AdminDashboard";
 import PaymentPage from "@/pages/PaymentPage";
 import ProfileSetup from "@/pages/ProfileSetup";
 import ProductShowcase from "@/pages/ProductShowcase";
+import AIAdvisor from "@/pages/AIAdvisor";
+import FavoritesPage from "@/pages/FavoritesPage";
 
 // Context
 const AppContext = createContext();
@@ -130,6 +133,8 @@ function App() {
             <Route path="/map" element={<MapPage />} />
             <Route path="/my-bookings" element={<MyBookings />} />
             <Route path="/payment" element={<PaymentPage />} />
+            <Route path="/ai-advisor" element={<AIAdvisor />} />
+            <Route path="/favorites" element={<FavoritesPage />} />
             
             {/* Barber/Salon Dashboard */}
             <Route path="/dashboard" element={<BarberDashboard />} />

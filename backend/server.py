@@ -15,9 +15,18 @@ import bcrypt
 import qrcode
 import io
 import base64
+import math
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# AI Services (GPT-5 Vision + Style Card)
+try:
+    from ai_services import analyze_face_and_recommend, generate_style_card
+    AI_SERVICES_OK = True
+except Exception as _ai_err:
+    AI_SERVICES_OK = False
+    _AI_IMPORT_ERROR = str(_ai_err)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -2291,11 +2300,429 @@ async def seed_database():
         }
     }
 
+# ============== FAVORITES SYSTEM ==============
+
+class FavoriteCreate(BaseModel):
+    shop_id: str
+
+
+@api_router.post("/favorites")
+async def add_favorite(payload: FavoriteCreate, entity: Dict = Depends(require_auth)):
+    """Add a barbershop to user's favorites"""
+    if entity.get('entity_type') != 'user':
+        raise HTTPException(status_code=403, detail="Only users can add favorites")
+
+    shop = await db.barbershops.find_one({"id": payload.shop_id}, {"_id": 0, "password": 0})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Barbershop not found")
+
+    existing = await db.favorites.find_one({
+        "user_id": entity['id'],
+        "shop_id": payload.shop_id,
+    })
+    if existing:
+        return {"message": "Already in favorites", "favorite_id": existing['id']}
+
+    fav_id = str(uuid.uuid4())
+    doc = {
+        "id": fav_id,
+        "user_id": entity['id'],
+        "shop_id": payload.shop_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.favorites.insert_one(doc)
+    return {"message": "Added to favorites", "favorite_id": fav_id}
+
+
+@api_router.delete("/favorites/{shop_id}")
+async def remove_favorite(shop_id: str, entity: Dict = Depends(require_auth)):
+    """Remove a barbershop from favorites"""
+    if entity.get('entity_type') != 'user':
+        raise HTTPException(status_code=403, detail="Only users can remove favorites")
+
+    result = await db.favorites.delete_one({
+        "user_id": entity['id'],
+        "shop_id": shop_id,
+    })
+    return {"message": "Removed", "deleted_count": result.deleted_count}
+
+
+@api_router.get("/favorites/my")
+async def my_favorites(entity: Dict = Depends(require_auth)):
+    """List my favorite barbershops (enriched)"""
+    if entity.get('entity_type') != 'user':
+        return []
+
+    favs = await db.favorites.find({"user_id": entity['id']}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    shop_ids = [f['shop_id'] for f in favs]
+    if not shop_ids:
+        return []
+
+    shops = await db.barbershops.find({"id": {"$in": shop_ids}}, {"_id": 0, "password": 0}).to_list(500)
+    enriched = []
+    for shop in shops:
+        enriched.append(await enrich_barbershop_for_frontend(shop))
+    return enriched
+
+
+@api_router.get("/favorites/check/{shop_id}")
+async def check_favorite(shop_id: str, entity: Dict = Depends(require_auth)):
+    """Check whether a shop is already in favorites"""
+    if entity.get('entity_type') != 'user':
+        return {"is_favorite": False}
+    exists = await db.favorites.find_one({"user_id": entity['id'], "shop_id": shop_id})
+    return {"is_favorite": bool(exists)}
+
+
+# ============== ADVANCED SEARCH ==============
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+    c = 2 * math.asin(math.sqrt(a))
+    return R * c
+
+
+@api_router.get("/search/barbers")
+async def advanced_search(
+    shop_type: Optional[str] = None,
+    user_lat: Optional[float] = None,
+    user_lng: Optional[float] = None,
+    max_distance_km: Optional[float] = None,
+    price_min: Optional[float] = None,
+    price_max: Optional[float] = None,
+    rating_min: Optional[float] = None,
+    country: Optional[str] = None,
+    city: Optional[str] = None,
+    services: Optional[str] = None,  # Comma separated service names/categories
+    search: Optional[str] = None,
+    sort: str = "rating",  # rating | distance | price_asc | price_desc
+    limit: int = 100,
+):
+    """Advanced search with multi-filter + sorting + distance calculation"""
+    query: Dict[str, Any] = {}
+    if shop_type in ("male", "female"):
+        query["shop_type"] = shop_type
+    if country:
+        query["country"] = country
+    if city:
+        query["city"] = city
+    if rating_min is not None:
+        query["rating"] = {"$gte": rating_min}
+    if search:
+        query["$or"] = [
+            {"shop_name": {"$regex": search, "$options": "i"}},
+            {"description": {"$regex": search, "$options": "i"}},
+            {"city": {"$regex": search, "$options": "i"}},
+        ]
+
+    shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).limit(limit * 2).to_list(limit * 2)
+
+    service_filters = [s.strip().lower() for s in services.split(",")] if services else []
+
+    results = []
+    for shop in shops:
+        # Distance
+        distance_km = None
+        if user_lat is not None and user_lng is not None and shop.get("latitude") and shop.get("longitude"):
+            distance_km = round(_haversine_km(user_lat, user_lng, shop["latitude"], shop["longitude"]), 2)
+            if max_distance_km is not None and distance_km > max_distance_km:
+                continue
+
+        enriched = await enrich_barbershop_for_frontend(shop)
+        enriched["distance_km"] = distance_km
+
+        # Price filter
+        svc_list = enriched.get("services", []) or []
+        prices = [s.get("price", 0) for s in svc_list if s.get("price") is not None]
+        min_price = min(prices) if prices else 0
+        max_price = max(prices) if prices else 0
+        enriched["min_price"] = min_price
+        enriched["max_price"] = max_price
+
+        if price_min is not None and max_price < price_min:
+            continue
+        if price_max is not None and min_price > price_max:
+            continue
+
+        # Service filter (by name/category match)
+        if service_filters:
+            shop_service_names = [
+                (s.get("name", "") + " " + (s.get("name_ar") or "") + " " + (s.get("category") or "")).lower()
+                for s in svc_list
+            ]
+            matched = any(any(f in sn for sn in shop_service_names) for f in service_filters)
+            if not matched:
+                continue
+
+        results.append(enriched)
+
+    # Sorting
+    if sort == "distance" and user_lat is not None:
+        results.sort(key=lambda x: x.get("distance_km") if x.get("distance_km") is not None else 1e9)
+    elif sort == "price_asc":
+        results.sort(key=lambda x: x.get("min_price", 0))
+    elif sort == "price_desc":
+        results.sort(key=lambda x: x.get("max_price", 0), reverse=True)
+    else:
+        # rating (default)
+        results.sort(key=lambda x: (x.get("rating", 0), x.get("total_reviews", 0)), reverse=True)
+
+    return results[:limit]
+
+
+# ============== AI ADVISOR (Locked until booking confirmed) ==============
+
+class AIAdvisorAnalyzeRequest(BaseModel):
+    booking_id: str
+    image_base64: str  # With or without data URL prefix
+    language: Optional[str] = "ar"  # ar or en
+
+
+@api_router.get("/ai-advisor/eligibility")
+async def ai_advisor_eligibility(entity: Dict = Depends(require_auth)):
+    """
+    Check whether user is eligible to run the AI advisor.
+    Logic:
+      - User must have at least one booking with status in {confirmed, completed}.
+      - Each booking grants ONE analysis. If already analyzed, advisor is LOCKED but saved advice is available.
+    """
+    if entity.get('entity_type') != 'user':
+        return {"eligible": False, "reason": "not_a_user", "locked_reason_ar": "هذه الميزة للزبائن فقط", "locked_reason_en": "This feature is for customers only"}
+
+    # Find eligible booking (confirmed/completed) that hasn't been used yet
+    bookings = await db.bookings.find(
+        {
+            "user_id": entity['id'],
+            "status": {"$in": ["confirmed", "completed"]},
+        },
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(100)
+
+    used_booking_ids = set()
+    advices = await db.style_advices.find({"user_id": entity['id']}, {"_id": 0}).to_list(100)
+    for a in advices:
+        if a.get("booking_id"):
+            used_booking_ids.add(a["booking_id"])
+
+    # Available: first booking not yet used
+    available_booking = None
+    for b in bookings:
+        if b["id"] not in used_booking_ids:
+            available_booking = b
+            break
+
+    latest_advice = advices[0] if advices else None
+
+    return {
+        "eligible": available_booking is not None,
+        "available_booking_id": available_booking["id"] if available_booking else None,
+        "available_booking_shop": available_booking["barbershop_name"] if available_booking else None,
+        "has_saved_advice": bool(latest_advice),
+        "latest_advice_id": latest_advice["id"] if latest_advice else None,
+        "total_bookings": len(bookings),
+        "total_used_sessions": len(used_booking_ids),
+        "locked_reason_ar": None if available_booking else ("قم بإتمام حجز أولاً لفتح المستشار الذكي" if not bookings else "لقد استخدمت جلساتك المتاحة. احجز موعداً جديداً لفتح جلسة جديدة"),
+        "locked_reason_en": None if available_booking else ("Complete a booking first to unlock the AI Advisor" if not bookings else "You've used all your sessions. Book again to unlock a new session"),
+    }
+
+
+@api_router.post("/ai-advisor/analyze")
+async def ai_advisor_analyze(payload: AIAdvisorAnalyzeRequest, entity: Dict = Depends(require_auth)):
+    """Run AI face analysis + style recommendations (ONE-TIME per booking)"""
+    if entity.get('entity_type') != 'user':
+        raise HTTPException(status_code=403, detail="Only users can use the AI Advisor")
+
+    if not AI_SERVICES_OK:
+        raise HTTPException(status_code=500, detail=f"AI service unavailable: {_AI_IMPORT_ERROR if '_AI_IMPORT_ERROR' in globals() else 'unknown'}")
+
+    # Validate booking
+    booking = await db.bookings.find_one({"id": payload.booking_id, "user_id": entity['id']}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found or not yours")
+    if booking.get("status") not in ("confirmed", "completed"):
+        raise HTTPException(status_code=403, detail="Booking must be confirmed to use AI advisor")
+
+    # Ensure no existing advice on this booking
+    existing = await db.style_advices.find_one({"user_id": entity['id'], "booking_id": payload.booking_id})
+    if existing:
+        raise HTTPException(status_code=409, detail="AI Advisor already used for this booking")
+
+    # Detect gender from user
+    gender = entity.get("gender", "male")
+
+    # Run analysis
+    session_id = f"advisor_{entity['id']}_{payload.booking_id}"
+    try:
+        result = await analyze_face_and_recommend(
+            image_base64=payload.image_base64,
+            gender=gender,
+            session_id=session_id,
+        )
+    except Exception as e:
+        logger.error(f"AI analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)[:200]}")
+
+    # Match recommended barbers based on expertise keywords
+    expertise_keywords = (result.get("ideal_barber_expertise") or []) + (result.get("ideal_barber_expertise_ar") or [])
+    matched_shops = []
+    if expertise_keywords:
+        # Find same-gender shops with matching services
+        shops = await db.barbershops.find(
+            {"shop_type": gender},
+            {"_id": 0, "password": 0},
+        ).sort("ranking_score", -1).limit(40).to_list(40)
+
+        keyword_set = set(k.lower() for k in expertise_keywords)
+        for shop in shops:
+            shop_services = await db.services.find({"barbershop_id": shop["id"]}, {"_id": 0}).to_list(50)
+            shop_blob = " ".join([
+                (s.get("name", "") + " " + (s.get("name_ar") or "") + " " + (s.get("category") or "")).lower()
+                for s in shop_services
+            ])
+            shop_blob += " " + (shop.get("description", "") or "").lower()
+            match_score = sum(1 for k in keyword_set if k and k in shop_blob)
+            if match_score > 0:
+                enriched = await enrich_barbershop_for_frontend(shop)
+                enriched["match_score"] = match_score
+                matched_shops.append(enriched)
+
+        matched_shops.sort(key=lambda x: (x.get("match_score", 0), x.get("rating", 0)), reverse=True)
+        matched_shops = matched_shops[:6]
+
+    # Generate style card image
+    try:
+        style_card_data_url = generate_style_card(
+            user_name=entity.get("full_name", ""),
+            face_shape=result.get("face_shape", "oval"),
+            face_shape_ar=result.get("face_shape_ar", "بيضاوي"),
+            styles=result.get("recommended_styles", [])[:3],
+            gender=gender,
+            language=payload.language or "ar",
+        )
+    except Exception as e:
+        logger.error(f"Style card generation failed: {e}")
+        style_card_data_url = None
+
+    # Persist
+    advice_doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": entity['id'],
+        "booking_id": payload.booking_id,
+        "gender": gender,
+        "language": payload.language or "ar",
+        "analysis": result,
+        "matched_shops": [{
+            "id": s["id"],
+            "shop_name": s["shop_name"],
+            "shop_logo": s.get("shop_logo"),
+            "rating": s.get("rating", 0),
+            "total_reviews": s.get("total_reviews", 0),
+            "city": s.get("city"),
+            "country": s.get("country"),
+            "match_score": s.get("match_score", 0),
+        } for s in matched_shops],
+        "style_card_base64": style_card_data_url,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.style_advices.insert_one(advice_doc)
+    advice_doc.pop("_id", None)
+
+    return advice_doc
+
+
+@api_router.get("/ai-advisor/my-advice")
+async def my_advice(entity: Dict = Depends(require_auth)):
+    """Get all saved style advice for current user (read-only)"""
+    if entity.get('entity_type') != 'user':
+        return []
+    advices = await db.style_advices.find({"user_id": entity['id']}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return advices
+
+
+@api_router.get("/ai-advisor/advice/{advice_id}")
+async def get_advice(advice_id: str, entity: Dict = Depends(require_auth)):
+    """Get one specific saved advice"""
+    advice = await db.style_advices.find_one({"id": advice_id, "user_id": entity['id']}, {"_id": 0})
+    if not advice:
+        raise HTTPException(status_code=404, detail="Advice not found")
+    return advice
+
+
+class ShareWhatsAppRequest(BaseModel):
+    advice_id: str
+    phone_number: Optional[str] = None  # Defaults to user's phone
+
+
+@api_router.post("/ai-advisor/share-whatsapp")
+async def share_advice_whatsapp(payload: ShareWhatsAppRequest, entity: Dict = Depends(require_auth)):
+    """Generate a WhatsApp link with style card summary text"""
+    advice = await db.style_advices.find_one({"id": payload.advice_id, "user_id": entity['id']}, {"_id": 0})
+    if not advice:
+        raise HTTPException(status_code=404, detail="Advice not found")
+
+    phone = payload.phone_number or entity.get("phone_number") or ""
+    phone_digits = "".join([c for c in phone if c.isdigit()])
+
+    analysis = advice.get("analysis", {}) or {}
+    lang = advice.get("language", "ar")
+    styles = (analysis.get("recommended_styles") or [])[:3]
+
+    if lang == "ar":
+        face_shape = analysis.get("face_shape_ar") or analysis.get("face_shape", "")
+        lines = [
+            "💈 *بطاقة ستايلك من BARBER HUB* 💈",
+            "",
+            f"🧑 الاسم: {entity.get('full_name', '')}",
+            f"✨ شكل الوجه: {face_shape}",
+            "",
+            "🏆 *القصات المقترحة لك:*",
+        ]
+        for i, s in enumerate(styles, 1):
+            lines.append(f"{i}. {s.get('name_ar') or s.get('name', '')}")
+        lines += [
+            "",
+            "📲 احجز موعدك الآن من خلال المنصة",
+            "🌟 barber-hub.com",
+        ]
+    else:
+        face_shape = analysis.get("face_shape", "")
+        lines = [
+            "💈 *Your Style Card from BARBER HUB* 💈",
+            "",
+            f"🧑 Name: {entity.get('full_name', '')}",
+            f"✨ Face Shape: {face_shape}",
+            "",
+            "🏆 *Recommended Styles:*",
+        ]
+        for i, s in enumerate(styles, 1):
+            lines.append(f"{i}. {s.get('name', '')}")
+        lines += [
+            "",
+            "📲 Book your appointment on our platform",
+            "🌟 barber-hub.com",
+        ]
+
+    text = "\n".join(lines)
+    import urllib.parse as _up
+    encoded = _up.quote(text)
+    wa_link = f"https://wa.me/{phone_digits}?text={encoded}" if phone_digits else f"https://wa.me/?text={encoded}"
+
+    return {
+        "whatsapp_link": wa_link,
+        "message": text,
+        "style_card_base64": advice.get("style_card_base64"),
+    }
+
+
 # ============== ROOT ENDPOINT ==============
 
 @api_router.get("/")
 async def root():
-    return {"message": "Welcome to BARBER HUB API", "version": "2.0.0"}
+    return {"message": "Welcome to BARBER HUB API", "version": "3.0.0"}
 
 # Include the router
 app.include_router(api_router)
@@ -2329,6 +2756,8 @@ async def startup_db():
     await db.products.create_index("featured")
     await db.referrals.create_index("user_id", unique=True)
     await db.referrals.create_index("referral_code", unique=True)
+    await db.favorites.create_index([("user_id", 1), ("shop_id", 1)], unique=True)
+    await db.style_advices.create_index([("user_id", 1), ("booking_id", 1)])
     
     # Create admin user if not exists
     admin = await db.admins.find_one({"phone_number": "admin"})

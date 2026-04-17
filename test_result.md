@@ -137,7 +137,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "POST /api/seed - Creates 10 barbershops (5 male, 5 female) across 6 countries with services, reviews, profiles, and 2 fake bookings. Includes ranking tiers and verified statuses."
         - working: true
@@ -152,7 +152,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "GET /api/generate-booking-link - Returns wa.me URL with pre-filled Arabic booking message. Parameters: shop_phone, customer_name, service, time, date, shop_name."
         - working: true
@@ -167,7 +167,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "GET /api/barbers - Returns enriched barber data with services, ratings, social links. Frontend now uses this instead of /api/barbershops."
         - working: true
@@ -197,7 +197,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "Salons sorted by rating (highest first), then by total_reviews. Top Ranked badge for > 4.5 stars, Featured badge for 4.0-4.5. ranking_tier computed on seed."
         - working: true
@@ -272,7 +272,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "New endpoints: POST /api/favorites {shop_id}, DELETE /api/favorites/{shop_id}, GET /api/favorites/my (enriched list), GET /api/favorites/check/{shop_id} -> {is_favorite}. Requires user auth. Duplicate prevention via unique index (user_id, shop_id). Returns 403 if not user entity_type."
         - working: true
@@ -287,7 +287,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "GET /api/search/barbers with query params: shop_type, user_lat, user_lng, max_distance_km, price_min, price_max, rating_min, country, city, services (comma-sep), search, sort (rating|distance|price_asc|price_desc), limit. Uses Haversine formula for distance. Enriches each shop with distance_km, min_price, max_price. IMPORTANT: Route is /search/barbers NOT /barbers/search to avoid collision with /barbers/{barber_id}."
         - working: true
@@ -302,7 +302,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "GET /api/ai-advisor/eligibility -> returns {eligible, available_booking_id, available_booking_shop, has_saved_advice, latest_advice_id, total_bookings, total_used_sessions, locked_reason_ar, locked_reason_en}. Eligible only if user has a booking in {confirmed, completed} state AND that booking_id has NOT yet been used for a style_advice. Requires user auth."
         - working: true
@@ -317,7 +317,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "POST /api/ai-advisor/analyze {booking_id, image_base64, language}. Validates booking belongs to user and is confirmed/completed. 409 if already analyzed for this booking. Uses emergentintegrations LlmChat with model openai/gpt-5 and ImageContent. System prompt in Arabic/English for men vs women returns JSON with face_shape, recommended_styles (x3), beard/color recommendations, hair_care_tips, ideal_barber_expertise. Matches recommended barbers by expertise keywords. Generates style_card_base64 via PIL. Persists in db.style_advices collection."
         - working: true
@@ -332,7 +332,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "GET /api/ai-advisor/my-advice returns all user's saved advice (descending order). GET /api/ai-advisor/advice/{id} returns one. Read-only (no update/delete)."
         - working: true
@@ -347,7 +347,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "POST /api/ai-advisor/share-whatsapp {advice_id, phone_number?}. Builds formatted Arabic/English message with user's name, face shape, 3 recommended styles. Returns wa.me URL (phone defaults to user's phone), message text, and style_card_base64 for preview. Frontend opens link."
         - working: true
@@ -362,7 +362,7 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-        - working: "NA"
+        - working: true
         - agent: "main"
         - comment: "Generates 1080x1350 portrait PNG with gradient background, BARBER HUB branding, face shape, 3 recommended style cards, footer. Men theme: luxury black/gold. Women theme: pearl/rose. Arabic rendering via arabic-reshaper + python-bidi. Returns as data URL base64."
         - working: true

@@ -16,6 +16,7 @@ import BarberDashboard from "@/pages/BarberDashboard";
 import AdminDashboard from "@/pages/AdminDashboard";
 import PaymentPage from "@/pages/PaymentPage";
 import ProfileSetup from "@/pages/ProfileSetup";
+import ProductShowcase from "@/pages/ProductShowcase";
 
 // Context
 const AppContext = createContext();
@@ -123,6 +124,8 @@ function App() {
             <Route path="/home" element={gender ? <HomePage /> : <Navigate to="/" />} />
             <Route path="/barber/:id" element={<BarberProfile />} />
             <Route path="/book/:barberId" element={<BookingPage />} />
+            <Route path="/products/:shopId" element={<ProductShowcase />} />
+            <Route path="/products" element={<ProductShowcase />} />
             <Route path="/top-barbers" element={<TopBarbers />} />
             <Route path="/map" element={<MapPage />} />
             <Route path="/my-bookings" element={<MyBookings />} />

@@ -267,6 +267,10 @@ class BarberProfileCreate(BaseModel):
     whatsapp: Optional[str] = None
     instagram: Optional[str] = None
     tiktok: Optional[str] = None
+    facebook: Optional[str] = None
+    twitter: Optional[str] = None
+    snapchat: Optional[str] = None
+    youtube: Optional[str] = None
     address: Optional[str] = None
     neighborhood: Optional[str] = None
     average_service_time: int = 30
@@ -274,6 +278,29 @@ class BarberProfileCreate(BaseModel):
     custom_services: Optional[List[Dict]] = None
     before_after_images: Optional[List[Dict]] = None
     working_hours: Optional[Dict] = None
+
+# --- Products ---
+class ProductCreate(BaseModel):
+    name: str
+    name_ar: Optional[str] = None
+    description: Optional[str] = None
+    description_ar: Optional[str] = None
+    price: float
+    category: str = "general"
+    image_url: Optional[str] = None
+    in_stock: bool = True
+    featured: bool = False
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    name_ar: Optional[str] = None
+    description: Optional[str] = None
+    description_ar: Optional[str] = None
+    price: Optional[float] = None
+    category: Optional[str] = None
+    image_url: Optional[str] = None
+    in_stock: Optional[bool] = None
+    featured: Optional[bool] = None
 
 # ============== UTILITY FUNCTIONS ==============
 
@@ -409,6 +436,10 @@ async def enrich_barbershop_for_frontend(shop: Dict) -> Dict:
         "instagram_url": shop.get("instagram_url", ""),
         "tiktok": profile_ext.get("tiktok", shop.get("tiktok_url", "")) if profile_ext else shop.get("tiktok_url", ""),
         "tiktok_url": shop.get("tiktok_url", ""),
+        "facebook": profile_ext.get("facebook", "") if profile_ext else "",
+        "twitter": profile_ext.get("twitter", "") if profile_ext else "",
+        "snapchat": profile_ext.get("snapchat", "") if profile_ext else "",
+        "youtube": profile_ext.get("youtube", "") if profile_ext else "",
         "website_url": shop.get("website_url"),
         "logo_url": profile_ext.get("logo_url", shop.get("shop_logo", "")) if profile_ext else shop.get("shop_logo", ""),
         "shop_logo": shop.get("shop_logo"),
@@ -436,6 +467,10 @@ async def enrich_barbershop_for_frontend(shop: Dict) -> Dict:
         },
         "created_at": shop.get("created_at", "")
     }
+    
+    # Add products count
+    products_count = await db.products.count_documents({"shop_id": shop_id})
+    enriched["products_count"] = products_count
     
     return enriched
 
@@ -922,6 +957,80 @@ async def delete_gallery_image(image_id: str, shop: Dict = Depends(require_barbe
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Image not found")
     return {"message": "Image deleted"}
+
+# ============== PRODUCT SHOWCASE ENDPOINTS ==============
+
+@api_router.post("/products")
+async def create_product(product_data: ProductCreate, shop: Dict = Depends(require_barbershop)):
+    """Create a product for the barbershop's showcase"""
+    product_doc = {
+        "id": str(uuid.uuid4()),
+        "shop_id": shop['id'],
+        "name": product_data.name,
+        "name_ar": product_data.name_ar or product_data.name,
+        "description": product_data.description or "",
+        "description_ar": product_data.description_ar or product_data.description or "",
+        "price": product_data.price,
+        "category": product_data.category,
+        "image_url": product_data.image_url or "",
+        "in_stock": product_data.in_stock,
+        "featured": product_data.featured,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.products.insert_one(product_doc)
+    product_doc.pop("_id", None)
+    return product_doc
+
+@api_router.get("/products/shop/{shop_id}")
+async def get_shop_products(shop_id: str, category: Optional[str] = None):
+    """Get all products for a barbershop"""
+    query = {"shop_id": shop_id}
+    if category and category != "all":
+        query["category"] = category
+    products = await db.products.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return products
+
+@api_router.get("/products/featured")
+async def get_featured_products(limit: int = 20):
+    """Get featured products across all shops"""
+    products = await db.products.find({"featured": True, "in_stock": True}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    # Enrich with shop info
+    for product in products:
+        shop = await db.barbershops.find_one({"id": product["shop_id"]}, {"_id": 0, "password": 0})
+        if shop:
+            product["shop_name"] = shop.get("shop_name", "")
+            product["shop_city"] = shop.get("city", "")
+            product["shop_country"] = shop.get("country", "")
+    return products
+
+@api_router.put("/products/{product_id}")
+async def update_product(product_id: str, product_data: ProductUpdate, shop: Dict = Depends(require_barbershop)):
+    """Update a product"""
+    product = await db.products.find_one({"id": product_id, "shop_id": shop['id']})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    update_data = product_data.model_dump(exclude_none=True)
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.products.update_one({"id": product_id}, {"$set": update_data})
+    updated = await db.products.find_one({"id": product_id}, {"_id": 0})
+    return updated
+
+@api_router.delete("/products/{product_id}")
+async def delete_product(product_id: str, shop: Dict = Depends(require_barbershop)):
+    """Delete a product"""
+    result = await db.products.delete_one({"id": product_id, "shop_id": shop['id']})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return {"message": "Product deleted"}
+
+@api_router.get("/products/my")
+async def get_my_products(shop: Dict = Depends(require_barbershop)):
+    """Get current shop's products"""
+    products = await db.products.find({"shop_id": shop['id']}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return products
 
 # ============== BOOKING ENDPOINTS ==============
 
@@ -2008,6 +2117,10 @@ async def seed_database():
             "whatsapp": shop_data.get("whatsapp_number", ""),
             "instagram": shop_data.get("instagram_url", ""),
             "tiktok": shop_data.get("tiktok_url", ""),
+            "facebook": f"https://facebook.com/{shop_data['shop_name'].replace(' ', '').lower()}",
+            "twitter": "",
+            "snapchat": "",
+            "youtube": "",
             "address": shop_data.get("address", ""),
             "neighborhood": shop_data.get("district", ""),
             "average_service_time": 30,
@@ -2062,6 +2175,46 @@ async def seed_database():
                 "created_at": review_date.isoformat()
             }
             await db.reviews.insert_one(review_doc)
+        
+        # Create sample products for showcase
+        male_products = [
+            {"name": "Premium Hair Wax", "name_ar": "واكس شعر فاخر", "price": 15, "category": "styling", "description": "Professional hold wax for all-day styling", "description_ar": "واكس تثبيت احترافي طوال اليوم", "featured": True},
+            {"name": "Beard Oil", "name_ar": "زيت اللحية", "price": 12, "category": "beard", "description": "Natural beard oil for soft, healthy beard", "description_ar": "زيت طبيعي للحية ناعمة وصحية", "featured": True},
+            {"name": "After Shave Balm", "name_ar": "بلسم ما بعد الحلاقة", "price": 10, "category": "shaving", "description": "Soothing after shave balm", "description_ar": "بلسم مهدئ بعد الحلاقة"},
+            {"name": "Hair Spray Strong Hold", "name_ar": "سبراي شعر تثبيت قوي", "price": 8, "category": "styling", "description": "Extra strong hold hair spray", "description_ar": "سبراي تثبيت قوي جداً"},
+            {"name": "Shampoo Anti-Dandruff", "name_ar": "شامبو مضاد للقشرة", "price": 18, "category": "hair_care", "description": "Premium anti-dandruff shampoo", "description_ar": "شامبو فاخر مضاد للقشرة", "featured": True},
+        ]
+        
+        female_products = [
+            {"name": "Keratin Serum", "name_ar": "سيروم كيراتين", "price": 25, "category": "hair_care", "description": "Professional keratin hair serum", "description_ar": "سيروم كيراتين احترافي للشعر", "featured": True},
+            {"name": "Nail Polish Set", "name_ar": "طقم مناكير", "price": 20, "category": "nails", "description": "Set of 6 premium nail colors", "description_ar": "طقم 6 ألوان مناكير فاخرة", "featured": True},
+            {"name": "Face Mask Collagen", "name_ar": "ماسك كولاجين للوجه", "price": 15, "category": "skin_care", "description": "Anti-aging collagen face mask", "description_ar": "ماسك كولاجين مضاد للتجاعيد"},
+            {"name": "Hair Extensions Pack", "name_ar": "باك إكستنشن شعر", "price": 50, "category": "hair_care", "description": "Natural hair extensions", "description_ar": "إكستنشن شعر طبيعي", "featured": True},
+            {"name": "Makeup Brush Set", "name_ar": "طقم فرش مكياج", "price": 35, "category": "makeup", "description": "Professional 12-piece brush set", "description_ar": "طقم 12 فرشة مكياج احترافية"},
+        ]
+        
+        products_to_seed = male_products if shop_data["shop_type"] == "male" else female_products
+        # Pick 2-4 random products per shop
+        num_products = random.randint(2, min(4, len(products_to_seed)))
+        selected_products = random.sample(products_to_seed, num_products)
+        
+        for prod in selected_products:
+            product_doc = {
+                "id": str(uuid.uuid4()),
+                "shop_id": shop_id,
+                "name": prod["name"],
+                "name_ar": prod["name_ar"],
+                "description": prod.get("description", ""),
+                "description_ar": prod.get("description_ar", ""),
+                "price": float(prod["price"]),
+                "category": prod["category"],
+                "image_url": "",
+                "in_stock": True,
+                "featured": prod.get("featured", False),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.products.insert_one(product_doc)
         
         created_shops.append({
             "id": shop_id,
@@ -2171,6 +2324,9 @@ async def startup_db():
     await db.reviews.create_index("barbershop_id")
     await db.barber_profiles.create_index("barbershop_id", unique=True)
     await db.gallery_images.create_index("barbershop_id")
+    await db.products.create_index("shop_id")
+    await db.products.create_index([("shop_id", 1), ("category", 1)])
+    await db.products.create_index("featured")
     await db.referrals.create_index("user_id", unique=True)
     await db.referrals.create_index("referral_code", unique=True)
     

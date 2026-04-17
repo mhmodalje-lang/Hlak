@@ -28,6 +28,10 @@ const ProfileSetup = () => {
     whatsapp: '',
     instagram: '',
     tiktok: '',
+    facebook: '',
+    twitter: '',
+    snapchat: '',
+    youtube: '',
     address: '',
     neighborhood: '',
     average_service_time: 30,
@@ -373,6 +377,46 @@ const ProfileSetup = () => {
                   onChange={(e) => setFormData({ ...formData, tiktok: e.target.value })}
                   className={inputClass}
                   placeholder="https://tiktok.com/@..."
+                />
+              </div>
+              <div>
+                <Label className={labelClass}>Facebook</Label>
+                <Input
+                  value={formData.facebook}
+                  onChange={(e) => setFormData({ ...formData, facebook: e.target.value })}
+                  className={inputClass}
+                  placeholder="https://facebook.com/..."
+                  data-testid="facebook-input"
+                />
+              </div>
+              <div>
+                <Label className={labelClass}>X / Twitter</Label>
+                <Input
+                  value={formData.twitter}
+                  onChange={(e) => setFormData({ ...formData, twitter: e.target.value })}
+                  className={inputClass}
+                  placeholder="https://x.com/..."
+                  data-testid="twitter-input"
+                />
+              </div>
+              <div>
+                <Label className={labelClass}>Snapchat</Label>
+                <Input
+                  value={formData.snapchat}
+                  onChange={(e) => setFormData({ ...formData, snapchat: e.target.value })}
+                  className={inputClass}
+                  placeholder="username"
+                  data-testid="snapchat-input"
+                />
+              </div>
+              <div>
+                <Label className={labelClass}>YouTube</Label>
+                <Input
+                  value={formData.youtube}
+                  onChange={(e) => setFormData({ ...formData, youtube: e.target.value })}
+                  className={inputClass}
+                  placeholder="https://youtube.com/@..."
+                  data-testid="youtube-input"
                 />
               </div>
             </div>

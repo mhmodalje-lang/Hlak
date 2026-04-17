@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '@/App';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { 
   ArrowRight, ArrowLeft, Calendar, Clock, Star, 
   Check, X, Loader2, Settings, QrCode, Users,
-  DollarSign, BarChart, Crown
+  DollarSign, BarChart, Crown, ShoppingBag, Plus, Trash2, Edit, Package
 } from 'lucide-react';
 
 const BarberDashboard = () => {
@@ -16,6 +19,13 @@ const BarberDashboard = () => {
   const { API, gender, user, token, language, themeClass, isAuthenticated, isBarber } = useApp();
   const [profile, setProfile] = useState(null);
   const [bookings, setBookings] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [showProductForm, setShowProductForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [productForm, setProductForm] = useState({
+    name: '', name_ar: '', description: '', description_ar: '',
+    price: '', category: 'general', image_url: '', featured: false
+  });
   const [isLoading, setIsLoading] = useState(true);
 
   const isMen = gender === 'male';
@@ -44,7 +54,21 @@ const BarberDashboard = () => {
       activateNow: 'فعّل الآن',
       setupProfile: 'إعداد الملف الشخصي',
       noProfile: 'لم يتم إنشاء الملف الشخصي بعد',
-      loginRequired: 'يرجى تسجيل الدخول كحلاق'
+      loginRequired: 'يرجى تسجيل الدخول كحلاق',
+      products: 'المنتجات',
+      addProduct: 'إضافة منتج',
+      editProduct: 'تعديل المنتج',
+      productName: 'اسم المنتج',
+      productNameAr: 'اسم المنتج بالعربي',
+      productDesc: 'وصف المنتج',
+      productDescAr: 'وصف بالعربي',
+      productPrice: 'السعر',
+      productCategory: 'الفئة',
+      productImage: 'رابط الصورة',
+      productFeatured: 'منتج مميز',
+      save: 'حفظ',
+      delete: 'حذف',
+      noProducts: 'لا توجد منتجات بعد'
     },
     en: {
       dashboard: 'Dashboard',
@@ -69,7 +93,21 @@ const BarberDashboard = () => {
       activateNow: 'Activate Now',
       setupProfile: 'Setup Profile',
       noProfile: 'Profile not created yet',
-      loginRequired: 'Please login as barber'
+      loginRequired: 'Please login as barber',
+      products: 'Products',
+      addProduct: 'Add Product',
+      editProduct: 'Edit Product',
+      productName: 'Product Name',
+      productNameAr: 'Name (Arabic)',
+      productDesc: 'Description',
+      productDescAr: 'Description (Arabic)',
+      productPrice: 'Price',
+      productCategory: 'Category',
+      productImage: 'Image URL',
+      productFeatured: 'Featured Product',
+      save: 'Save',
+      delete: 'Delete',
+      noProducts: 'No products yet'
     }
   };
 
@@ -79,6 +117,7 @@ const BarberDashboard = () => {
     if (isAuthenticated && isBarber) {
       fetchProfile();
       fetchBookings();
+      fetchProducts();
     }
   }, [isAuthenticated, isBarber]);
 
@@ -116,6 +155,67 @@ const BarberDashboard = () => {
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error');
     }
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const res = await axios.get(`${API}/products/my`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setProducts(res.data);
+    } catch (err) {
+      console.error('Failed to fetch products:', err);
+    }
+  };
+
+  const handleSaveProduct = async () => {
+    if (!productForm.name || !productForm.price) {
+      toast.error(language === 'ar' ? 'الاسم والسعر مطلوبان' : 'Name and price are required');
+      return;
+    }
+    try {
+      const payload = { ...productForm, price: parseFloat(productForm.price) };
+      if (editingProduct) {
+        await axios.put(`${API}/products/${editingProduct.id}`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success(language === 'ar' ? 'تم تحديث المنتج' : 'Product updated');
+      } else {
+        await axios.post(`${API}/products`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success(language === 'ar' ? 'تم إضافة المنتج' : 'Product added');
+      }
+      setShowProductForm(false);
+      setEditingProduct(null);
+      setProductForm({ name: '', name_ar: '', description: '', description_ar: '', price: '', category: 'general', image_url: '', featured: false });
+      fetchProducts();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleDeleteProduct = async (productId) => {
+    try {
+      await axios.delete(`${API}/products/${productId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success(language === 'ar' ? 'تم حذف المنتج' : 'Product deleted');
+      fetchProducts();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error');
+    }
+  };
+
+  const openEditProduct = (product) => {
+    setEditingProduct(product);
+    setProductForm({
+      name: product.name, name_ar: product.name_ar || '',
+      description: product.description || '', description_ar: product.description_ar || '',
+      price: product.price.toString(), category: product.category,
+      image_url: product.image_url || '', featured: product.featured
+    });
+    setShowProductForm(true);
   };
 
   if (!isAuthenticated || !isBarber) {
@@ -250,6 +350,64 @@ const BarberDashboard = () => {
           </div>
         )}
 
+        {/* Products Management */}
+        <div className={`${isMen ? 'card-men' : 'card-women'} p-5 mb-8`}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className={`font-bold flex items-center gap-2 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
+              <ShoppingBag className={`w-5 h-5 ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`} />
+              {t.products} ({products.length})
+            </h3>
+            <Button 
+              onClick={() => { setEditingProduct(null); setProductForm({ name: '', name_ar: '', description: '', description_ar: '', price: '', category: 'general', image_url: '', featured: false }); setShowProductForm(true); }}
+              size="sm" className={isMen ? 'btn-primary-men' : 'btn-primary-women'}
+              data-testid="add-product-btn"
+            >
+              <Plus className="w-4 h-4 me-1" /> {t.addProduct}
+            </Button>
+          </div>
+          
+          {products.length > 0 ? (
+            <div className="space-y-3">
+              {products.map((product) => (
+                <div key={product.id} className={`flex items-center justify-between p-3 rounded-xl ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#FAFAFA]'}`}>
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${isMen ? 'bg-[#262626]' : 'bg-[#E7E5E4]'}`}>
+                      {product.image_url ? (
+                        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Package className={`w-5 h-5 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`font-bold text-sm truncate ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
+                        {language === 'ar' ? product.name_ar : product.name}
+                        {product.featured && <span className={`ms-2 text-[10px] px-2 py-0.5 rounded-full ${isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white'}`}>★</span>}
+                      </p>
+                      <p className={`text-xs ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{product.category}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>{product.price}€</span>
+                    <button onClick={() => openEditProduct(product)} className={`p-1.5 rounded-lg ${isMen ? 'hover:bg-[#262626] text-[#94A3B8]' : 'hover:bg-[#E7E5E4] text-[#57534E]'}`}>
+                      <Edit size={14} />
+                    </button>
+                    <button onClick={() => handleDeleteProduct(product.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <Package className={`w-10 h-10 mx-auto mb-2 ${isMen ? 'text-[#262626]' : 'text-[#E7E5E4]'}`} />
+              <p className={`text-sm ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.noProducts}</p>
+            </div>
+          )}
+        </div>
+
         {/* Bookings Tabs */}
         <Tabs defaultValue="pending" className="w-full">
           <TabsList className={`grid w-full grid-cols-3 mb-4 ${isMen ? 'bg-[#1F1F1F]' : 'bg-[#F5F5F4]'}`}>
@@ -329,6 +487,103 @@ const BarberDashboard = () => {
           })}
         </Tabs>
       </div>
+
+      {/* Product Form Dialog */}
+      <Dialog open={showProductForm} onOpenChange={setShowProductForm}>
+        <DialogContent className={`${isMen ? 'bg-[#141414] border-[#262626] text-white' : 'bg-white'} max-w-md`}>
+          <DialogHeader>
+            <DialogTitle>{editingProduct ? t.editProduct : t.addProduct}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 p-2">
+            <div>
+              <label className={`text-sm font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productName}</label>
+              <Input
+                value={productForm.name}
+                onChange={(e) => setProductForm({...productForm, name: e.target.value})}
+                placeholder="Product name"
+                className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+                data-testid="product-name-input"
+              />
+            </div>
+            <div>
+              <label className={`text-sm font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productNameAr}</label>
+              <Input
+                value={productForm.name_ar}
+                onChange={(e) => setProductForm({...productForm, name_ar: e.target.value})}
+                placeholder="اسم المنتج"
+                dir="rtl"
+                className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={`text-sm font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productPrice} (€)</label>
+                <Input
+                  type="number"
+                  value={productForm.price}
+                  onChange={(e) => setProductForm({...productForm, price: e.target.value})}
+                  placeholder="0"
+                  className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+                  data-testid="product-price-input"
+                />
+              </div>
+              <div>
+                <label className={`text-sm font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productCategory}</label>
+                <Select value={productForm.category} onValueChange={(v) => setProductForm({...productForm, category: v})}>
+                  <SelectTrigger className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="general">General</SelectItem>
+                    <SelectItem value="styling">Styling</SelectItem>
+                    <SelectItem value="beard">Beard</SelectItem>
+                    <SelectItem value="shaving">Shaving</SelectItem>
+                    <SelectItem value="hair_care">Hair Care</SelectItem>
+                    <SelectItem value="skin_care">Skin Care</SelectItem>
+                    <SelectItem value="nails">Nails</SelectItem>
+                    <SelectItem value="makeup">Makeup</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <label className={`text-sm font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productDesc}</label>
+              <Input
+                value={productForm.description}
+                onChange={(e) => setProductForm({...productForm, description: e.target.value})}
+                placeholder="Product description"
+                className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+              />
+            </div>
+            <div>
+              <label className={`text-sm font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productImage}</label>
+              <Input
+                value={productForm.image_url}
+                onChange={(e) => setProductForm({...productForm, image_url: e.target.value})}
+                placeholder="https://..."
+                className={isMen ? 'bg-[#1F1F1F] border-[#262626] text-white' : ''}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={productForm.featured}
+                onChange={(e) => setProductForm({...productForm, featured: e.target.checked})}
+                className="w-4 h-4"
+                data-testid="product-featured-checkbox"
+              />
+              <label className={`text-sm font-bold ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productFeatured}</label>
+            </div>
+            <Button 
+              onClick={handleSaveProduct} 
+              className={`w-full ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
+              data-testid="save-product-btn"
+            >
+              {t.save}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

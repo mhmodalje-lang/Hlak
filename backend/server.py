@@ -20,6 +20,9 @@ import math
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Get APP_URL from environment for QR codes and referral links
+APP_URL = os.environ.get('APP_URL', 'https://upgrade-suggester.preview.emergentagent.com')
+
 # AI Services (GPT-5 Vision + Style Card)
 try:
     from ai_services import analyze_face_and_recommend, generate_style_card
@@ -600,7 +603,7 @@ async def register_barbershop(shop_data: BarbershopCreate):
         raise HTTPException(status_code=400, detail="Phone number already registered")
     
     shop_id = str(uuid.uuid4())
-    qr_code_data = f"https://barberhub.com/shop/{shop_id}"
+    qr_code_data = f"{APP_URL}/shop/{shop_id}"
     qr_code = generate_qr_code(qr_code_data)
     
     shop_doc = {
@@ -1763,7 +1766,7 @@ async def generate_referral(entity: Dict = Depends(require_auth)):
     
     existing = await db.referrals.find_one({"user_id": entity['id']})
     if existing:
-        return {"referral_code": existing['referral_code'], "referral_link": f"https://barberhub.com/ref/{existing['referral_code']}"}
+        return {"referral_code": existing['referral_code'], "referral_link": f"{APP_URL}/ref/{existing['referral_code']}"}
     
     await db.referrals.insert_one({
         "id": str(uuid.uuid4()),
@@ -1773,7 +1776,7 @@ async def generate_referral(entity: Dict = Depends(require_auth)):
         "created_at": datetime.now(timezone.utc).isoformat()
     })
     
-    return {"referral_code": referral_code, "referral_link": f"https://barberhub.com/ref/{referral_code}"}
+    return {"referral_code": referral_code, "referral_link": f"{APP_URL}/ref/{referral_code}"}
 
 @api_router.get("/referrals/my")
 async def get_my_referrals(entity: Dict = Depends(require_auth)):
@@ -2138,7 +2141,7 @@ async def seed_database():
         services_data = shop_data.pop("services")
         raw_password = shop_data.pop("password")
         
-        qr_code_data = f"https://barberhub.com/shop/{shop_id}"
+        qr_code_data = f"{APP_URL}/shop/{shop_id}"
         qr_code = generate_qr_code(qr_code_data)
         
         # Determine ranking tier based on rating

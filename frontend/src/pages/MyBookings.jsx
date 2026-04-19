@@ -35,6 +35,7 @@ const MyBookings = () => {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('all'); // all | pending | confirmed | completed | cancelled
 
   const isRTL = language === 'ar';
 
@@ -48,7 +49,11 @@ const MyBookings = () => {
     services: 'الخدمات', total: 'المجموع', date: 'التاريخ',
     time: 'الوقت', location: 'الموقع', status: 'الحالة',
     viewShop: 'عرض الصالون', cancelBooking: 'إلغاء الحجز',
-    writeReview: 'اكتب تقييمك...', loading: 'جاري التحميل...'
+    writeReview: 'اكتب تقييمك...', loading: 'جاري التحميل...',
+    all: 'الكل', totalBookings: 'إجمالي الحجوزات', upcoming: 'القادمة',
+    filterAll: 'الكل', filterPending: 'قيد الانتظار', filterConfirmed: 'مؤكدة',
+    filterCompleted: 'مكتملة', filterCancelled: 'ملغاة',
+    noMatchFilter: 'لا توجد حجوزات في هذا القسم'
   } : {
     back: 'Back', title: 'My Bookings', noBookings: 'No bookings yet',
     loginRequired: 'Please login', pending: 'Pending',
@@ -59,7 +64,11 @@ const MyBookings = () => {
     services: 'Services', total: 'Total', date: 'Date',
     time: 'Time', location: 'Location', status: 'Status',
     viewShop: 'View Shop', cancelBooking: 'Cancel Booking',
-    writeReview: 'Write your review...', loading: 'Loading...'
+    writeReview: 'Write your review...', loading: 'Loading...',
+    all: 'All', totalBookings: 'Total bookings', upcoming: 'Upcoming',
+    filterAll: 'All', filterPending: 'Pending', filterConfirmed: 'Confirmed',
+    filterCompleted: 'Completed', filterCancelled: 'Cancelled',
+    noMatchFilter: 'No bookings in this section'
   };
 
   // Fetch bookings
@@ -188,8 +197,84 @@ const MyBookings = () => {
             </Button>
           </motion.div>
         ) : (
-          <div className="grid gap-6">
-            {bookings.map((booking, index) => (
+          <>
+            {/* Stats + Filters */}
+            {(() => {
+              const counts = {
+                all: bookings.length,
+                pending: bookings.filter(b => b.status === 'pending').length,
+                confirmed: bookings.filter(b => b.status === 'confirmed').length,
+                completed: bookings.filter(b => b.status === 'completed').length,
+                cancelled: bookings.filter(b => b.status === 'cancelled').length,
+              };
+              const filters = [
+                { id: 'all',       label: t.filterAll,       count: counts.all },
+                { id: 'pending',   label: t.filterPending,   count: counts.pending },
+                { id: 'confirmed', label: t.filterConfirmed, count: counts.confirmed },
+                { id: 'completed', label: t.filterCompleted, count: counts.completed },
+                { id: 'cancelled', label: t.filterCancelled, count: counts.cancelled },
+              ];
+              const filtered = activeFilter === 'all' ? bookings : bookings.filter(b => b.status === activeFilter);
+              return (
+                <>
+                  {/* Summary bar */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-5 p-4 rounded-2xl bh-glass-vip bh-corner-accents flex items-center justify-between flex-wrap gap-3"
+                  >
+                    <div>
+                      <div className="text-xs uppercase tracking-wider text-[var(--bh-text-muted)]">{t.totalBookings}</div>
+                      <div className="text-3xl font-display font-black bh-gold-text">{counts.all}</div>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="text-center">
+                        <div className="text-[10px] text-[var(--bh-text-muted)]">{t.upcoming}</div>
+                        <div className="text-xl font-bold text-blue-300">{counts.pending + counts.confirmed}</div>
+                      </div>
+                      <div className="w-px h-8 bg-[var(--bh-glass-border)]" />
+                      <div className="text-center">
+                        <div className="text-[10px] text-[var(--bh-text-muted)]">{t.completed}</div>
+                        <div className="text-xl font-bold text-green-400">{counts.completed}</div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* Filter chips */}
+                  <div className="mb-6 overflow-x-auto scrollbar-hide">
+                    <div className="flex items-center gap-2 pb-2 min-w-max">
+                      {filters.map(f => {
+                        const active = activeFilter === f.id;
+                        return (
+                          <button
+                            key={f.id}
+                            onClick={() => setActiveFilter(f.id)}
+                            className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
+                              active
+                                ? 'bg-gradient-to-r from-[var(--bh-gold)] to-[var(--bh-gold-deep)] text-[var(--bh-obsidian)] shadow-lg shadow-[var(--bh-gold)]/30'
+                                : 'bh-glass text-[var(--bh-text-secondary)] hover:text-white'
+                            }`}
+                            data-testid={`filter-${f.id}`}
+                          >
+                            {f.label}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                              active ? 'bg-[var(--bh-obsidian)]/20' : 'bg-[var(--bh-gold)]/15 text-[var(--bh-gold)]'
+                            }`}>{f.count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Filtered list */}
+                  {filtered.length === 0 ? (
+                    <div className="bh-glass rounded-2xl p-10 text-center">
+                      <BookCalendar className="w-14 h-14 text-[var(--bh-gold)] mx-auto mb-3 opacity-40" />
+                      <p className="text-[var(--bh-text-secondary)]">{t.noMatchFilter}</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-6">
+                      {filtered.map((booking, index) => (
               <motion.div
                 key={booking.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -308,7 +393,12 @@ const MyBookings = () => {
                 </div>
               </motion.div>
             ))}
-          </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </>
         )}
       </div>
 

@@ -308,6 +308,15 @@ const HomePage = () => {
                 <>
                   <Link to="/favorites" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>❤️ {t.favorites}</Link>
                   <Link to="/my-bookings" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>📅 {t.myBookings}</Link>
+                  {isBarber && (
+                    <>
+                      <Link to="/dashboard" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>🏪 {t.dashboard}</Link>
+                      <Link to="/payment" className="block text-[var(--bh-gold)] font-bold" onClick={() => setIsMenuOpen(false)}>💳 {language === 'ar' ? 'الاشتراك والدفع' : 'Subscription'}</Link>
+                    </>
+                  )}
+                  {isAdmin && (
+                    <Link to="/admin" className="block text-[var(--bh-gold)] font-bold" onClick={() => setIsMenuOpen(false)}>🛡️ {t.adminPanel}</Link>
+                  )}
                 </>
               )}
             </div>
@@ -431,7 +440,7 @@ const HomePage = () => {
               <span className="font-display font-bold bh-gold-text text-lg">BARBER HUB</span>
             </div>
             <div className="text-sm text-[var(--bh-text-muted)] text-center">
-              © 2026 BARBER HUB. {language === 'ar' ? 'جميع الحقوق محفوظة' : 'All rights reserved'}
+              © {new Date().getFullYear()} BARBER HUB. {language === 'ar' ? 'جميع الحقوق محفوظة' : 'All rights reserved'}
             </div>
             <LanguageToggle />
           </div>

@@ -15,36 +15,38 @@ export const useGeoLocation = () => {
   return context;
 };
 
-// Country to region mapping for dynamic headers
+// Country to region mapping for dynamic headers + payment region
 const COUNTRY_TO_REGION = {
-  // Arabic Countries
-  'Jordan': { ar: 'أفخم صالونات الحلاقة في الأردن', en: 'Premium Barbers in Jordan', currency: 'JOD' },
-  'Saudi Arabia': { ar: 'أفخم صالونات الحلاقة في السعودية', en: 'Premium Barbers in Saudi Arabia', currency: 'SAR' },
-  'Iraq': { ar: 'أفخم صالونات الحلاقة في العراق', en: 'Premium Barbers in Iraq', currency: 'IQD' },
-  'Syria': { ar: 'أفخم صالونات الحلاقة في سوريا', en: 'Premium Barbers in Syria', currency: 'USD' },
-  'Lebanon': { ar: 'أفخم صالونات الحلاقة في لبنان', en: 'Premium Barbers in Lebanon', currency: 'USD' },
-  'United Arab Emirates': { ar: 'أفخم صالونات الحلاقة في الإمارات', en: 'Premium Barbers in UAE', currency: 'USD' },
-  'Kuwait': { ar: 'أفخم صالونات الحلاقة في الكويت', en: 'Premium Barbers in Kuwait', currency: 'USD' },
-  'Qatar': { ar: 'أفخم صالونات الحلاقة في قطر', en: 'Premium Barbers in Qatar', currency: 'USD' },
-  'Bahrain': { ar: 'أفخم صالونات الحلاقة في البحرين', en: 'Premium Barbers in Bahrain', currency: 'USD' },
-  'Oman': { ar: 'أفخم صالونات الحلاقة في عمان', en: 'Premium Barbers in Oman', currency: 'USD' },
-  'Palestine': { ar: 'أفخم صالونات الحلاقة في فلسطين', en: 'Premium Barbers in Palestine', currency: 'USD' },
-  'Egypt': { ar: 'أفخم صالونات الحلاقة في مصر', en: 'Premium Barbers in Egypt', currency: 'USD' },
+  // Arabic Countries - LOCAL currencies
+  'Jordan':       { ar: 'أفخم صالونات الحلاقة في الأردن',   en: 'Premium Barbers in Jordan',       currency: 'JOD', paymentRegion: 'local_arab' },
+  'Saudi Arabia': { ar: 'أفخم صالونات الحلاقة في السعودية', en: 'Premium Barbers in Saudi Arabia', currency: 'SAR', paymentRegion: 'local_arab' },
+  'Iraq':         { ar: 'أفخم صالونات الحلاقة في العراق',    en: 'Premium Barbers in Iraq',         currency: 'IQD', paymentRegion: 'local_arab' },
+  'Syria':        { ar: 'أفخم صالونات الحلاقة في سوريا',     en: 'Premium Barbers in Syria',        currency: 'SYP', paymentRegion: 'local_arab' },
+  'Lebanon':      { ar: 'أفخم صالونات الحلاقة في لبنان',     en: 'Premium Barbers in Lebanon',      currency: 'LBP', paymentRegion: 'local_arab' },
+  'United Arab Emirates': { ar: 'أفخم صالونات الحلاقة في الإمارات', en: 'Premium Barbers in UAE', currency: 'AED', paymentRegion: 'local_arab' },
+  'Kuwait':       { ar: 'أفخم صالونات الحلاقة في الكويت',    en: 'Premium Barbers in Kuwait',       currency: 'KWD', paymentRegion: 'local_arab' },
+  'Qatar':        { ar: 'أفخم صالونات الحلاقة في قطر',       en: 'Premium Barbers in Qatar',        currency: 'QAR', paymentRegion: 'local_arab' },
+  'Bahrain':      { ar: 'أفخم صالونات الحلاقة في البحرين',   en: 'Premium Barbers in Bahrain',      currency: 'BHD', paymentRegion: 'local_arab' },
+  'Oman':         { ar: 'أفخم صالونات الحلاقة في عمان',      en: 'Premium Barbers in Oman',         currency: 'OMR', paymentRegion: 'local_arab' },
+  'Palestine':    { ar: 'أفخم صالونات الحلاقة في فلسطين',   en: 'Premium Barbers in Palestine',    currency: 'USD', paymentRegion: 'local_arab' },
+  'Egypt':        { ar: 'أفخم صالونات الحلاقة في مصر',       en: 'Premium Barbers in Egypt',        currency: 'EGP', paymentRegion: 'local_arab' },
   
-  // Europe (fallback for European countries)
-  'Germany': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'France': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'United Kingdom': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'Italy': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'Spain': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'Netherlands': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'Belgium': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'Sweden': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'Norway': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
-  'Switzerland': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR' },
+  // Europe (fallback for European countries) - GLOBAL
+  'Germany':        { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'France':         { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'United Kingdom': { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'GBP', paymentRegion: 'global' },
+  'Italy':          { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'Spain':          { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'Netherlands':    { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'Belgium':        { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'Sweden':         { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'Norway':         { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'Switzerland':    { ar: 'أفضل الحلاقين في أوروبا', en: 'Premium Barbers in Europe', currency: 'EUR', paymentRegion: 'global' },
+  'United States':  { ar: 'أفضل الحلاقين في أمريكا', en: 'Premium Barbers in USA',    currency: 'USD', paymentRegion: 'global' },
+  'Canada':         { ar: 'أفضل الحلاقين في كندا',    en: 'Premium Barbers in Canada', currency: 'USD', paymentRegion: 'global' },
   
   // Default fallback
-  'default': { ar: 'أفخم صالونات الحلاقة', en: 'Premium Barbers Worldwide', currency: 'USD' }
+  'default': { ar: 'أفخم صالونات الحلاقة', en: 'Premium Barbers Worldwide', currency: 'USD', paymentRegion: 'global' }
 };
 
 export const GeoLocationProvider = ({ children }) => {
@@ -140,6 +142,17 @@ export const GeoLocationProvider = ({ children }) => {
     return 'USD';
   };
 
+  /**
+   * Returns 'local_arab' for Arab countries (manual transfer methods)
+   * or 'global' for EU/US/UK/Canada etc. (card payment methods).
+   * Used by Smart Payment Gateway on PaymentPage.
+   */
+  const getPaymentRegion = () => {
+    if (!geoData) return 'global';
+    const mapping = COUNTRY_TO_REGION[geoData.country];
+    return mapping?.paymentRegion || 'global';
+  };
+
   const value = {
     geoData,
     isLoading,
@@ -149,6 +162,7 @@ export const GeoLocationProvider = ({ children }) => {
     city: geoData?.city || '',
     getDynamicHeader,
     getCurrency,
+    getPaymentRegion,
   };
 
   return (

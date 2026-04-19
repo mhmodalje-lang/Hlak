@@ -97,11 +97,32 @@ export default function InstallPrompt() {
 
   // Decide whether to show the prompt
   useEffect(() => {
-    if (isStandalone || isInstalled) return;
+    // CRITICAL: Never show if standalone or installed
+    if (isStandalone || isInstalled) {
+      setVisible(false);
+      return;
+    }
+    
     const s = readState();
     const now = Date.now();
-    if (s.dismissedAt && (now - s.dismissedAt) < DISMISS_HOURS * 3600 * 1000) return;
-    if (s.installed) return;
+    
+    // Don't show if dismissed recently
+    if (s.dismissedAt && (now - s.dismissedAt) < DISMISS_HOURS * 3600 * 1000) {
+      setVisible(false);
+      return;
+    }
+    
+    // Don't show if already installed
+    if (s.installed) {
+      setVisible(false);
+      return;
+    }
+    
+    // Check if we already showed it in this session
+    if (sessionStorage.getItem('bh_prompt_shown_session') === 'true') {
+      setVisible(false);
+      return;
+    }
 
     // Use longer delay on gender selection page (let user pick first)
     const path = typeof window !== 'undefined' ? window.location.pathname : '/';
@@ -111,9 +132,11 @@ export default function InstallPrompt() {
     const timer = setTimeout(() => {
       if (canInstall || isIOS) {
         setVisible(true);
+        sessionStorage.setItem('bh_prompt_shown_session', 'true');
       } else {
         // Still show generic banner (manual install instructions) for other browsers
         setVisible(true);
+        sessionStorage.setItem('bh_prompt_shown_session', 'true');
       }
     }, delay);
     return () => clearTimeout(timer);
@@ -242,17 +265,18 @@ export default function InstallPrompt() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998] bh-safe-bottom"
               onClick={handleLater}
               data-testid="pwa-backdrop"
             />
-            {/* Bottom Sheet */}
+            {/* Bottom Sheet - Mobile Safe Area */}
             <motion.div
               initial={{ y: '100%', opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: '100%', opacity: 0 }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-[9999] max-w-xl mx-auto"
+              className="fixed bottom-0 left-0 right-0 z-[9999] max-w-xl mx-auto pb-safe"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
               data-testid="pwa-install-sheet"
               role="dialog"
               aria-modal="true"

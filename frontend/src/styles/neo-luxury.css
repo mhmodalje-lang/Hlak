@@ -375,6 +375,46 @@ body, html {
 .bh-no-tap-highlight { -webkit-tap-highlight-color: transparent; }
 .bh-safe-top { padding-top: env(safe-area-inset-top); }
 .bh-safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.bh-safe-left { padding-left: env(safe-area-inset-left); }
+.bh-safe-right { padding-right: env(safe-area-inset-right); }
+
+/* Mobile-First: Safe Area for iOS notch and Android navigation */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .bh-surface {
+    min-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Prevent content overflow on small screens */
+@media (max-width: 640px) {
+  html {
+    font-size: 14px; /* Reduce base font for better mobile fit */
+  }
+  
+  .bh-glass,
+  .bh-glass-hi,
+  .bh-glass-vip {
+    border-radius: 16px; /* Smaller radius on mobile */
+  }
+  
+  /* Better tap targets on mobile */
+  .bh-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.75rem 1.5rem;
+  }
+  
+  .bh-btn-sm {
+    min-height: 40px;
+    padding: 0.5rem 1rem;
+  }
+}
 
 /* ============ ANIMATION HELPERS ============ */
 @keyframes bh-fade-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }

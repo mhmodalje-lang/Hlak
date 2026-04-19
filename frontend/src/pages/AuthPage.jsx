@@ -7,6 +7,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/App';
 import { useLocalization } from '@/contexts/LocalizationContext';
+import { useGeoLocation } from '@/contexts/GeoLocationContext';
+import { getPhonePlaceholder } from '@/lib/phoneFormat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,16 +20,19 @@ import { motion } from 'framer-motion';
 
 // Import custom icons
 import { User, ShieldCheck as Lock, PhonePremium as Phone, Location, ArrowLeft, Crown, Shears } from '@/components/icons';
+import { Globe as GlobeIcon } from 'lucide-react';
 
 const AuthPage = () => {
   const navigate = useNavigate();
   const { API, login, gender } = useApp();
   const { language } = useLocalization();
+  const { country: geoCountry, countryCode: geoCountryCode, city: geoCity } = useGeoLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [authType, setAuthType] = useState('user'); // 'user' or 'barbershop'
   const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
   const [countries, setCountries] = useState([]);
   const [cities, setCities] = useState([]);
+  const [hasAutoFilled, setHasAutoFilled] = useState(false);
 
   const [loginData, setLoginData] = useState({ email_or_phone: '', password: '' });
   const [registerData, setRegisterData] = useState({
@@ -76,6 +81,26 @@ const AuthPage = () => {
     };
     fetchCountries();
   }, [API]);
+
+  // Auto-fill country/city from Geo on first load (only if user hasn't typed anything yet)
+  useEffect(() => {
+    if (hasAutoFilled) return;
+    if (!geoCountry || geoCountry === 'Unknown') return;
+    if (countries.length === 0) return;
+    // Match detected country against the list from the backend
+    const matched = countries.find(
+      (c) => c.name === geoCountry || c.code === geoCountryCode
+    );
+    if (!matched) return;
+    setRegisterData((prev) =>
+      prev.country ? prev : { ...prev, country: matched.name, city: geoCity || prev.city }
+    );
+    setShopRegisterData((prev) =>
+      prev.country ? prev : { ...prev, country: matched.name, city: geoCity || prev.city }
+    );
+    fetchCities(matched.code);
+    setHasAutoFilled(true);
+  }, [geoCountry, geoCountryCode, geoCity, countries, hasAutoFilled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch cities when country changes
   const fetchCities = useCallback(async (countryCode) => {
@@ -234,16 +259,18 @@ const AuthPage = () => {
                   <Input
                     id="login-email-phone"
                     type={loginMethod === 'email' ? 'email' : 'tel'}
-                    placeholder={loginMethod === 'email' ? 'you@example.com' : '+963 9XX XXX XXX'}
+                    placeholder={loginMethod === 'email' ? 'you@example.com' : getPhonePlaceholder(geoCountryCode, language)}
                     value={loginData.email_or_phone}
                     onChange={(e) => setLoginData({ ...loginData, email_or_phone: e.target.value })}
                     required
                     className="bh-input"
                     data-testid="login-email-phone"
+                    dir={loginMethod === 'phone' ? 'ltr' : undefined}
                   />
                   {loginMethod === 'phone' && (
-                    <p className="text-xs text-[var(--bh-text-muted)]">
-                      {language === 'ar' ? '🇸🇾 يدعم سوريا وجميع الدول' : '🇸🇾 Supports Syria & all countries'}
+                    <p className="text-xs text-[var(--bh-text-muted)] flex items-center gap-1.5">
+                      <GlobeIcon className="w-3 h-3" />
+                      {language === 'ar' ? 'متوفر عالمياً • أدخل الرقم مع مفتاح الدولة' : 'Available worldwide • Include country code'}
                     </p>
                   )}
                 </div>
@@ -352,7 +379,7 @@ const AuthPage = () => {
                   <Label className="text-[var(--bh-text-secondary)] font-body">{t.phone}</Label>
                   <Input
                     type="tel"
-                    placeholder="+962 7X XXX XXXX"
+                    placeholder={getPhonePlaceholder(geoCountryCode, language)}
                     value={authType === 'user' ? registerData.phone_number : shopRegisterData.phone_number}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -362,6 +389,8 @@ const AuthPage = () => {
                     }}
                     required
                     className="bh-input"
+                    dir="ltr"
+                    data-testid="register-phone"
                   />
                 </div>
 

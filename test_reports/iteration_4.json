@@ -1,0 +1,80 @@
+{
+  "summary": "Phase 3 backend testing (Orders + shipping + 10-product limit + loyalty + profile location sync). 18/18 pytest cases passed. Identified one critical RCA'd bug in /api/users/me/loyalty and one functional mismatch between order-loyalty and the loyalty status endpoint.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/users/me/loyalty",
+        "issue": "Uses entity.get('role') != 'user' but user entities have entity_type='user' and no 'role' field. Endpoint ALWAYS returns {points:0, tier:'none', is_user:False} for every real user regardless of actual loyalty. Confirmed via live call.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/orders + GET /api/users/me/loyalty",
+        "issue": "Orders increment users.loyalty_points (int(total)), but /api/users/me/loyalty computes points ONLY from completed bookings (10 per booking + capped spend). It ignores users.loyalty_points entirely. Review request explicitly says 'verify via GET /api/users/me/loyalty' but that cannot work today; verification currently only possible via /api/users/me (loyalty_points field)."
+      },
+      {
+        "endpoint": "GET /api/barbershops/{id} & enrich_barbershop_for_frontend",
+        "issue": "'village' is stored in barber_profiles collection but not exposed in the enriched public response (only district/neighborhood/latitude/longitude are). Consumers cannot read the village saved through ProfileSetup LocationPicker."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": {
+    "backend": [
+      "TestProductsPhase3::test_create_product_with_shipping_options",
+      "TestProductsPhase3::test_create_product_default_pickup_when_omitted",
+      "TestProductsPhase3::test_max_10_products_limit (returns 400 MAX_PRODUCTS_REACHED on 11th)",
+      "TestOrdersPhase3::test_create_order_as_guest (subtotal/shipping_fee/total correct; pending status; history seeded)",
+      "TestOrdersPhase3::test_create_order_as_user_awards_loyalty (users.loyalty_points += int(total) verified via /users/me)",
+      "TestOrdersPhase3::test_order_invalid_shipping_method (pickup-only rejects local_delivery with 400)",
+      "TestOrdersPhase3::test_order_missing_customer_phone_guest (400)",
+      "TestOrdersPhase3::test_get_my_orders_as_user",
+      "TestOrdersPhase3::test_get_my_orders_forbidden_for_shop (403)",
+      "TestOrdersPhase3::test_get_shop_orders (returns both guest + user orders)",
+      "TestOrdersPhase3::test_get_shop_orders_requires_shop_auth (403 for user)",
+      "TestOrdersPhase3::test_update_order_status_flow (confirmed→preparing→shipped, history appended)",
+      "TestOrdersPhase3::test_update_order_status_invalid (400)",
+      "TestOrdersPhase3::test_order_detail_owner_access (owner user + shop both allowed)",
+      "TestOrdersPhase3::test_order_detail_forbidden_for_other_user (403)",
+      "TestOrdersPhase3::test_cancel_order_by_customer (status → cancelled)",
+      "TestOrdersPhase3::test_cancel_order_forbidden_for_other_user (403)",
+      "TestBarberProfileLocation::test_profile_location_sync (lat/lng/district/neighborhood persisted & returned by /api/barbershops/{id})"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase3_orders.py",
+    "/app/test_reports/pytest/phase3_orders.xml"
+  ],
+  "action_items": [
+    "Fix /api/users/me/loyalty: change entity.get('role') != 'user' to entity.get('entity_type') != 'user' (around server.py line 647). This alone unbreaks the endpoint.",
+    "Decide semantics of loyalty: either (a) add users.loyalty_points into base_points in /users/me/loyalty so order-awarded points are reflected, or (b) stop incrementing users.loyalty_points in create_order and document that loyalty is booking-driven only. Current setup awards silently and never surfaces it.",
+    "Expose 'village' field in enrich_barbershop_for_frontend (mirror the pattern used for neighborhood/district) so ProfileSetup → dashboard round-trip is lossless."
+  ],
+  "critical_code_review_comments": [
+    "server.py line ~647: `if entity.get('role') != 'user':` is a latent defect — token-based users have no 'role' key. Use 'entity_type'.",
+    "server.py create_order awards loyalty_points using int(total) with no cap and no multiplier, diverging from the booking-based loyalty tiers logic (10/booking + capped spend). Two parallel point systems now exist in the DB.",
+    "server.py line 3509 count = 3509: file is >700 LOC (actually ~3.5k). Recommend splitting into routers (products.py, orders.py, loyalty.py, barbers.py) for maintainability.",
+    "ORDER_STATUSES defined as a set but statuses like 'shipped' can currently be set on an order that was never 'confirmed' — no state-machine validation (any→any allowed). Consider linear state transitions.",
+    "/api/orders/{id}/cancel allows cancel right after status=shipped (only blocks delivered/cancelled). Business-wise, shipped orders probably shouldn't be cancellable by the customer."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase3_orders.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18 executed tests passed). Loyalty endpoint bug surfaced via supplemental live check, not via assertion."
+  },
+  "test_credentials": {
+    "salon": {"phone": "0935964158", "password": "salon123"},
+    "note": "Test users are created per-run with prefix TEST_<uuid>; password user123."
+  },
+  "seed_data_creation": "Each test run creates: 1 TEST_ product with all 3 shipping_options, 1 TEST_Pickup_ product (pickup-only), and up to 8 TEST_Fill_ products (auto-deleted after the 10-limit test). Also persists TEST_Al-Mazzeh/TEST_East Block/TEST_Dummar in the salon's location — main agent may want to reset the seed salon coordinates after run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 3 Orders + Products limit + Profile location sync all verified working. The only real defect is the /api/users/me/loyalty role/entity_type check (and the semantic split between order-loyalty and booking-loyalty). Salon id 23a8effc-7e65-4869-9202-b1447430cf45 now has TEST_ products + location fields overwritten — reseed if needed. Frontend smoke tests were explicitly skipped per request (backend only).",
+  "rca of the issue": "BUG: GET /api/users/me/loyalty returns {is_user:false, points:0} for all real users. REPRODUCE: register a user via POST /api/auth/register, call GET /api/users/me/loyalty → body={'points':0,'tier':'none','bookings_completed':0,'is_user':False}. ROOT CAUSE: server.py line ~647 uses `entity.get('role') != 'user'` but get_current_entity stores the type under key 'entity_type' (line 414). `role` is never set on user docs, so the guard clause always triggers. MITIGATION: replace with `entity.get('entity_type') != 'user'`. Additionally, orders award users.loyalty_points (int(total)) but this endpoint never reads that field — consider merging booking-based + order-based points into a single source of truth."
+}

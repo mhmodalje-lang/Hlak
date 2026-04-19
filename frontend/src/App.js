@@ -25,6 +25,7 @@ import ProfileSetup from "@/pages/ProfileSetup";
 import ProductShowcase from "@/pages/ProductShowcase";
 import AIAdvisor from "@/pages/AIAdvisor";
 import FavoritesPage from "@/pages/FavoritesPage";
+import MyOrders from "@/pages/MyOrders";
 import InstallPrompt from "@/components/InstallPrompt";
 
 // Context
@@ -135,6 +136,7 @@ function App() {
                   <Route path="/top-barbers" element={<TopBarbers />} />
                   <Route path="/map" element={<MapPage />} />
                   <Route path="/my-bookings" element={<MyBookings />} />
+                  <Route path="/my-orders" element={<MyOrders />} />
                   <Route path="/payment" element={<PaymentPage />} />
                   <Route path="/ai-advisor" element={<AIAdvisor />} />
                   <Route path="/favorites" element={<FavoritesPage />} />

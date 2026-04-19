@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import axios from 'axios';
+import LocationPicker from '@/components/LocationPicker';
 import { 
   ArrowRight, ArrowLeft, Plus, X, Loader2, Save,
   Clock, DollarSign, Image, Link as LinkIcon
@@ -34,6 +35,10 @@ const ProfileSetup = () => {
     youtube: '',
     address: '',
     neighborhood: '',
+    village: '',
+    district: '',
+    latitude: null,
+    longitude: null,
     average_service_time: 30,
     services: [],
     custom_services: [],
@@ -315,24 +320,6 @@ const ProfileSetup = () => {
                   dir="rtl"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className={labelClass}>{t.address}</Label>
-                  <Input
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <Label className={labelClass}>{t.neighborhood}</Label>
-                  <Input
-                    value={formData.neighborhood}
-                    onChange={(e) => setFormData({ ...formData, neighborhood: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
               <div>
                 <Label className={labelClass}>{t.avgTime}</Label>
                 <Input
@@ -344,6 +331,21 @@ const ProfileSetup = () => {
               </div>
             </div>
           </div>
+
+          {/* Hyper-Local Location */}
+          <LocationPicker
+            value={{
+              latitude: formData.latitude,
+              longitude: formData.longitude,
+              district: formData.district,
+              neighborhood: formData.neighborhood,
+              village: formData.village,
+              address: formData.address
+            }}
+            onChange={(loc) => setFormData({ ...formData, ...loc })}
+            language={language}
+            isMen={isMen}
+          />
 
           {/* Social Links */}
           <div className={`${isMen ? 'card-men' : 'card-women'} p-6`}>

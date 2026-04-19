@@ -11,6 +11,7 @@ import axios from 'axios';
 import { ServicesManagement, SocialMediaManagement } from '@/components/DashboardExtras';
 import PortfolioManagement from '@/components/PortfolioManagement';
 import UsageStats from '@/components/UsageStats';
+import ShopOrdersManagement from '@/components/ShopOrdersManagement';
 import { 
   ArrowRight, ArrowLeft, Calendar, Clock, Star, 
   Check, X, Loader2, Settings, QrCode, Users,
@@ -27,7 +28,8 @@ const BarberDashboard = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [productForm, setProductForm] = useState({
     name: '', name_ar: '', description: '', description_ar: '',
-    price: '', category: 'general', image_url: '', featured: false
+    price: '', category: 'general', image_url: '', featured: false,
+    shipping_options: ['pickup'], local_delivery_fee: 0
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -71,7 +73,13 @@ const BarberDashboard = () => {
       productFeatured: 'منتج مميز',
       save: 'حفظ',
       delete: 'حذف',
-      noProducts: 'لا توجد منتجات بعد'
+      noProducts: 'لا توجد منتجات بعد',
+      shippingTitle: 'خيارات الاستلام',
+      pickup: 'استلام من الصالون',
+      local_delivery: 'توصيل محلي (مندوب خاص)',
+      courier: 'شركة شحن',
+      deliveryFee: 'رسوم التوصيل المحلي (€)',
+      maxProductsReached: 'الحد الأقصى 10 منتجات'
     },
     en: {
       dashboard: 'Dashboard',
@@ -110,7 +118,13 @@ const BarberDashboard = () => {
       productFeatured: 'Featured Product',
       save: 'Save',
       delete: 'Delete',
-      noProducts: 'No products yet'
+      noProducts: 'No products yet',
+      shippingTitle: 'Shipping Options',
+      pickup: 'Pickup from Salon',
+      local_delivery: 'Local Delivery (Courier)',
+      courier: 'Shipping Company',
+      deliveryFee: 'Local Delivery Fee (€)',
+      maxProductsReached: 'Maximum 10 products reached'
     }
   };
 
@@ -216,7 +230,9 @@ const BarberDashboard = () => {
       name: product.name, name_ar: product.name_ar || '',
       description: product.description || '', description_ar: product.description_ar || '',
       price: product.price.toString(), category: product.category,
-      image_url: product.image_url || '', featured: product.featured
+      image_url: product.image_url || '', featured: product.featured,
+      shipping_options: product.shipping_options && product.shipping_options.length > 0 ? product.shipping_options : ['pickup'],
+      local_delivery_fee: product.local_delivery_fee || 0
     });
     setShowProductForm(true);
   };
@@ -358,12 +374,18 @@ const BarberDashboard = () => {
           <div className="flex items-center justify-between mb-4">
             <h3 className={`font-bold flex items-center gap-2 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
               <ShoppingBag className={`w-5 h-5 ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`} />
-              {t.products} ({products.length})
+              {t.products} ({products.length}/10)
             </h3>
             <Button 
-              onClick={() => { setEditingProduct(null); setProductForm({ name: '', name_ar: '', description: '', description_ar: '', price: '', category: 'general', image_url: '', featured: false }); setShowProductForm(true); }}
+              onClick={() => { 
+                if (products.length >= 10) { toast.error(t.maxProductsReached); return; }
+                setEditingProduct(null); 
+                setProductForm({ name: '', name_ar: '', description: '', description_ar: '', price: '', category: 'general', image_url: '', featured: false, shipping_options: ['pickup'], local_delivery_fee: 0 }); 
+                setShowProductForm(true); 
+              }}
               size="sm" className={isMen ? 'btn-primary-men' : 'btn-primary-women'}
               data-testid="add-product-btn"
+              disabled={products.length >= 10}
             >
               <Plus className="w-4 h-4 me-1" /> {t.addProduct}
             </Button>
@@ -418,6 +440,7 @@ const BarberDashboard = () => {
 
         {/* Bookings Tabs */}
         <PortfolioManagement API={API} token={token} isMen={isMen} language={language} />
+        <ShopOrdersManagement API={API} token={token} isMen={isMen} language={language} />
         <ServicesManagement API={API} token={token} isMen={isMen} language={language} />
         <SocialMediaManagement API={API} token={token} isMen={isMen} language={language} profile={profile} onUpdate={() => window.location.reload()} />
 
@@ -585,6 +608,47 @@ const BarberDashboard = () => {
                 data-testid="product-featured-checkbox"
               />
               <label className={`text-sm font-bold ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productFeatured}</label>
+            </div>
+
+            {/* Shipping Options */}
+            <div className={`p-3 rounded-xl border ${isMen ? 'bg-[#2A1F14] border-[#3A2E1F]' : 'bg-gray-50 border-gray-200'}`}>
+              <p className={`text-sm font-bold mb-2 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>{t.shippingTitle}</p>
+              <div className="space-y-2">
+                {['pickup', 'local_delivery', 'courier'].map((opt) => {
+                  const checked = productForm.shipping_options?.includes(opt);
+                  return (
+                    <label key={opt} className={`flex items-center gap-2 text-sm cursor-pointer ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4"
+                        checked={!!checked}
+                        onChange={(e) => {
+                          const current = productForm.shipping_options || [];
+                          const next = e.target.checked ? [...current, opt] : current.filter(x => x !== opt);
+                          setProductForm({ ...productForm, shipping_options: next.length > 0 ? next : ['pickup'] });
+                        }}
+                        data-testid={`shipping-opt-${opt}`}
+                      />
+                      {t[opt]}
+                    </label>
+                  );
+                })}
+              </div>
+              {productForm.shipping_options?.includes('local_delivery') && (
+                <div className="mt-3">
+                  <label className={`text-xs font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.deliveryFee}</label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={productForm.local_delivery_fee}
+                    onChange={(e) => setProductForm({ ...productForm, local_delivery_fee: parseFloat(e.target.value) || 0 })}
+                    placeholder="0"
+                    className={isMen ? 'bg-[#3A2E1F] border-[#3A2E1F] text-white' : ''}
+                    data-testid="local-delivery-fee-input"
+                  />
+                </div>
+              )}
             </div>
             <Button 
               onClick={handleSaveProduct} 

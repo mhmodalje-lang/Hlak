@@ -16,6 +16,8 @@ import axios from 'axios';
 import { format } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
 import { motion } from 'framer-motion';
+import LoyaltyBadge from '@/components/LoyaltyBadge';
+import { ShoppingBag } from 'lucide-react';
 
 // Import custom icons
 import {
@@ -176,10 +178,22 @@ const MyBookings = () => {
             <BookCalendar className="w-7 h-7" />
             {t.title}
           </h1>
+          <button
+            onClick={() => navigate('/my-orders')}
+            className="bh-btn bh-btn-ghost bh-btn-sm"
+            data-testid="my-orders-link"
+            title={language === 'ar' ? 'طلباتي' : 'My Orders'}
+          >
+            <ShoppingBag className="w-5 h-5" />
+            <span className="hidden sm:inline">{language === 'ar' ? 'طلباتي' : 'Orders'}</span>
+          </button>
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-8">
+        {/* Loyalty Badge (2026 feature) */}
+        <LoyaltyBadge API={API} token={token} language={language} />
+
         {bookings.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}

@@ -293,6 +293,10 @@ class BarberProfileCreate(BaseModel):
     youtube: Optional[str] = None
     address: Optional[str] = None
     neighborhood: Optional[str] = None
+    village: Optional[str] = None
+    district: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     average_service_time: int = 30
     services: Optional[List[Dict]] = None
     custom_services: Optional[List[Dict]] = None
@@ -310,6 +314,9 @@ class ProductCreate(BaseModel):
     image_url: Optional[str] = None
     in_stock: bool = True
     featured: bool = False
+    stock_quantity: Optional[int] = None
+    shipping_options: Optional[List[str]] = None  # ["pickup", "local_delivery", "courier"]
+    local_delivery_fee: Optional[float] = 0.0
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
@@ -321,6 +328,26 @@ class ProductUpdate(BaseModel):
     image_url: Optional[str] = None
     in_stock: Optional[bool] = None
     featured: Optional[bool] = None
+    stock_quantity: Optional[int] = None
+    shipping_options: Optional[List[str]] = None
+    local_delivery_fee: Optional[float] = None
+
+# --- Orders ---
+class OrderCreate(BaseModel):
+    product_id: str
+    shop_id: str
+    quantity: int = 1
+    shipping_method: str  # "pickup" | "local_delivery" | "courier"
+    customer_name: Optional[str] = None
+    customer_phone: str
+    shipping_address: Optional[str] = None
+    shipping_city: Optional[str] = None
+    shipping_country: Optional[str] = None
+    notes: Optional[str] = None
+
+class OrderStatusUpdate(BaseModel):
+    status: str  # "pending" | "confirmed" | "preparing" | "shipped" | "delivered" | "cancelled"
+    tracking_note: Optional[str] = None
 
 # --- AI Try-On ---
 class AITryOnRequest(BaseModel):
@@ -594,6 +621,74 @@ async def login(credentials: UserLogin):
 async def get_current_user(entity: Dict = Depends(require_auth)):
     return entity
 
+# ============== LOYALTY POINTS SYSTEM (2026) ==============
+# Formula: 10 points per completed booking + 1 point per currency unit spent (capped at 50 per booking)
+# Tiers: Bronze (<100), Silver (100-299), Gold (300-699), Platinum (700-1499), Diamond VIP (1500+)
+
+LOYALTY_TIERS = [
+    {"name": "diamond",  "name_ar": "\u062f\u0627\u064a\u0645\u0648\u0646\u062f VIP", "min": 1500, "multiplier": 2.0, "discount_pct": 15, "color": "#b9f2ff"},
+    {"name": "platinum", "name_ar": "\u0628\u0644\u0627\u062a\u064a\u0646\u064a",     "min": 700,  "multiplier": 1.5, "discount_pct": 10, "color": "#e5e4e2"},
+    {"name": "gold",     "name_ar": "\u0630\u0647\u0628\u064a",                        "min": 300,  "multiplier": 1.25, "discount_pct": 7,  "color": "#D4AF37"},
+    {"name": "silver",   "name_ar": "\u0641\u0636\u064a",                              "min": 100,  "multiplier": 1.1,  "discount_pct": 5,  "color": "#C0C0C0"},
+    {"name": "bronze",   "name_ar": "\u0628\u0631\u0648\u0646\u0632\u064a",             "min": 0,    "multiplier": 1.0,  "discount_pct": 0,  "color": "#CD7F32"},
+]
+
+
+def _compute_tier(points: int) -> Dict:
+    for tier in LOYALTY_TIERS:
+        if points >= tier["min"]:
+            return tier
+    return LOYALTY_TIERS[-1]
+
+
+@api_router.get("/users/me/loyalty")
+async def get_loyalty_status(entity: Dict = Depends(require_auth)):
+    """Returns the authenticated user's loyalty points, tier, and next-tier progress."""
+    if entity.get("role") != "user":
+        return {"points": 0, "tier": "none", "bookings_completed": 0, "is_user": False}
+
+    user_id = entity["id"]
+    # Count completed bookings
+    completed = await db.bookings.count_documents({"user_id": user_id, "status": "completed"})
+    # Sum total_price across completed bookings
+    pipeline = [
+        {"$match": {"user_id": user_id, "status": "completed"}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_price"}}},
+    ]
+    total_spent = 0
+    async for doc in db.bookings.aggregate(pipeline):
+        total_spent = doc.get("total", 0) or 0
+        break
+
+    # Points = 10 per completed booking + min(total_spent, 50*completed)
+    base_points = 10 * completed + int(min(total_spent, 50 * max(completed, 1)))
+    current_tier = _compute_tier(base_points)
+
+    # Next tier progress
+    higher = [t for t in LOYALTY_TIERS if t["min"] > base_points]
+    next_tier = higher[-1] if higher else None
+    progress_pct = 100 if not next_tier else int(
+        (base_points - current_tier["min"]) / (next_tier["min"] - current_tier["min"]) * 100
+    )
+
+    return {
+        "is_user": True,
+        "points": base_points,
+        "bookings_completed": completed,
+        "total_spent_usd": round(total_spent, 2),
+        "tier": current_tier["name"],
+        "tier_name_ar": current_tier["name_ar"],
+        "tier_color": current_tier["color"],
+        "tier_min": current_tier["min"],
+        "discount_pct": current_tier["discount_pct"],
+        "multiplier": current_tier["multiplier"],
+        "next_tier": next_tier["name"] if next_tier else None,
+        "next_tier_min": next_tier["min"] if next_tier else None,
+        "progress_to_next_pct": max(0, min(100, progress_pct)),
+        "all_tiers": LOYALTY_TIERS,
+    }
+
+
 # ============== BARBERSHOP REGISTRATION ==============
 
 @api_router.post("/auth/register-barbershop", response_model=TokenResponse)
@@ -774,6 +869,16 @@ async def create_or_update_barber_profile(profile_data: BarberProfileCreate, ent
         shop_update["tiktok_url"] = profile_data.tiktok
     if profile_data.logo_url:
         shop_update["shop_logo"] = profile_data.logo_url
+    if profile_data.latitude is not None:
+        shop_update["latitude"] = profile_data.latitude
+    if profile_data.longitude is not None:
+        shop_update["longitude"] = profile_data.longitude
+    if profile_data.district:
+        shop_update["district"] = profile_data.district
+    if profile_data.neighborhood:
+        shop_update["neighborhood"] = profile_data.neighborhood
+    if profile_data.village:
+        shop_update["village"] = profile_data.village
     
     if shop_update:
         shop_update["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -1072,6 +1177,11 @@ async def delete_gallery_image(image_id: str, shop: Dict = Depends(require_barbe
 @api_router.post("/products")
 async def create_product(product_data: ProductCreate, shop: Dict = Depends(require_barbershop)):
     """Create a product for the barbershop's showcase"""
+    # Enforce 10-product limit per shop
+    existing_count = await db.products.count_documents({"shop_id": shop['id']})
+    if existing_count >= 10:
+        raise HTTPException(status_code=400, detail="MAX_PRODUCTS_REACHED")
+
     product_doc = {
         "id": str(uuid.uuid4()),
         "shop_id": shop['id'],
@@ -1084,6 +1194,9 @@ async def create_product(product_data: ProductCreate, shop: Dict = Depends(requi
         "image_url": product_data.image_url or "",
         "in_stock": product_data.in_stock,
         "featured": product_data.featured,
+        "stock_quantity": product_data.stock_quantity,
+        "shipping_options": product_data.shipping_options or ["pickup"],
+        "local_delivery_fee": product_data.local_delivery_fee or 0.0,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
@@ -1140,6 +1253,163 @@ async def get_my_products(shop: Dict = Depends(require_barbershop)):
     """Get current shop's products"""
     products = await db.products.find({"shop_id": shop['id']}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return products
+
+# ============== ORDER ENDPOINTS ==============
+
+ORDER_STATUSES = {"pending", "confirmed", "preparing", "shipped", "delivered", "cancelled"}
+
+@api_router.post("/orders")
+async def create_order(order_data: OrderCreate, entity: Optional[Dict] = Depends(get_current_entity)):
+    """Create a new product order. Customer or guest (phone only)."""
+    # Load product
+    product = await db.products.find_one({"id": order_data.product_id, "shop_id": order_data.shop_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if not product.get("in_stock", True):
+        raise HTTPException(status_code=400, detail="Product out of stock")
+
+    # Validate shipping method
+    allowed_methods = product.get("shipping_options") or ["pickup"]
+    if order_data.shipping_method not in allowed_methods:
+        raise HTTPException(status_code=400, detail="Shipping method not supported for this product")
+
+    # Load shop
+    shop = await db.barbershops.find_one({"id": order_data.shop_id}, {"_id": 0, "password": 0})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    qty = max(1, int(order_data.quantity or 1))
+    subtotal = float(product["price"]) * qty
+    shipping_fee = 0.0
+    if order_data.shipping_method == "local_delivery":
+        shipping_fee = float(product.get("local_delivery_fee") or 0.0)
+    total = subtotal + shipping_fee
+
+    now = datetime.now(timezone.utc).isoformat()
+    is_user = bool(entity) and entity.get("entity_type") == "user"
+    user_id = entity.get("id") if is_user else None
+    customer_name = order_data.customer_name or (entity.get("full_name") if entity else "") or ""
+    customer_phone = order_data.customer_phone or (entity.get("phone_number") if entity else "") or ""
+
+    if not customer_phone:
+        raise HTTPException(status_code=400, detail="Customer phone is required")
+
+    order_doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "shop_id": order_data.shop_id,
+        "shop_name": shop.get("shop_name", ""),
+        "shop_whatsapp": shop.get("whatsapp_number", "") or shop.get("phone_number", ""),
+        "product_id": order_data.product_id,
+        "product_name": product.get("name", ""),
+        "product_name_ar": product.get("name_ar", ""),
+        "product_image": product.get("image_url", ""),
+        "unit_price": float(product["price"]),
+        "quantity": qty,
+        "subtotal": subtotal,
+        "shipping_method": order_data.shipping_method,
+        "shipping_fee": shipping_fee,
+        "total": total,
+        "customer_name": customer_name,
+        "customer_phone": customer_phone,
+        "shipping_address": order_data.shipping_address or "",
+        "shipping_city": order_data.shipping_city or "",
+        "shipping_country": order_data.shipping_country or "",
+        "notes": order_data.notes or "",
+        "status": "pending",
+        "status_history": [{"status": "pending", "note": "Order placed", "at": now}],
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.orders.insert_one(order_doc)
+    order_doc.pop("_id", None)
+
+    # Loyalty: award points to user if logged in
+    if user_id:
+        try:
+            await db.users.update_one(
+                {"id": user_id},
+                {"$inc": {"loyalty_points": int(total)}}
+            )
+        except Exception as e:
+            logger.warning(f"Could not award loyalty points: {e}")
+
+    return order_doc
+
+@api_router.get("/orders/my")
+async def get_my_orders(entity: Dict = Depends(require_auth)):
+    """Get current user's orders (customer)."""
+    if entity.get("entity_type") != "user":
+        raise HTTPException(status_code=403, detail="Only customers can view personal orders")
+    orders = await db.orders.find({"user_id": entity["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return orders
+
+@api_router.get("/orders/shop")
+async def get_shop_orders(status: Optional[str] = None, shop: Dict = Depends(require_barbershop)):
+    """Get orders received by current shop."""
+    query = {"shop_id": shop["id"]}
+    if status:
+        query["status"] = status
+    orders = await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return orders
+
+@api_router.put("/orders/{order_id}/status")
+async def update_order_status(order_id: str, payload: OrderStatusUpdate, shop: Dict = Depends(require_barbershop)):
+    """Shop updates an order's status."""
+    if payload.status not in ORDER_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    order = await db.orders.find_one({"id": order_id, "shop_id": shop["id"]}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    now = datetime.now(timezone.utc).isoformat()
+    history = order.get("status_history", [])
+    history.append({"status": payload.status, "note": payload.tracking_note or "", "at": now})
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {"status": payload.status, "status_history": history, "updated_at": now}}
+    )
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    return updated
+
+@api_router.put("/orders/{order_id}/cancel")
+async def cancel_order(order_id: str, entity: Dict = Depends(require_auth)):
+    """Customer or shop cancels a non-final order."""
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    et = entity.get("entity_type")
+    if et == "user" and order.get("user_id") != entity["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    if et == "barbershop" and order.get("shop_id") != entity["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    if et not in ("user", "barbershop"):
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    if order.get("status") in ("delivered", "cancelled"):
+        raise HTTPException(status_code=400, detail="Cannot cancel this order")
+
+    now = datetime.now(timezone.utc).isoformat()
+    history = order.get("status_history", [])
+    history.append({"status": "cancelled", "note": f"Cancelled by {et}", "at": now})
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {"status": "cancelled", "status_history": history, "updated_at": now}}
+    )
+    updated = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    return updated
+
+@api_router.get("/orders/{order_id}")
+async def get_order_detail(order_id: str, entity: Dict = Depends(require_auth)):
+    """Order details - visible to owner customer or shop."""
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    et = entity.get("entity_type")
+    if et == "user" and order.get("user_id") != entity["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    if et == "barbershop" and order.get("shop_id") != entity["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    return order
 
 # ============== BOOKING ENDPOINTS ==============
 
@@ -3209,6 +3479,10 @@ async def startup_db():
     await db.products.create_index("shop_id")
     await db.products.create_index([("shop_id", 1), ("category", 1)])
     await db.products.create_index("featured")
+    await db.orders.create_index("id", unique=True)
+    await db.orders.create_index("user_id")
+    await db.orders.create_index("shop_id")
+    await db.orders.create_index([("shop_id", 1), ("status", 1)])
     await db.referrals.create_index("user_id", unique=True)
     await db.referrals.create_index("referral_code", unique=True)
     await db.favorites.create_index([("user_id", 1), ("shop_id", 1)], unique=True)

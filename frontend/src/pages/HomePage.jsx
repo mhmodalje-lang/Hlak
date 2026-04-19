@@ -271,6 +271,9 @@ const HomePage = () => {
                   <Link to="/my-bookings" className="text-sm font-body text-[var(--bh-text-secondary)] hover:text-[var(--bh-gold)] transition-colors flex items-center gap-1.5">
                     <BookCalendar className="w-4 h-4" /> {t.myBookings}
                   </Link>
+                  <Link to="/my-orders" className="text-sm font-body text-[var(--bh-text-secondary)] hover:text-[var(--bh-gold)] transition-colors flex items-center gap-1.5" data-testid="my-orders-nav">
+                    🛍️ {language === 'ar' ? 'طلباتي' : 'Orders'}
+                  </Link>
                 </>
               )}
               {isBarber && <Link to="/dashboard" className="text-sm font-body text-[var(--bh-text-secondary)] hover:text-[var(--bh-gold)] transition-colors">{t.dashboard}</Link>}
@@ -308,6 +311,7 @@ const HomePage = () => {
                 <>
                   <Link to="/favorites" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>❤️ {t.favorites}</Link>
                   <Link to="/my-bookings" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>📅 {t.myBookings}</Link>
+                  <Link to="/my-orders" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>🛍️ {language === 'ar' ? 'طلباتي' : 'My Orders'}</Link>
                   {isBarber && (
                     <>
                       <Link to="/dashboard" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>🏪 {t.dashboard}</Link>

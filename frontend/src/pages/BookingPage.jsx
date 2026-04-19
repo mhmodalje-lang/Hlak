@@ -8,6 +8,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '@/App';
 import { useLocalization } from '@/contexts/LocalizationContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useGeoLocation } from '@/contexts/GeoLocationContext';
+import { getPhonePlaceholder } from '@/lib/phoneFormat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +23,8 @@ import { ar, enUS } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Import custom icons
-import { ArrowLeft, ArrowRight, Clock, Check, User, Phone, BookCalendar, Crown, Shears, Location } from '@/components/icons';
+import { ArrowLeft, ArrowRight, Clock, Check, User, PhonePremium as Phone, BookCalendar, Crown, Shears, Location } from '@/components/icons';
+import { Edit2, LogIn, Sparkles } from 'lucide-react';
 
 const BookingPage = () => {
   const { barberId } = useParams();
@@ -29,6 +32,7 @@ const BookingPage = () => {
   const { API, user, token, isAuthenticated } = useApp();
   const { language } = useLocalization();
   const { formatPrice, currency } = useCurrency();
+  const { countryCode } = useGeoLocation();
   
   const [barber, setBarber] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -40,9 +44,18 @@ const BookingPage = () => {
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditingContact, setIsEditingContact] = useState(false);
 
   const isRTL = language === 'ar';
   const ChevronIcon = isRTL ? ArrowLeft : ArrowRight;
+
+  // Re-sync user info when they log in / out while this page is open
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      setCustomerName(user.full_name || '');
+      setCustomerPhone(user.phone_number || '');
+    }
+  }, [isAuthenticated, user]);
 
   const t = language === 'ar' ? {
     back: 'رجوع', loading: 'جاري التحميل...', selectDate: 'اختر التاريخ',
@@ -345,45 +358,127 @@ const BookingPage = () => {
               )}
             </motion.div>
 
-            {/* Customer Info */}
+            {/* Customer Info - Auth-Aware */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
               className="bh-glass-vip rounded-3xl p-6 bh-corner-accents"
             >
-              <h2 className="text-2xl font-display font-bold bh-gold-text mb-4 flex items-center gap-2">
-                <User className="w-6 h-6" />
-                {t.yourInfo}
-              </h2>
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.name}</Label>
-                  <Input
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="bh-input"
-                    placeholder={language === 'ar' ? 'أحمد محمد' : 'John Doe'}
-                  />
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-display font-bold bh-gold-text flex items-center gap-2">
+                  <User className="w-6 h-6" />
+                  {t.yourInfo}
+                </h2>
+                {isAuthenticated && !isEditingContact && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingContact(true)}
+                    className="flex items-center gap-1.5 text-xs text-[var(--bh-gold)] hover:text-[var(--bh-gold-deep)] transition-colors"
+                    data-testid="edit-contact-btn"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    {language === 'ar' ? 'تعديل' : 'Edit'}
+                  </button>
+                )}
+              </div>
+
+              {/* Guest banner (not logged in) */}
+              {!isAuthenticated && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-[var(--bh-gold)]/10 to-[var(--bh-gold-deep)]/5 border border-[var(--bh-gold)]/30 flex flex-col sm:flex-row items-start sm:items-center gap-3"
+                  data-testid="guest-banner"
+                >
+                  <div className="w-10 h-10 rounded-full bg-[var(--bh-gold)]/20 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-5 h-5 text-[var(--bh-gold)]" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-bold text-white text-sm">
+                      {language === 'ar' ? '✨ سجّل دخول للحصول على تجربة أسرع' : '✨ Login for a faster experience'}
+                    </div>
+                    <div className="text-xs text-[var(--bh-text-secondary)] mt-0.5">
+                      {language === 'ar' ? 'اسمك ورقمك يُملأ تلقائياً + اكسب نقاط ولاء' : 'Auto-fill your name & phone + earn loyalty points'}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => navigate('/auth', { state: { redirect: `/book/${barberId}` } })}
+                    className="bh-btn bh-btn-primary bh-btn-sm whitespace-nowrap"
+                    data-testid="guest-login-btn"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    {language === 'ar' ? 'تسجيل الدخول' : 'Login'}
+                  </Button>
+                </motion.div>
+              )}
+
+              {/* Logged-in welcome banner */}
+              {isAuthenticated && !isEditingContact && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mb-4 p-3 rounded-xl bg-gradient-to-r from-green-500/10 to-[var(--bh-gold)]/10 border border-green-400/20 flex items-center gap-3"
+                  data-testid="welcome-banner"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--bh-gold)] to-[var(--bh-gold-deep)] flex items-center justify-center text-[var(--bh-obsidian)] font-bold flex-shrink-0">
+                    {(user?.full_name || user?.username || 'U').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-[var(--bh-text-muted)]">
+                      {language === 'ar' ? 'الحجز باسم' : 'Booking as'}
+                    </div>
+                    <div className="font-bold text-white truncate">
+                      {customerName || user?.username}
+                    </div>
+                    {customerPhone && (
+                      <div className="text-xs text-[var(--bh-text-secondary)] flex items-center gap-1" dir="ltr">
+                        <Phone className="w-3 h-3" />
+                        {customerPhone}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Editable fields (for guests OR logged-in user who clicked Edit) */}
+              {(!isAuthenticated || isEditingContact) && (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.name}</Label>
+                    <Input
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="bh-input"
+                      placeholder={language === 'ar' ? 'أحمد محمد' : 'John Doe'}
+                      data-testid="customer-name-input"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.phone}</Label>
+                    <Input
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      className="bh-input"
+                      placeholder={getPhonePlaceholder(countryCode, language)}
+                      dir="ltr"
+                      data-testid="customer-phone-input"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.phone}</Label>
-                  <Input
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="bh-input"
-                    placeholder="+963 9XX XXX XXX"
-                  />
-                </div>
-                <div>
-                  <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.notes}</Label>
-                  <Textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="bh-input min-h-[100px]"
-                    placeholder={language === 'ar' ? 'أي ملاحظات إضافية...' : 'Any special requests...'}
-                  />
-                </div>
+              )}
+
+              {/* Notes always visible */}
+              <div className="mt-4">
+                <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.notes}</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="bh-input min-h-[100px]"
+                  placeholder={language === 'ar' ? 'أي ملاحظات إضافية...' : 'Any special requests...'}
+                  data-testid="booking-notes"
+                />
               </div>
             </motion.div>
           </div>
@@ -470,11 +565,12 @@ const BookingPage = () => {
                 )}
               </Button>
 
-              {/* VIP Badge */}
+              {/* Global Support Badge */}
               <div className="mt-4 text-center">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bh-glass-bg)] border border-[var(--bh-gold)]/30">
+                  <Sparkles className="w-3 h-3 text-[var(--bh-gold)]" />
                   <span className="text-xs text-[var(--bh-gold)] font-bold">
-                    {language === 'ar' ? '🇸🇾 يدعم سوريا' : '🇸🇾 Syria Supported'}
+                    {language === 'ar' ? '🌍 متوفر عالمياً' : '🌍 Available Worldwide'}
                   </span>
                 </div>
               </div>

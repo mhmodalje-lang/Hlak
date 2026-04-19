@@ -4,20 +4,22 @@ import { useApp } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import OrderDialog from '@/components/OrderDialog';
 import axios from 'axios';
 import { 
   ArrowRight, ArrowLeft, ShoppingBag, Star, Filter, Package,
-  MessageCircle, Tag, Sparkles, ChevronLeft, ChevronRight, Store
+  MessageCircle, Tag, Sparkles, ChevronLeft, ChevronRight, Store, ShoppingCart
 } from 'lucide-react';
 
 const ProductShowcase = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
-  const { API, gender, language } = useApp();
+  const { API, gender, language, token, user } = useApp();
   const [products, setProducts] = useState([]);
   const [shopInfo, setShopInfo] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [orderProduct, setOrderProduct] = useState(null);
 
   const isMen = gender === 'male';
 
@@ -41,6 +43,7 @@ const ProductShowcase = () => {
       noProducts: 'لا توجد منتجات حالياً',
       currency: '€',
       orderVia: 'اطلب عبر واتساب',
+      orderNow: 'اطلب الآن',
       visitShop: 'زيارة الصالون',
       shopProducts: 'منتجات الصالون',
       browseProducts: 'تصفح المنتجات المميزة',
@@ -66,6 +69,7 @@ const ProductShowcase = () => {
       noProducts: 'No products available',
       currency: '€',
       orderVia: 'Order via WhatsApp',
+      orderNow: 'Order Now',
       visitShop: 'Visit Shop',
       shopProducts: 'Shop Products',
       browseProducts: 'Browse Featured Products',
@@ -297,13 +301,13 @@ const ProductShowcase = () => {
                       {product.price} {t.currency}
                     </span>
                     
-                    {shopInfo?.whatsapp && product.in_stock && (
+                    {product.in_stock && (
                       <button
-                        onClick={() => handleWhatsAppOrder(product)}
-                        className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-full text-sm font-bold transition-all"
+                        onClick={() => setOrderProduct({ ...product, shop_id: product.shop_id || shopId })}
+                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all ${isMen ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-rose-400 text-white hover:bg-rose-500'}`}
                         data-testid={`order-btn-${product.id}`}
                       >
-                        <MessageCircle size={16} /> {t.orderVia}
+                        <ShoppingCart size={16} /> {t.orderNow}
                       </button>
                     )}
                   </div>
@@ -334,6 +338,19 @@ const ProductShowcase = () => {
           {language === 'ar' ? 'الرئيسية' : 'Home'}
         </button>
       </div>
+
+      {/* Order Dialog */}
+      <OrderDialog
+        open={!!orderProduct}
+        onOpenChange={(o) => !o && setOrderProduct(null)}
+        product={orderProduct}
+        shop={shopInfo}
+        API={API}
+        token={token}
+        user={user}
+        language={language}
+        isMen={isMen}
+      />
     </div>
   );
 };

@@ -10,8 +10,9 @@ import { useLocalization } from '@/contexts/LocalizationContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { Button } from '@/components/ui/button';
 import axios from 'axios';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { ChevronLeft, ChevronRight, X as CloseIcon, Maximize2 } from 'lucide-react';
 
 // Import custom icons
 import {
@@ -31,6 +32,7 @@ const BarberProfile = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
 
   const isRTL = language === 'ar';
 
@@ -40,14 +42,24 @@ const BarberProfile = () => {
     workingHours: 'ساعات العمل', contact: 'تواصل معنا', location: 'الموقع',
     gallery: 'معرض الأعمال', loading: 'جاري التحميل...', rating: 'التقييم',
     from: 'من', open: 'مفتوح', closed: 'مغلق', addToFavorites: 'إضافة للمفضلة',
-    removeFromFavorites: 'إزالة من المفضلة'
+    removeFromFavorites: 'إزالة من المفضلة',
+    galleryEmpty: 'لا توجد أعمال معروضة بعد',
+    viewAll: 'عرض الكل',
+    prevImage: 'السابقة',
+    nextImage: 'التالية',
+    closeLightbox: 'إغلاق'
   } : {
     back: 'Back', services: 'Services', reviews: 'Reviews',
     noReviews: 'No reviews yet', bookNow: 'Book Now', about: 'About',
     workingHours: 'Working Hours', contact: 'Contact', location: 'Location',
     gallery: 'Gallery', loading: 'Loading...', rating: 'Rating',
     from: 'from', open: 'Open', closed: 'Closed', addToFavorites: 'Add to Favorites',
-    removeFromFavorites: 'Remove from Favorites'
+    removeFromFavorites: 'Remove from Favorites',
+    galleryEmpty: 'No portfolio images yet',
+    viewAll: 'View All',
+    prevImage: 'Previous',
+    nextImage: 'Next',
+    closeLightbox: 'Close'
   };
 
   // Fetch barber details
@@ -55,7 +67,7 @@ const BarberProfile = () => {
     const fetchBarber = async () => {
       setIsLoading(true);
       try {
-        const res = await axios.get(`${API}/barbershops/${id}`);
+        const res = await axios.get(`${API}/barbers/${id}`);
         setBarber(res.data);
         
         // Fetch reviews
@@ -132,6 +144,11 @@ const BarberProfile = () => {
   }
 
   const images = barber.before_after_images || [];
+  const getImgUrl = (img) => img?.after || img?.image_after || img?.before || img?.image_before || barber.shop_logo;
+  const heroImages = images.length > 0 ? images : (barber.shop_logo ? [{ after: barber.shop_logo }] : []);
+
+  const prevImage = () => setCurrentImageIndex((i) => (i - 1 + heroImages.length) % heroImages.length);
+  const nextImage = () => setCurrentImageIndex((i) => (i + 1) % heroImages.length);
 
   return (
     <div className="bh-surface min-h-screen">
@@ -162,38 +179,184 @@ const BarberProfile = () => {
       </div>
 
       <div className="container mx-auto px-4 py-6">
-        {/* Hero Gallery */}
-        {images.length > 0 && (
+        {/* Hero Gallery - Enhanced with nav + counter + click-to-zoom */}
+        {heroImages.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative h-64 md:h-96 rounded-3xl overflow-hidden mb-6 bh-glass-vip"
+            className="relative h-64 md:h-[28rem] rounded-3xl overflow-hidden mb-6 bh-glass-vip group"
           >
-            <img
-              src={images[currentImageIndex]?.after || images[currentImageIndex]?.before || barber.shop_logo}
-              alt={barber.shop_name}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-            
-            {/* Image navigation */}
-            {images.length > 1 && (
+            <AnimatePresence mode="wait">
+              <motion.img
+                key={currentImageIndex}
+                initial={{ opacity: 0, scale: 1.05 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+                src={getImgUrl(heroImages[currentImageIndex])}
+                alt={barber.shop_name}
+                className="w-full h-full object-cover cursor-zoom-in"
+                onClick={() => images.length > 0 && setLightboxIndex(currentImageIndex)}
+              />
+            </AnimatePresence>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+
+            {/* Counter badge */}
+            {heroImages.length > 1 && (
+              <div className="absolute top-4 end-4 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-bold flex items-center gap-2">
+                <span>{currentImageIndex + 1} / {heroImages.length}</span>
+              </div>
+            )}
+
+            {/* Zoom hint */}
+            {images.length > 0 && (
+              <button
+                onClick={() => setLightboxIndex(currentImageIndex)}
+                className="absolute top-4 start-4 w-10 h-10 rounded-full bg-black/60 hover:bg-[var(--bh-gold)] backdrop-blur-md text-white hover:text-[var(--bh-obsidian)] flex items-center justify-center transition-all"
+                aria-label="Zoom"
+                data-testid="zoom-hero"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Prev/Next navigation arrows */}
+            {heroImages.length > 1 && (
+              <>
+                <button
+                  onClick={prevImage}
+                  aria-label={t.prevImage}
+                  className="absolute top-1/2 -translate-y-1/2 start-3 w-11 h-11 rounded-full bg-black/50 hover:bg-[var(--bh-gold)] text-white hover:text-[var(--bh-obsidian)] flex items-center justify-center backdrop-blur-md transition-all opacity-70 hover:opacity-100"
+                >
+                  {isRTL ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+                </button>
+                <button
+                  onClick={nextImage}
+                  aria-label={t.nextImage}
+                  className="absolute top-1/2 -translate-y-1/2 end-3 w-11 h-11 rounded-full bg-black/50 hover:bg-[var(--bh-gold)] text-white hover:text-[var(--bh-obsidian)] flex items-center justify-center backdrop-blur-md transition-all opacity-70 hover:opacity-100"
+                >
+                  {isRTL ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                </button>
+              </>
+            )}
+
+            {/* Dots indicator */}
+            {heroImages.length > 1 && (
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                {images.map((_, idx) => (
+                {heroImages.map((_, idx) => (
                   <button
                     key={idx}
                     onClick={() => setCurrentImageIndex(idx)}
-                    className={`w-2 h-2 rounded-full transition-all ${
+                    className={`h-2 rounded-full transition-all ${
                       idx === currentImageIndex
-                        ? 'bg-[var(--bh-gold)] w-8'
-                        : 'bg-white/50'
+                        ? 'bg-[var(--bh-gold)] w-8 shadow-lg shadow-[var(--bh-gold)]/50'
+                        : 'bg-white/50 hover:bg-white/80 w-2'
                     }`}
+                    aria-label={`Image ${idx + 1}`}
                   />
                 ))}
               </div>
             )}
           </motion.div>
         )}
+
+        {/* Portfolio Thumbnails Grid (if 2+ images exist) */}
+        {images.length >= 2 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="mb-6"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <GalleryIcon className="w-5 h-5 text-[var(--bh-gold)]" />
+              <h3 className="text-lg font-display font-bold bh-gold-text">{t.gallery}</h3>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--bh-gold)]/15 text-[var(--bh-gold)] border border-[var(--bh-gold)]/30">
+                {images.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-2 md:gap-3">
+              {images.map((img, idx) => (
+                <button
+                  key={img.id || idx}
+                  onClick={() => { setCurrentImageIndex(idx); setLightboxIndex(idx); }}
+                  className={`aspect-square rounded-xl overflow-hidden relative transition-all group ${
+                    idx === currentImageIndex
+                      ? 'ring-2 ring-[var(--bh-gold)] shadow-lg shadow-[var(--bh-gold)]/30'
+                      : 'ring-1 ring-[var(--bh-glass-border)] hover:ring-[var(--bh-gold)]/60'
+                  }`}
+                  data-testid={`thumb-${idx}`}
+                >
+                  <img
+                    src={getImgUrl(img)}
+                    alt={`Work ${idx + 1}`}
+                    className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                  <div className="absolute bottom-1.5 start-1.5 w-5 h-5 rounded-full bg-[var(--bh-gold)] text-[var(--bh-obsidian)] flex items-center justify-center text-[10px] font-bold">
+                    {idx + 1}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Fullscreen Lightbox */}
+        <AnimatePresence>
+          {lightboxIndex !== null && images[lightboxIndex] && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLightboxIndex(null)}
+              className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 cursor-zoom-out"
+              data-testid="profile-lightbox"
+            >
+              <motion.img
+                key={lightboxIndex}
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                src={getImgUrl(images[lightboxIndex])}
+                alt="Full view"
+                onClick={(e) => e.stopPropagation()}
+                className="max-w-[95vw] max-h-[90vh] object-contain rounded-xl cursor-auto"
+              />
+              {/* Close */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex(null); }}
+                aria-label={t.closeLightbox}
+                className="absolute top-4 end-4 w-12 h-12 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center backdrop-blur-md"
+              >
+                <CloseIcon className="w-6 h-6" />
+              </button>
+              {/* Lightbox nav */}
+              {images.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setLightboxIndex((l) => (l - 1 + images.length) % images.length); }}
+                    aria-label={t.prevImage}
+                    className="absolute top-1/2 -translate-y-1/2 start-4 w-12 h-12 rounded-full bg-white/15 hover:bg-[var(--bh-gold)] text-white hover:text-[var(--bh-obsidian)] flex items-center justify-center backdrop-blur-md"
+                  >
+                    {isRTL ? <ChevronRight className="w-6 h-6" /> : <ChevronLeft className="w-6 h-6" />}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setLightboxIndex((l) => (l + 1) % images.length); }}
+                    aria-label={t.nextImage}
+                    className="absolute top-1/2 -translate-y-1/2 end-4 w-12 h-12 rounded-full bg-white/15 hover:bg-[var(--bh-gold)] text-white hover:text-[var(--bh-obsidian)] flex items-center justify-center backdrop-blur-md"
+                  >
+                    {isRTL ? <ChevronLeft className="w-6 h-6" /> : <ChevronRight className="w-6 h-6" />}
+                  </button>
+                </>
+              )}
+              {/* Counter */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-black/70 text-white text-sm font-bold backdrop-blur-md">
+                {lightboxIndex + 1} / {images.length}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left Column - Info */}

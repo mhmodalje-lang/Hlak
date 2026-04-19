@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import axios from 'axios';
 import { ServicesManagement, SocialMediaManagement } from '@/components/DashboardExtras';
+import PortfolioManagement from '@/components/PortfolioManagement';
 import UsageStats from '@/components/UsageStats';
 import { 
   ArrowRight, ArrowLeft, Calendar, Clock, Star, 
@@ -416,6 +417,7 @@ const BarberDashboard = () => {
         </div>
 
         {/* Bookings Tabs */}
+        <PortfolioManagement API={API} token={token} isMen={isMen} language={language} />
         <ServicesManagement API={API} token={token} isMen={isMen} language={language} />
         <SocialMediaManagement API={API} token={token} isMen={isMen} language={language} profile={profile} onUpdate={() => window.location.reload()} />
 

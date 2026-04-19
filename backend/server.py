@@ -817,7 +817,7 @@ async def create_or_update_barber_profile(profile_data: BarberProfileCreate, ent
     # Handle gallery images
     if profile_data.before_after_images is not None:
         await db.gallery_images.delete_many({"barbershop_id": shop_id})
-        for img in profile_data.before_after_images[:3]:
+        for img in profile_data.before_after_images[:4]:
             img_doc = {
                 "id": str(uuid.uuid4()),
                 "barbershop_id": shop_id,
@@ -1027,8 +1027,8 @@ async def get_my_services(shop: Dict = Depends(require_barbershop)):
 @api_router.post("/barbershops/me/gallery")
 async def add_gallery_image(image_data: GalleryImageCreate, shop: Dict = Depends(require_barbershop)):
     count = await db.gallery_images.count_documents({"barbershop_id": shop['id']})
-    if count >= 10:
-        raise HTTPException(status_code=400, detail="Maximum 10 gallery images allowed")
+    if count >= 4:
+        raise HTTPException(status_code=400, detail="Maximum 4 portfolio images allowed. Please delete one to add a new image.")
     
     image_id = str(uuid.uuid4())
     image_doc = {
@@ -1043,11 +1043,21 @@ async def add_gallery_image(image_data: GalleryImageCreate, shop: Dict = Depends
     }
     
     await db.gallery_images.insert_one(image_doc)
-    return image_doc
+    # Return only the fields we want, excluding MongoDB's _id
+    return {
+        "id": image_doc["id"],
+        "barbershop_id": image_doc["barbershop_id"],
+        "image_before": image_doc["image_before"],
+        "image_after": image_doc["image_after"],
+        "before": image_doc["before"],
+        "after": image_doc["after"],
+        "caption": image_doc["caption"],
+        "created_at": image_doc["created_at"]
+    }
 
 @api_router.get("/barbershops/{shop_id}/gallery")
 async def get_shop_gallery(shop_id: str):
-    images = await db.gallery_images.find({"barbershop_id": shop_id}, {"_id": 0}).to_list(10)
+    images = await db.gallery_images.find({"barbershop_id": shop_id}, {"_id": 0}).to_list(4)
     return images
 
 @api_router.delete("/barbershops/me/gallery/{image_id}")

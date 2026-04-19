@@ -1,6 +1,13 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * BARBER HUB - BookingPage (VIP Warm Luxury)
+ * Full Booking Flow: Barber → Date → Time → Services → Summary → Confirm
+ * Features: Dynamic Currency, Geo-aware, Mobile-First, RTL Support
+ */
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '@/App';
+import { useLocalization } from '@/contexts/LocalizationContext';
+import { useCurrency } from '@/contexts/CurrencyContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,196 +16,164 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { format, addDays } from 'date-fns';
+import { format, addDays, isBefore, startOfDay } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
-import { 
-  ArrowRight, ArrowLeft, Clock, Check, Loader2, Phone, User,
-  Calendar as CalendarIcon, MessageCircle
-} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// Import custom icons
+import { ArrowLeft, ArrowRight, Clock, Check, User, Phone, BookCalendar, Crown, Shears, Location } from '@/components/icons';
 
 const BookingPage = () => {
   const { barberId } = useParams();
   const navigate = useNavigate();
-  const { API, gender, user, token, language, themeClass, isAuthenticated } = useApp();
+  const { API, user, token, isAuthenticated } = useApp();
+  const { language } = useLocalization();
+  const { formatPrice, currency } = useCurrency();
   
   const [barber, setBarber] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(null);
   const [selectedServices, setSelectedServices] = useState([]);
   const [bookedTimes, setBookedTimes] = useState([]);
-  const [customerName, setCustomerName] = useState(user?.name || '');
-  const [customerPhone, setCustomerPhone] = useState(user?.phone || '');
+  const [customerName, setCustomerName] = useState(user?.full_name || '');
+  const [customerPhone, setCustomerPhone] = useState(user?.phone_number || '');
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [step, setStep] = useState(1); // 1: Services, 2: Date/Time, 3: Details
 
-  const isMen = gender === 'male';
+  const isRTL = language === 'ar';
+  const ChevronIcon = isRTL ? ArrowLeft : ArrowRight;
 
-  const texts = {
-    ar: {
-      back: 'رجوع',
-      step1: 'اختر الخدمات',
-      step2: 'اختر الموعد',
-      step3: 'معلوماتك',
-      selectServices: 'اختر الخدمات المطلوبة',
-      selectDate: 'اختر التاريخ',
-      selectTime: 'اختر الوقت',
-      availableTimes: 'الأوقات المتاحة',
-      bookedSlot: 'محجوز',
-      yourInfo: 'معلومات الحجز',
-      name: 'الاسم الكامل',
-      phone: 'رقم الهاتف (واتساب)',
-      notes: 'ملاحظات إضافية',
-      notesPlaceholder: 'أي ملاحظات خاصة...',
-      total: 'المجموع',
-      duration: 'المدة الإجمالية',
-      minutes: 'دقيقة',
-      next: 'التالي',
-      previous: 'السابق',
-      confirmBooking: 'تأكيد الحجز',
-      bookingSuccess: 'تم الحجز بنجاح!',
-      bookingSuccessMsg: 'ستصلك رسالة تأكيد على الواتساب',
-      currency: '€',
-      note: 'ملاحظة: قد يكون هناك تأخير بسيط بسبب الزبائن السابقين',
-      noServices: 'اختر خدمة واحدة على الأقل'
-    },
-    en: {
-      back: 'Back',
-      step1: 'Select Services',
-      step2: 'Select Date & Time',
-      step3: 'Your Details',
-      selectServices: 'Choose your services',
-      selectDate: 'Select Date',
-      selectTime: 'Select Time',
-      availableTimes: 'Available Times',
-      bookedSlot: 'Booked',
-      yourInfo: 'Booking Details',
-      name: 'Full Name',
-      phone: 'Phone (WhatsApp)',
-      notes: 'Additional Notes',
-      notesPlaceholder: 'Any special notes...',
-      total: 'Total',
-      duration: 'Total Duration',
-      minutes: 'minutes',
-      next: 'Next',
-      previous: 'Previous',
-      confirmBooking: 'Confirm Booking',
-      bookingSuccess: 'Booking Confirmed!',
-      bookingSuccessMsg: 'You will receive a confirmation on WhatsApp',
-      currency: '€',
-      note: 'Note: There may be slight delays due to previous customers',
-      noServices: 'Please select at least one service'
-    }
+  const t = language === 'ar' ? {
+    back: 'رجوع', loading: 'جاري التحميل...', selectDate: 'اختر التاريخ',
+    selectTime: 'اختر الوقت', availableTimes: 'الأوقات المتاحة',
+    selectServices: 'اختر الخدمات', services: 'الخدمات', noServices: 'لا توجد خدمات',
+    bookingSummary: 'ملخص الحجز', date: 'التاريخ', time: 'الوقت',
+    total: 'الإجمالي', yourInfo: 'معلوماتك', name: 'الاسم الكامل',
+    phone: 'رقم الهاتف', notes: 'ملاحظات (اختياري)', confirmBooking: 'تأكيد الحجز',
+    booked: 'محجوز', pleaseLogin: 'يرجى تسجيل الدخول أولاً', bookingSuccess: 'تم الحجز بنجاح!',
+    bookingError: 'حدث خطأ في الحجز', selectAtLeastOne: 'اختر خدمة واحدة على الأقل',
+    selectDateTime: 'اختر التاريخ والوقت', fillInfo: 'أكمل معلوماتك',
+    location: 'الموقع', rating: 'التقييم', from: 'من'
+  } : {
+    back: 'Back', loading: 'Loading...', selectDate: 'Select Date',
+    selectTime: 'Select Time', availableTimes: 'Available Times',
+    selectServices: 'Select Services', services: 'Services', noServices: 'No services available',
+    bookingSummary: 'Booking Summary', date: 'Date', time: 'Time',
+    total: 'Total', yourInfo: 'Your Info', name: 'Full Name',
+    phone: 'Phone Number', notes: 'Notes (optional)', confirmBooking: 'Confirm Booking',
+    booked: 'Booked', pleaseLogin: 'Please login first', bookingSuccess: 'Booking successful!',
+    bookingError: 'Booking error', selectAtLeastOne: 'Select at least one service',
+    selectDateTime: 'Select date and time', fillInfo: 'Fill your info',
+    location: 'Location', rating: 'Rating', from: 'from'
   };
 
-  const t = texts[language] || texts.ar;
-
-  const timeSlots = [
-    '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
-    '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
-    '18:00', '18:30', '19:00', '19:30', '20:00', '20:30'
-  ];
-
+  // Fetch barber details
   useEffect(() => {
+    const fetchBarber = async () => {
+      if (!barberId) return;
+      setIsLoading(true);
+      try {
+        const res = await axios.get(`${API}/barbershops/${barberId}`);
+        setBarber(res.data);
+      } catch (err) {
+        toast.error(t.bookingError);
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
     fetchBarber();
-  }, [barberId]);
+  }, [barberId, API, t.bookingError]);
+
+  // Fetch booked times for selected date
+  const fetchBookedTimes = useCallback(async (date) => {
+    if (!barberId || !date) return;
+    try {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const res = await axios.get(`${API}/bookings/barber/${barberId}/date/${dateStr}`);
+      setBookedTimes(res.data.booked_times || []);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [barberId, API]);
 
   useEffect(() => {
     if (selectedDate) {
-      fetchSchedule();
+      fetchBookedTimes(selectedDate);
     }
-  }, [selectedDate]);
+  }, [selectedDate, fetchBookedTimes]);
 
-  const fetchBarber = async () => {
-    setIsLoading(true);
-    try {
-      const res = await axios.get(`${API}/barbers/${barberId}`);
-      setBarber(res.data);
-    } catch (err) {
-      console.error('Failed to fetch barber:', err);
-      toast.error(language === 'ar' ? 'فشل تحميل البيانات' : 'Failed to load data');
-    } finally {
-      setIsLoading(false);
+  // Generate time slots (9 AM - 8 PM)
+  const generateTimeSlots = () => {
+    const slots = [];
+    for (let hour = 9; hour < 20; hour++) {
+      slots.push(`${hour.toString().padStart(2, '0')}:00`);
+      slots.push(`${hour.toString().padStart(2, '0')}:30`);
     }
+    return slots;
   };
 
-  const fetchSchedule = async () => {
-    try {
-      const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      const res = await axios.get(`${API}/bookings/barber/${barberId}/schedule`, {
-        params: { date: dateStr }
-      });
-      setBookedTimes(res.data.booked_times || []);
-    } catch (err) {
-      console.error('Failed to fetch schedule:', err);
-    }
-  };
+  const timeSlots = generateTimeSlots();
 
-  const toggleService = (serviceName) => {
-    setSelectedServices(prev => 
-      prev.includes(serviceName) 
-        ? prev.filter(s => s !== serviceName)
-        : [...prev, serviceName]
+  // Toggle service selection
+  const toggleService = (service) => {
+    setSelectedServices(prev =>
+      prev.find(s => s.id === service.id)
+        ? prev.filter(s => s.id !== service.id)
+        : [...prev, service]
     );
   };
 
-  const allServices = barber ? [...(barber.services || []), ...(barber.custom_services || [])] : [];
-  const selectedServiceObjects = allServices.filter(s => 
-    selectedServices.includes(s.name) || selectedServices.includes(s.name_ar)
-  );
-  const totalPrice = selectedServiceObjects.reduce((sum, s) => sum + s.price, 0);
-  const totalDuration = selectedServiceObjects.reduce((sum, s) => sum + (s.duration_minutes || 30), 0);
+  // Calculate total price
+  const calculateTotal = () => {
+    return selectedServices.reduce((sum, s) => sum + (s.price || 0), 0);
+  };
 
+  // Handle booking submission
   const handleSubmit = async () => {
-    if (!selectedServices.length) {
-      toast.error(t.noServices);
+    if (!isAuthenticated) {
+      toast.error(t.pleaseLogin);
+      navigate('/auth');
       return;
     }
+
+    if (selectedServices.length === 0) {
+      toast.error(t.selectAtLeastOne);
+      return;
+    }
+
     if (!selectedDate || !selectedTime) {
-      toast.error(language === 'ar' ? 'اختر التاريخ والوقت' : 'Select date and time');
+      toast.error(t.selectDateTime);
       return;
     }
+
     if (!customerName || !customerPhone) {
-      toast.error(language === 'ar' ? 'أدخل معلوماتك' : 'Enter your details');
+      toast.error(t.fillInfo);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      await axios.post(`${API}/bookings`, {
-        barber_id: barberId,
-        service_ids: selectedServices,
+      const bookingData = {
+        barbershop_id: barberId,
         date: format(selectedDate, 'yyyy-MM-dd'),
         time: selectedTime,
-        customer_phone: customerPhone,
+        services: selectedServices.map(s => s.id),
         customer_name: customerName,
-        notes: notes
-      }, { headers });
+        customer_phone: customerPhone,
+        notes: notes,
+        total_price: calculateTotal(),
+      };
 
-      toast.success(t.bookingSuccess, {
-        description: t.bookingSuccessMsg
+      await axios.post(`${API}/bookings`, bookingData, {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
-      // Redirect to WhatsApp with booking details
-      if (barber.whatsapp) {
-        const message = encodeURIComponent(
-          `حجز جديد من BARBER HUB\n` +
-          `الاسم: ${customerName}\n` +
-          `الهاتف: ${customerPhone}\n` +
-          `التاريخ: ${format(selectedDate, 'yyyy-MM-dd')}\n` +
-          `الوقت: ${selectedTime}\n` +
-          `الخدمات: ${selectedServices.join(', ')}\n` +
-          `المجموع: ${totalPrice}€`
-        );
-        window.open(`https://wa.me/${barber.whatsapp.replace(/\D/g, '')}?text=${message}`, '_blank');
-      }
-
+      toast.success(t.bookingSuccess);
       navigate('/my-bookings');
     } catch (err) {
-      toast.error(err.response?.data?.detail || (language === 'ar' ? 'فشل الحجز' : 'Booking failed'));
+      toast.error(err.response?.data?.detail || t.bookingError);
     } finally {
       setIsSubmitting(false);
     }
@@ -206,295 +181,306 @@ const BookingPage = () => {
 
   if (isLoading) {
     return (
-      <div className={`min-h-screen ${themeClass} flex items-center justify-center`}>
-        <Loader2 className={`w-12 h-12 animate-spin ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`} />
+      <div className="bh-surface min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[var(--bh-gold)] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-[var(--bh-text-secondary)]">{t.loading}</p>
+        </div>
       </div>
     );
   }
 
-  if (!barber) return null;
-
-  const inputClass = isMen 
-    ? 'bg-[#2A1F14] border-[#3A2E1F] text-white placeholder:text-[#94A3B8] focus:border-[#D4AF37]' 
-    : 'bg-white border-[#E7E5E4] text-[#1C1917] placeholder:text-[#57534E] focus:border-[#B76E79]';
+  if (!barber) {
+    return (
+      <div className="bh-surface min-h-screen flex items-center justify-center">
+        <p className="text-[var(--bh-text-secondary)]">{t.bookingError}</p>
+      </div>
+    );
+  }
 
   return (
-    <div className={`min-h-screen ${themeClass} py-8 px-4`} data-testid="booking-page">
-      <div className="container mx-auto max-w-2xl">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <button
-            onClick={() => step > 1 ? setStep(step - 1) : navigate(-1)}
-            className={`p-2 rounded-full ${isMen ? 'bg-[#2A1F14] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'}`}
-            data-testid="back-btn"
-          >
-            {language === 'ar' ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
+    <div className="bh-surface min-h-screen pb-20">
+      {/* Ambient Orbs */}
+      <div className="bh-orb bh-orb-gold w-96 h-96 top-0 right-0 opacity-10" />
+      
+      {/* Header */}
+      <div className="sticky top-0 z-40 backdrop-blur-2xl bg-[var(--bh-obsidian)]/90 border-b border-[var(--bh-glass-border)]">
+        <div className="container mx-auto px-4 py-4 flex items-center gap-4">
+          <button onClick={() => navigate(-1)} className="bh-btn bh-btn-ghost bh-btn-sm">
+            <ArrowLeft className="w-5 h-5" />
+            {t.back}
           </button>
-          <div>
-            <h1 className={`text-2xl font-bold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-              {language === 'ar' ? barber.salon_name_ar : barber.salon_name}
-            </h1>
-            <p className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>
-              {step === 1 ? t.step1 : step === 2 ? t.step2 : t.step3}
-            </p>
-          </div>
-        </div>
-
-        {/* Progress Steps */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          {[1, 2, 3].map((s) => (
-            <React.Fragment key={s}>
-              <div 
-                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
-                  s <= step 
-                    ? (isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white')
-                    : (isMen ? 'bg-[#2A1F14] text-[#94A3B8]' : 'bg-[#FAFAFA] text-[#57534E]')
-                }`}
-              >
-                {s < step ? <Check className="w-5 h-5" /> : s}
+          <div className="flex-1">
+            <h1 className="text-xl font-display font-bold bh-gold-text">{barber.shop_name}</h1>
+            <div className="flex items-center gap-3 text-sm text-[var(--bh-text-secondary)] mt-1">
+              <div className="flex items-center gap-1">
+                <Location className="w-3.5 h-3.5" />
+                <span>{barber.city}</span>
               </div>
-              {s < 3 && (
-                <div className={`w-12 h-1 rounded ${s < step ? (isMen ? 'bg-[#D4AF37]' : 'bg-[#B76E79]') : (isMen ? 'bg-[#3A2E1F]' : 'bg-[#E7E5E4]')}`} />
+              {barber.rating && (
+                <div className="flex items-center gap-1">
+                  <Crown className="w-3.5 h-3.5 text-[var(--bh-gold)]" />
+                  <span>{barber.rating.toFixed(1)}</span>
+                </div>
               )}
-            </React.Fragment>
-          ))}
-        </div>
-
-        {/* Step 1: Services */}
-        {step === 1 && (
-          <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-            <h2 className={`text-lg font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-              {t.selectServices}
-            </h2>
-            <div className="space-y-3">
-              {allServices.map((service, i) => (
-                <div 
-                  key={i}
-                  onClick={() => toggleService(service.name)}
-                  className={`flex items-center justify-between p-4 rounded-lg cursor-pointer transition-all ${
-                    selectedServices.includes(service.name) || selectedServices.includes(service.name_ar)
-                      ? (isMen ? 'bg-[#D4AF37]/20 border-2 border-[#D4AF37]' : 'bg-[#B76E79]/20 border-2 border-[#B76E79]')
-                      : (isMen ? 'bg-[#2A1F14] hover:bg-[#3A2E1F]' : 'bg-[#FAFAFA] hover:bg-[#F5F5F4]')
-                  }`}
-                  data-testid={`service-${i}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Checkbox 
-                      checked={selectedServices.includes(service.name) || selectedServices.includes(service.name_ar)}
-                      className={isMen ? 'border-[#D4AF37] data-[state=checked]:bg-[#D4AF37]' : 'border-[#B76E79] data-[state=checked]:bg-[#B76E79]'}
-                    />
-                    <div>
-                      <p className={`font-medium ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                        {language === 'ar' ? service.name_ar : service.name}
-                      </p>
-                      <p className={`text-sm flex items-center gap-1 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-                        <Clock className="w-3 h-3" />
-                        {service.duration_minutes || 30} {t.minutes}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
-                    {service.price} {t.currency}
-                  </span>
-                </div>
-              ))}
             </div>
-
-            {/* Summary */}
-            {selectedServices.length > 0 && (
-              <div className={`mt-6 p-4 rounded-lg ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
-                <div className="flex justify-between mb-2">
-                  <span className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.total}</span>
-                  <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
-                    {totalPrice} {t.currency}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.duration}</span>
-                  <span className={isMen ? 'text-white' : 'text-[#1C1917]'}>
-                    {totalDuration} {t.minutes}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <Button
-              onClick={() => setStep(2)}
-              disabled={selectedServices.length === 0}
-              className={`w-full mt-6 ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
-              data-testid="next-step-1"
-            >
-              {t.next}
-              {language === 'ar' ? <ArrowLeft className="w-4 h-4 ms-2" /> : <ArrowRight className="w-4 h-4 ms-2" />}
-            </Button>
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* Step 2: Date & Time */}
-        {step === 2 && (
-          <div className="space-y-6 animate-fade-in">
-            {/* Calendar */}
-            <div className={`${isMen ? 'card-men' : 'card-women'} p-6`}>
-              <h2 className={`text-lg font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                <CalendarIcon className="w-5 h-5 inline me-2" />
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Left Column - Calendar & Time */}
+          <div className="lg:col-span-2 space-y-6">
+            
+            {/* Calendar Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bh-glass-vip rounded-3xl p-6 bh-corner-accents"
+            >
+              <h2 className="text-2xl font-display font-bold bh-gold-text mb-4 flex items-center gap-2">
+                <BookCalendar className="w-6 h-6" />
                 {t.selectDate}
               </h2>
               <Calendar
                 mode="single"
                 selected={selectedDate}
                 onSelect={setSelectedDate}
+                disabled={(date) => isBefore(date, startOfDay(new Date()))}
                 locale={language === 'ar' ? ar : enUS}
-                disabled={(date) => date < new Date() || date > addDays(new Date(), 30)}
-                className={`booking-calendar ${isMen ? 'text-white' : 'text-[#1C1917]'}`}
-                data-testid="booking-calendar"
+                className="rounded-lg bh-calendar"
               />
-            </div>
+            </motion.div>
 
             {/* Time Slots */}
-            <div className={`${isMen ? 'card-men' : 'card-women'} p-6`}>
-              <h2 className={`text-lg font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                <Clock className="w-5 h-5 inline me-2" />
-                {t.availableTimes}
-              </h2>
-              <div className="time-slots">
-                {timeSlots.map((time) => {
-                  const isBooked = bookedTimes.includes(time);
-                  const isSelected = selectedTime === time;
-                  return (
-                    <button
-                      key={time}
-                      onClick={() => !isBooked && setSelectedTime(time)}
-                      disabled={isBooked}
-                      className={`time-slot ${isSelected ? 'selected' : ''} ${isBooked ? 'booked' : ''} ${
-                        isMen 
-                          ? `${isSelected ? 'bg-[#D4AF37] text-black' : 'bg-[#2A1F14] text-white'} border-[#3A2E1F]`
-                          : `${isSelected ? 'bg-[#B76E79] text-white' : 'bg-[#FAFAFA] text-[#1C1917]'} border-[#E7E5E4]`
-                      }`}
-                      data-testid={`time-${time}`}
-                    >
-                      {time}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className={`mt-4 text-sm ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-                {t.note}
-              </p>
-            </div>
+            {selectedDate && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="bh-glass-vip rounded-3xl p-6 bh-corner-accents"
+              >
+                <h2 className="text-2xl font-display font-bold bh-gold-text mb-4 flex items-center gap-2">
+                  <Clock className="w-6 h-6" />
+                  {t.availableTimes}
+                </h2>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                  {timeSlots.map((time) => {
+                    const isBooked = bookedTimes.includes(time);
+                    const isSelected = selectedTime === time;
+                    return (
+                      <button
+                        key={time}
+                        onClick={() => !isBooked && setSelectedTime(time)}
+                        disabled={isBooked}
+                        className={`p-3 rounded-xl font-bold text-sm transition-all ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-[var(--bh-gold)] to-[var(--bh-gold-deep)] text-[var(--bh-obsidian)] shadow-lg'
+                            : isBooked
+                            ? 'bg-[var(--bh-glass-bg)] text-[var(--bh-text-muted)] cursor-not-allowed opacity-50'
+                            : 'bg-[var(--bh-glass-bg)] text-[var(--bh-text-secondary)] hover:bg-[var(--bh-glass-bg-hi)] hover:border-[var(--bh-gold)]'
+                        } border border-transparent`}
+                      >
+                        {time}
+                        {isBooked && <div className="text-xs mt-1">{t.booked}</div>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
 
-            <Button
-              onClick={() => setStep(3)}
-              disabled={!selectedTime}
-              className={`w-full ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
-              data-testid="next-step-2"
+            {/* Services Selection */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bh-glass-vip rounded-3xl p-6 bh-corner-accents"
             >
-              {t.next}
-              {language === 'ar' ? <ArrowLeft className="w-4 h-4 ms-2" /> : <ArrowRight className="w-4 h-4 ms-2" />}
-            </Button>
-          </div>
-        )}
+              <h2 className="text-2xl font-display font-bold bh-gold-text mb-4 flex items-center gap-2">
+                <Shears className="w-6 h-6" />
+                {t.services}
+              </h2>
+              {barber.services && barber.services.length > 0 ? (
+                <div className="space-y-3">
+                  {barber.services.map((service) => {
+                    const isSelected = selectedServices.find(s => s.id === service.id);
+                    return (
+                      <div
+                        key={service.id}
+                        onClick={() => toggleService(service)}
+                        className={`p-4 rounded-xl cursor-pointer transition-all border ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-[var(--bh-gold)]/20 to-[var(--bh-gold-deep)]/10 border-[var(--bh-gold)]'
+                            : 'bg-[var(--bh-glass-bg)] border-transparent hover:border-[var(--bh-gold)]/30'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                              isSelected ? 'bg-[var(--bh-gold)] border-[var(--bh-gold)]' : 'border-[var(--bh-text-muted)]'
+                            }`}>
+                              {isSelected && <Check className="w-3 h-3 text-[var(--bh-obsidian)]" />}
+                            </div>
+                            <div>
+                              <p className="font-bold text-white">{language === 'ar' ? (service.name_ar || service.name) : service.name}</p>
+                              {service.duration && (
+                                <p className="text-xs text-[var(--bh-text-muted)] mt-0.5">
+                                  {service.duration} {language === 'ar' ? 'دقيقة' : 'min'}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="font-bold text-[var(--bh-gold)]">
+                            {formatPrice(service.price)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[var(--bh-text-muted)] text-center py-8">{t.noServices}</p>
+              )}
+            </motion.div>
 
-        {/* Step 3: Customer Details */}
-        {step === 3 && (
-          <div className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}>
-            <h2 className={`text-lg font-bold mb-6 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-              {t.yourInfo}
-            </h2>
-            
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <Label className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.name}</Label>
-                <div className="relative">
-                  <User className={`absolute ${language === 'ar' ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-5 h-5 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`} />
+            {/* Customer Info */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="bh-glass-vip rounded-3xl p-6 bh-corner-accents"
+            >
+              <h2 className="text-2xl font-display font-bold bh-gold-text mb-4 flex items-center gap-2">
+                <User className="w-6 h-6" />
+                {t.yourInfo}
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.name}</Label>
                   <Input
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    className={`${inputClass} ${language === 'ar' ? 'pr-10' : 'pl-10'}`}
-                    data-testid="customer-name"
+                    className="bh-input"
+                    placeholder={language === 'ar' ? 'أحمد محمد' : 'John Doe'}
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.phone}</Label>
-                <div className="relative">
-                  <Phone className={`absolute ${language === 'ar' ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-5 h-5 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`} />
+                <div>
+                  <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.phone}</Label>
                   <Input
-                    type="tel"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
-                    className={`${inputClass} ${language === 'ar' ? 'pr-10' : 'pl-10'}`}
-                    placeholder="+963 xxx xxx xxx"
-                    data-testid="customer-phone"
+                    className="bh-input"
+                    placeholder="+963 9XX XXX XXX"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[var(--bh-text-secondary)] mb-2 block">{t.notes}</Label>
+                  <Textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="bh-input min-h-[100px]"
+                    placeholder={language === 'ar' ? 'أي ملاحظات إضافية...' : 'Any special requests...'}
                   />
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <Label className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>{t.notes}</Label>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className={inputClass}
-                  placeholder={t.notesPlaceholder}
-                  rows={3}
-                  data-testid="booking-notes"
-                />
-              </div>
-            </div>
-
-            {/* Booking Summary */}
-            <div className={`mt-6 p-4 rounded-lg ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
-              <h3 className={`font-semibold mb-3 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-                {language === 'ar' ? 'ملخص الحجز' : 'Booking Summary'}
-              </h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>
-                    {language === 'ar' ? 'التاريخ' : 'Date'}
-                  </span>
-                  <span className={isMen ? 'text-white' : 'text-[#1C1917]'}>
-                    {format(selectedDate, 'yyyy-MM-dd')}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>
-                    {language === 'ar' ? 'الوقت' : 'Time'}
-                  </span>
-                  <span className={isMen ? 'text-white' : 'text-[#1C1917]'}>{selectedTime}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className={isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}>
-                    {language === 'ar' ? 'الخدمات' : 'Services'}
-                  </span>
-                  <span className={isMen ? 'text-white' : 'text-[#1C1917]'}>{selectedServices.length}</span>
-                </div>
-                <div className={`flex justify-between pt-2 border-t ${isMen ? 'border-[#3A2E1F]' : 'border-[#E7E5E4]'}`}>
-                  <span className={`font-semibold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>{t.total}</span>
-                  <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
-                    {totalPrice} {t.currency}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <Button
-              onClick={handleSubmit}
-              disabled={isSubmitting || !customerName || !customerPhone}
-              className={`w-full mt-6 ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
-              data-testid="confirm-booking"
-            >
-              {isSubmitting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  <Check className="w-5 h-5 me-2" />
-                  {t.confirmBooking}
-                </>
-              )}
-            </Button>
+            </motion.div>
           </div>
-        )}
+
+          {/* Right Column - Summary (Sticky) */}
+          <div className="lg:col-span-1">
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 }}
+              className="sticky top-24 bh-glass-vip rounded-3xl p-6 bh-corner-accents"
+            >
+              <h2 className="text-2xl font-display font-bold bh-gold-text mb-6 flex items-center gap-2">
+                <Crown className="w-6 h-6" />
+                {t.bookingSummary}
+              </h2>
+
+              <div className="space-y-4 mb-6">
+                {/* Date */}
+                {selectedDate && (
+                  <div className="flex items-start justify-between pb-3 border-b border-[var(--bh-glass-border)]">
+                    <span className="text-[var(--bh-text-secondary)]">{t.date}:</span>
+                    <span className="font-bold text-white">
+                      {format(selectedDate, 'dd MMM yyyy', { locale: language === 'ar' ? ar : enUS })}
+                    </span>
+                  </div>
+                )}
+
+                {/* Time */}
+                {selectedTime && (
+                  <div className="flex items-start justify-between pb-3 border-b border-[var(--bh-glass-border)]">
+                    <span className="text-[var(--bh-text-secondary)]">{t.time}:</span>
+                    <span className="font-bold text-white">{selectedTime}</span>
+                  </div>
+                )}
+
+                {/* Services */}
+                {selectedServices.length > 0 && (
+                  <div className="pb-3 border-b border-[var(--bh-glass-border)]">
+                    <p className="text-[var(--bh-text-secondary)] mb-2">{t.services}:</p>
+                    <div className="space-y-2">
+                      {selectedServices.map((service) => (
+                        <div key={service.id} className="flex justify-between text-sm">
+                          <span className="text-white">{language === 'ar' ? (service.name_ar || service.name) : service.name}</span>
+                          <span className="text-[var(--bh-gold)]">{formatPrice(service.price)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Total */}
+                {selectedServices.length > 0 && (
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-lg font-bold text-[var(--bh-text-primary)]">{t.total}:</span>
+                    <span className="text-2xl font-display font-bold bh-gold-text">
+                      {formatPrice(calculateTotal())}
+                    </span>
+                  </div>
+                )}
+
+                {/* Currency Note */}
+                <p className="text-xs text-[var(--bh-text-muted)] text-center">
+                  💰 {language === 'ar' ? 'الأسعار بـ' : 'Prices in'} {currency}
+                </p>
+              </div>
+
+              {/* Confirm Button */}
+              <Button
+                onClick={handleSubmit}
+                disabled={isSubmitting || selectedServices.length === 0 || !selectedDate || !selectedTime}
+                className="bh-btn bh-btn-primary w-full"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-[var(--bh-obsidian)] border-t-transparent rounded-full animate-spin" />
+                    {language === 'ar' ? 'جاري الحجز...' : 'Booking...'}
+                  </>
+                ) : (
+                  <>
+                    <Crown className="w-5 h-5" />
+                    {t.confirmBooking}
+                  </>
+                )}
+              </Button>
+
+              {/* VIP Badge */}
+              <div className="mt-4 text-center">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bh-glass-bg)] border border-[var(--bh-gold)]/30">
+                  <span className="text-xs text-[var(--bh-gold)] font-bold">
+                    {language === 'ar' ? '🇸🇾 يدعم سوريا' : '🇸🇾 Syria Supported'}
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </div>
       </div>
     </div>
   );

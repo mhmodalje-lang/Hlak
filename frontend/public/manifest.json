@@ -4,7 +4,7 @@
   "description": "Book premium barbers and salons worldwide. AI style advisor, instant booking, WhatsApp confirmations.",
   "lang": "ar",
   "dir": "auto",
-  "start_url": "/?source=pwa",
+  "start_url": "/?source=pwa&v=2",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
@@ -12,7 +12,8 @@
   "background_color": "#0A0605",
   "theme_color": "#0A0605",
   "categories": ["lifestyle", "business", "shopping", "utilities"],
-  "id": "/?app=barberhub",
+  "id": "/barberhub-app-v2",
+  "iarc_rating_id": "e84b072a-71b3-4d3e-86ae-31a8ce4e53b7",
   "icons": [
     { "src": "/icons/icon-72.png", "sizes": "72x72", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
@@ -32,6 +33,13 @@
       "type": "image/png",
       "form_factor": "wide",
       "label": "BARBER HUB - Premium Barber Booking"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "BARBER HUB Mobile"
     }
   ],
   "shortcuts": [
@@ -58,5 +66,12 @@
     }
   ],
   "prefer_related_applications": false,
-  "related_applications": []
+  "related_applications": [],
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
+  "edge_side_panel": {
+    "preferred_width": 480
+  },
+  "handle_links": "preferred"
 }

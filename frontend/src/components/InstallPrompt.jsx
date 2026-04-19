@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, X, Sparkles, ShieldCheck, Zap, Bell, Scissors, Apple, Share, PlusSquare } from 'lucide-react';
+import { Download, X, Sparkles, ShieldCheck, Zap, Bell, Scissors, Apple, Share, PlusSquare, HelpCircle } from 'lucide-react';
 import usePWA from '@/hooks/usePWA';
 import { useApp } from '@/App';
+import InstallHelpModal from '@/components/InstallHelpModal';
 
 const STORAGE_KEY = 'bh_install_prompt_state_v1';
 const DISMISS_HOURS = 48; // re-show after 48h if dismissed
@@ -43,6 +44,7 @@ const T = {
     updateTitle: 'تحديث جديد متاح',
     updateSub: 'اضغط لتحديث التطبيق إلى آخر إصدار',
     updateBtn: 'تحديث الآن',
+    gotWarning: 'ظهر تحذير عند التثبيت؟',
   },
   en: {
     title: 'Install BARBER HUB App',
@@ -67,6 +69,7 @@ const T = {
     updateTitle: 'New update available',
     updateSub: 'Tap to refresh to the latest version',
     updateBtn: 'Update Now',
+    gotWarning: 'Got a warning on install?',
   }
 };
 
@@ -84,6 +87,7 @@ export default function InstallPrompt() {
   const [installing, setInstalling] = useState(false);
   const [justInstalled, setJustInstalled] = useState(false);
   const [showNotifBanner, setShowNotifBanner] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const state = useMemo(() => readState(), []);
 
@@ -351,6 +355,16 @@ export default function InstallPrompt() {
                     {tr.later}
                   </button>
 
+                  {/* Warning help link */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowHelp(true); }}
+                    className="w-full flex items-center justify-center gap-1.5 text-[#D4AF37]/70 hover:text-[#D4AF37] text-xs underline underline-offset-2 pb-1 transition"
+                    data-testid="pwa-help-btn"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                    {tr.gotWarning}
+                  </button>
+
                   {/* Trust line */}
                   <div className="flex items-center justify-center gap-2 mt-2 pt-3 border-t border-[#D4AF37]/10">
                     <ShieldCheck className="w-3.5 h-3.5 text-[#D4AF37]/70" />
@@ -362,6 +376,9 @@ export default function InstallPrompt() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Help Modal */}
+      <InstallHelpModal open={showHelp} onClose={() => setShowHelp(false)} />
     </>
   );
 }

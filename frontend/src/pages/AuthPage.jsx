@@ -25,10 +25,11 @@ const AuthPage = () => {
   const { language } = useLocalization();
   const [isLoading, setIsLoading] = useState(false);
   const [authType, setAuthType] = useState('user'); // 'user' or 'barbershop'
+  const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
   const [countries, setCountries] = useState([]);
   const [cities, setCities] = useState([]);
 
-  const [loginData, setLoginData] = useState({ phone_number: '', password: '' });
+  const [loginData, setLoginData] = useState({ email_or_phone: '', password: '' });
   const [registerData, setRegisterData] = useState({
     phone_number: '', password: '', full_name: '', email: '',
     country: '', city: '', district: '', gender: gender || 'male'
@@ -43,24 +44,26 @@ const AuthPage = () => {
   const t = language === 'ar' ? {
     login: 'تسجيل الدخول', register: 'حساب جديد', phone: 'رقم الهاتف',
     password: 'كلمة المرور', name: 'الاسم الكامل', ownerName: 'اسم صاحب الصالون',
-    shopName: 'اسم الصالون', email: 'البريد الإلكتروني (اختياري)',
+    shopName: 'اسم الصالون', email: 'البريد الإلكتروني',
     country: 'الدولة', city: 'المدينة', district: 'الحي (اختياري)',
     selectCountry: 'اختر الدولة', selectCity: 'اختر المدينة',
     whatsapp: 'رقم واتساب', accountType: 'نوع الحساب',
     customer: 'زبون', barbershop: 'صالون / حلاق', loginBtn: 'دخول',
     registerBtn: 'إنشاء حساب', back: 'رجوع', asCustomer: 'كزبون',
     asBarbershop: 'كصالون', welcome: 'أهلاً بك في', subtitle: 'ادخل لعالم الفخامة',
-    registerSubtitle: 'انضم لنادينا الحصري'
+    registerSubtitle: 'انضم لنادينا الحصري', emailOrPhone: 'البريد الإلكتروني أو الهاتف',
+    loginMethod: 'طريقة الدخول', withEmail: 'بالبريد', withPhone: 'بالهاتف'
   } : {
     login: 'Login', register: 'Register', phone: 'Phone Number',
     password: 'Password', name: 'Full Name', ownerName: 'Owner Name',
-    shopName: 'Shop Name', email: 'Email (optional)', country: 'Country',
+    shopName: 'Shop Name', email: 'Email', country: 'Country',
     city: 'City', district: 'District (optional)', selectCountry: 'Select Country',
     selectCity: 'Select City', whatsapp: 'WhatsApp Number', accountType: 'Account Type',
     customer: 'Customer', barbershop: 'Barbershop', loginBtn: 'Login',
     registerBtn: 'Register', back: 'Back', asCustomer: 'As Customer',
     asBarbershop: 'As Barbershop', welcome: 'Welcome to', subtitle: 'Enter the world of luxury',
-    registerSubtitle: 'Join our exclusive club'
+    registerSubtitle: 'Join our exclusive club', emailOrPhone: 'Email or Phone',
+    loginMethod: 'Login Method', withEmail: 'With Email', withPhone: 'With Phone'
   };
 
   // Fetch countries
@@ -196,22 +199,53 @@ const AuthPage = () => {
 
             {/* LOGIN TAB */}
             <TabsContent value="login" className="space-y-4">
+              {/* Login Method Toggle */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setLoginMethod('email')}
+                  className={`flex-1 py-2 px-4 rounded-lg font-bold text-xs transition-all ${
+                    loginMethod === 'email'
+                      ? 'bg-gradient-to-r from-[var(--bh-gold)] to-[var(--bh-gold-deep)] text-[var(--bh-obsidian)]'
+                      : 'bg-[var(--bh-glass-bg)] text-[var(--bh-text-secondary)]'
+                  }`}
+                >
+                  📧 {t.withEmail}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoginMethod('phone')}
+                  className={`flex-1 py-2 px-4 rounded-lg font-bold text-xs transition-all ${
+                    loginMethod === 'phone'
+                      ? 'bg-gradient-to-r from-[var(--bh-gold)] to-[var(--bh-gold-deep)] text-[var(--bh-obsidian)]'
+                      : 'bg-[var(--bh-glass-bg)] text-[var(--bh-text-secondary)]'
+                  }`}
+                >
+                  📱 {t.withPhone}
+                </button>
+              </div>
+
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="login-phone" className="text-[var(--bh-text-secondary)] font-body flex items-center gap-2">
-                    <Phone className="w-4 h-4" />
-                    {t.phone}
+                  <Label htmlFor="login-email-phone" className="text-[var(--bh-text-secondary)] font-body flex items-center gap-2">
+                    {loginMethod === 'email' ? <User className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+                    {loginMethod === 'email' ? t.email : t.phone}
                   </Label>
                   <Input
-                    id="login-phone"
-                    type="tel"
-                    placeholder="+962 7X XXX XXXX"
-                    value={loginData.phone_number}
-                    onChange={(e) => setLoginData({ ...loginData, phone_number: e.target.value })}
+                    id="login-email-phone"
+                    type={loginMethod === 'email' ? 'email' : 'tel'}
+                    placeholder={loginMethod === 'email' ? 'you@example.com' : '+963 9XX XXX XXX'}
+                    value={loginData.email_or_phone}
+                    onChange={(e) => setLoginData({ ...loginData, email_or_phone: e.target.value })}
                     required
                     className="bh-input"
-                    data-testid="login-phone"
+                    data-testid="login-email-phone"
                   />
+                  {loginMethod === 'phone' && (
+                    <p className="text-xs text-[var(--bh-text-muted)]">
+                      {language === 'ar' ? '🇸🇾 يدعم سوريا وجميع الدول' : '🇸🇾 Supports Syria & all countries'}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">

@@ -1,52 +1,52 @@
 /* ============================================================
-   BARBER HUB  —  Dark Neo-Luxury Theme
-   Gold Neons · Glassmorphism · Burgundy highlights
+   BARBER HUB  —  Warm Luxury Theme (Brown & Gold)
+   Champagne Gold · Warm Browns · VIP Private Club Vibe
 ============================================================ */
 
 :root {
-  /* Core palette */
-  --bh-ink: #070303;            /* pure dark ink */
-  --bh-obsidian: #0A0605;       /* base background */
-  --bh-obsidian-2: #120A08;
-  --bh-obsidian-3: #1A120E;
-  --bh-obsidian-4: #241611;
+  /* Core palette - Deep Chocolate Browns (Warmer than Black) */
+  --bh-ink: #0F0805;            /* Deep espresso ink */
+  --bh-obsidian: #1A0F0A;       /* Rich espresso - main background */
+  --bh-obsidian-2: #24150D;     /* Chocolate layer 2 */
+  --bh-obsidian-3: #2D1810;     /* Chocolate layer 3 */
+  --bh-obsidian-4: #3D2418;     /* Warm dark brown */
 
-  /* Gold spectrum */
-  --bh-gold: #D4AF37;
-  --bh-gold-light: #F3E5AB;
-  --bh-gold-pale: #FAF0CD;
-  --bh-gold-deep: #8B6914;
-  --bh-gold-shadow: #5C4510;
+  /* Gold spectrum - Champagne & Bronze */
+  --bh-gold: #D4AF37;           /* Classic gold */
+  --bh-gold-light: #F3E5AB;     /* Champagne highlight */
+  --bh-gold-pale: #F7E7CE;      /* Soft champagne */
+  --bh-gold-deep: #CD7F32;      /* Deep bronze */
+  --bh-gold-shadow: #8B6914;    /* Bronze shadow */
 
-  /* Burgundy / Rose */
+  /* Burgundy / Rose (kept for women's section) */
   --bh-burgundy: #6E1E2B;
   --bh-burgundy-light: #B24159;
   --bh-rose: #B76E79;
 
-  /* Text */
-  --bh-text-primary: #F5E9BE;
-  --bh-text-secondary: rgba(245, 233, 190, 0.72);
-  --bh-text-muted: rgba(245, 233, 190, 0.5);
-  --bh-text-dim: rgba(245, 233, 190, 0.32);
+  /* Text - Warmer tones */
+  --bh-text-primary: #F7E7CE;   /* Warm cream */
+  --bh-text-secondary: rgba(232, 215, 195, 0.85); /* Warm beige */
+  --bh-text-muted: rgba(168, 151, 128, 0.7);      /* Warm muted */
+  --bh-text-dim: rgba(138, 122, 103, 0.5);        /* Dim warm */
 
-  /* Borders / glass */
-  --bh-glass-bg: rgba(20, 12, 8, 0.55);
-  --bh-glass-bg-hi: rgba(26, 18, 14, 0.75);
-  --bh-glass-border: rgba(212, 175, 55, 0.18);
-  --bh-glass-border-hi: rgba(212, 175, 55, 0.38);
+  /* Borders / glass - Brown Tint */
+  --bh-glass-bg: rgba(61, 36, 24, 0.45);          /* Warm brown glass */
+  --bh-glass-bg-hi: rgba(45, 24, 16, 0.75);       /* Rich chocolate glass */
+  --bh-glass-border: rgba(212, 175, 55, 0.2);     /* Gold border */
+  --bh-glass-border-hi: rgba(247, 231, 206, 0.4); /* Champagne border */
 
-  /* Neon glows */
-  --bh-glow-gold: 0 0 40px rgba(212, 175, 55, 0.35), 0 0 80px rgba(212, 175, 55, 0.12);
-  --bh-glow-gold-soft: 0 0 24px rgba(212, 175, 55, 0.25);
+  /* Neon glows - Warmer */
+  --bh-glow-gold: 0 0 40px rgba(212, 175, 55, 0.4), 0 0 80px rgba(205, 127, 50, 0.15);
+  --bh-glow-gold-soft: 0 0 24px rgba(247, 231, 206, 0.3);
   --bh-glow-burgundy: 0 0 40px rgba(183, 110, 121, 0.3);
 
-  /* Gradients */
-  --bh-grad-gold: linear-gradient(135deg, #D4AF37 0%, #F3E5AB 45%, #B8931F 100%);
-  --bh-grad-gold-deep: linear-gradient(135deg, #8B6914 0%, #D4AF37 50%, #5C4510 100%);
+  /* Gradients - Warm Chocolate */
+  --bh-grad-gold: linear-gradient(135deg, #D4AF37 0%, #F7E7CE 45%, #CD7F32 100%);
+  --bh-grad-gold-deep: linear-gradient(135deg, #8B6914 0%, #D4AF37 50%, #CD7F32 100%);
   --bh-grad-burgundy: linear-gradient(135deg, #6E1E2B 0%, #B76E79 100%);
-  --bh-grad-night: radial-gradient(ellipse at top, #1A120E 0%, #0A0605 60%, #050202 100%);
-  --bh-grad-night-side: linear-gradient(135deg, #0A0605 0%, #1A120E 50%, #0A0605 100%);
-  --bh-grad-vip: linear-gradient(135deg, #0A0605 0%, #241611 40%, #0A0605 100%);
+  --bh-grad-night: radial-gradient(ellipse at top, #2D1810 0%, #1A0F0A 60%, #0F0805 100%);
+  --bh-grad-night-side: linear-gradient(135deg, #1A0F0A 0%, #2D1810 50%, #1A0F0A 100%);
+  --bh-grad-vip: linear-gradient(135deg, #1A0F0A 0%, #3D2418 40%, #1A0F0A 100%);
 
   /* Shadows */
   --bh-shadow-lux: 0 20px 60px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(212, 175, 55, 0.15);

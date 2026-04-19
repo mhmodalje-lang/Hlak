@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 # Configuration
-BASE_URL = "https://onboarding-flow-108.preview.emergentagent.com/api"
+BASE_URL = "https://web-repo-tool.preview.emergentagent.com/api"
 ADMIN_CREDENTIALS = {"phone_number": "admin", "password": "admin123"}
 SALON_CREDENTIALS = {"phone_number": "0935964158", "password": "salon123"}
 

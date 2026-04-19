@@ -45,6 +45,8 @@ const T = {
     updateSub: 'اضغط لتحديث التطبيق إلى آخر إصدار',
     updateBtn: 'تحديث الآن',
     gotWarning: 'ظهر تحذير عند التثبيت؟',
+    orApk: 'أو حمّل APK الأندرويد مباشرة (موقّع Android 15)',
+    apkDirect: 'تحميل APK للأندرويد',
   },
   en: {
     title: 'Install BARBER HUB App',
@@ -70,6 +72,8 @@ const T = {
     updateSub: 'Tap to refresh to the latest version',
     updateBtn: 'Update Now',
     gotWarning: 'Got a warning on install?',
+    orApk: 'Or download signed Android APK (targets Android 15)',
+    apkDirect: 'Download Android APK',
   }
 };
 
@@ -99,16 +103,19 @@ export default function InstallPrompt() {
     if (s.dismissedAt && (now - s.dismissedAt) < DISMISS_HOURS * 3600 * 1000) return;
     if (s.installed) return;
 
-    // Show after 3 seconds
+    // Use longer delay on gender selection page (let user pick first)
+    const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+    const isGenderPage = path === '/' || path === '/gender-selection';
+    const delay = isGenderPage ? 8000 : 3000;
+
     const timer = setTimeout(() => {
-      // On Android/Desktop show if we have the prompt OR haven't dismissed; on iOS always show manual instructions
       if (canInstall || isIOS) {
         setVisible(true);
       } else {
         // Still show generic banner (manual install instructions) for other browsers
         setVisible(true);
       }
-    }, 3000);
+    }, delay);
     return () => clearTimeout(timer);
   }, [canInstall, isIOS, isInstalled, isStandalone]);
 
@@ -355,10 +362,34 @@ export default function InstallPrompt() {
                     {tr.later}
                   </button>
 
+                  {/* Direct APK Download - Android only, hidden on iOS */}
+                  {!isIOS && (
+                    <>
+                      <div className="relative flex items-center justify-center my-2">
+                        <span className="absolute inset-x-0 h-px bg-[#D4AF37]/15" />
+                        <span className="relative bg-gradient-to-br from-[#1A120A] via-[#120A05] to-[#0A0605] px-3 text-[10px] tracking-widest text-[#D4AF37]/50 uppercase">
+                          {tr.orApk}
+                        </span>
+                      </div>
+                      <a
+                        href="/downloads/BarberHub.apk"
+                        download="BarberHub.apk"
+                        className="w-full bg-[#1A120A] border-2 border-[#D4AF37]/40 hover:border-[#D4AF37] text-[#F5D773] font-bold text-sm py-3 rounded-2xl flex items-center justify-center gap-2 transition-all hover:shadow-[0_4px_20px_rgba(212,175,55,0.3)]"
+                        data-testid="pwa-apk-direct-btn"
+                      >
+                        <Download className="w-4 h-4" />
+                        {tr.apkDirect}
+                        <span className="text-[10px] bg-[#D4AF37]/20 text-[#F5D773] px-2 py-0.5 rounded-full font-normal">
+                          1.5MB · v1.0
+                        </span>
+                      </a>
+                    </>
+                  )}
+
                   {/* Warning help link */}
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowHelp(true); }}
-                    className="w-full flex items-center justify-center gap-1.5 text-[#D4AF37]/70 hover:text-[#D4AF37] text-xs underline underline-offset-2 pb-1 transition"
+                    className="w-full flex items-center justify-center gap-1.5 text-[#D4AF37]/70 hover:text-[#D4AF37] text-xs underline underline-offset-2 pb-1 pt-3 transition"
                     data-testid="pwa-help-btn"
                   >
                     <HelpCircle className="w-3.5 h-3.5" />

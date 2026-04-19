@@ -1,0 +1,55 @@
+{
+  "packageId": "com.barberhub.app",
+  "host": "onboarding-flow-108.preview.emergentagent.com",
+  "name": "BARBER HUB",
+  "launcherName": "BarberHub",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#0A0605",
+  "navigationColor": "#0A0605",
+  "navigationColorDark": "#0A0605",
+  "navigationDividerColor": "#0A0605",
+  "navigationDividerColorDark": "#0A0605",
+  "backgroundColor": "#0A0605",
+  "enableNotifications": true,
+  "startUrl": "/?source=twa",
+  "iconUrl": "https://onboarding-flow-108.preview.emergentagent.com/icons/icon-512.png",
+  "maskableIconUrl": "https://onboarding-flow-108.preview.emergentagent.com/icons/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "/app/twa-build/barberhub-release.keystore",
+    "alias": "barberhub"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "My Bookings",
+      "shortName": "Bookings",
+      "url": "/my-bookings?source=shortcut",
+      "chosenIconUrl": "https://onboarding-flow-108.preview.emergentagent.com/icons/icon-192.png"
+    },
+    {
+      "name": "AI Advisor",
+      "shortName": "AI",
+      "url": "/ai-advisor?source=shortcut",
+      "chosenIconUrl": "https://onboarding-flow-108.preview.emergentagent.com/icons/icon-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://onboarding-flow-108.preview.emergentagent.com/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": { "enabled": false },
+    "playBilling": { "enabled": false }
+  },
+  "alphaDependencies": { "enabled": false },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://onboarding-flow-108.preview.emergentagent.com/",
+  "minSdkVersion": 21,
+  "orientation": "portrait",
+  "additionalTrustedOrigins": [],
+  "retainedBundles": []
+}

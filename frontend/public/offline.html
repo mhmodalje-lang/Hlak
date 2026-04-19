@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0A0605" />
+  <title>BARBER HUB — Offline</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      background: radial-gradient(ellipse at center, #1A120A 0%, #0A0605 70%);
+      color: #F5D773;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Tajawal', sans-serif;
+      display: flex; align-items: center; justify-content: center; min-height: 100vh;
+      padding: 24px;
+      text-align: center;
+    }
+    .wrap { max-width: 440px; }
+    .logo {
+      width: 120px; height: 120px; margin: 0 auto 24px;
+      border: 2px solid rgba(212,175,55,0.4);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle, #281C10 0%, #0A0605 100%);
+    }
+    h1 { color: #D4AF37; margin: 0 0 12px; font-size: 1.6rem; letter-spacing: 1px; }
+    p { color: rgba(245,215,115,0.7); margin: 0 0 24px; line-height: 1.7; }
+    button {
+      background: linear-gradient(135deg, #D4AF37 0%, #8B6914 100%);
+      color: #0A0605; border: 0; padding: 14px 32px;
+      border-radius: 50px; font-weight: 700; font-size: 1rem;
+      cursor: pointer; letter-spacing: 0.5px;
+      box-shadow: 0 8px 24px rgba(212,175,55,0.35);
+    }
+    button:hover { transform: translateY(-1px); }
+    .en { color: rgba(245,215,115,0.5); font-size: 0.85rem; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo"><img src="/icons/icon-192.png" alt="Barber Hub" width="96" height="96" style="border-radius: 50%" /></div>
+    <h1>BARBER HUB</h1>
+    <p>أنت غير متصل بالإنترنت حاليًا. بعض الميزات قد لا تعمل. تحقق من اتصالك وحاول مرة أخرى.</p>
+    <button onclick="location.reload()">إعادة المحاولة</button>
+    <div class="en">You're offline. Please check your connection.</div>
+  </div>
+</body>
+</html>

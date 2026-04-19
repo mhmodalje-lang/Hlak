@@ -1,43 +1,89 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#000000" />
-        <meta name="description" content="A product of emergent.sh" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
+
+        <!-- Primary Meta -->
+        <title>BARBER HUB — Premium Barber Booking | حجز صالونات حلاقة عالمية</title>
+        <meta name="description" content="احجز أفضل صالونات الحلاقة عالميًا. مستشار ذكاء اصطناعي لاقتراح التسريحات، حجز فوري، تأكيد عبر واتساب. Book premium barbers and salons worldwide with AI style advisor." />
+        <meta name="keywords" content="BARBER HUB, barber, booking, salon, حجز حلاقة, صالون, AI style advisor, حلاق, تسريحة" />
+        <meta name="author" content="BARBER HUB" />
+        <meta name="robots" content="index, follow" />
+
+        <!-- PWA -->
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0A0605" />
+        <meta name="color-scheme" content="dark light" />
+        <meta name="application-name" content="BARBER HUB" />
+
+        <!-- iOS Apple -->
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="BarberHub" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png" />
+        <link rel="apple-touch-icon" sizes="144x144" href="/icons/icon-144.png" />
+        <link rel="apple-touch-icon" sizes="120x120" href="/icons/icon-128.png" />
+
+        <!-- Favicon -->
+        <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+        <link rel="shortcut icon" href="/favicon.ico" />
+
+        <!-- Microsoft / Windows -->
+        <meta name="msapplication-TileColor" content="#0A0605" />
+        <meta name="msapplication-TileImage" content="/icons/icon-152.png" />
+        <meta name="msapplication-config" content="/browserconfig.xml" />
+
+        <!-- Open Graph -->
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="BARBER HUB" />
+        <meta property="og:title" content="BARBER HUB — Premium Barber Booking" />
+        <meta property="og:description" content="Book premium barbers and salons worldwide. AI style advisor, instant booking, WhatsApp confirmations." />
+        <meta property="og:image" content="/icons/og-image.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:locale" content="ar_SA" />
+        <meta property="og:locale:alternate" content="en_US" />
+
+        <!-- Twitter -->
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="BARBER HUB — Premium Barber Booking" />
+        <meta name="twitter:description" content="Book premium barbers with AI style advisor. Works offline as a PWA." />
+        <meta name="twitter:image" content="/icons/og-image.png" />
+
+        <!-- Security / Referrer -->
+        <meta name="referrer" content="strict-origin-when-cross-origin" />
+        <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+
+        <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600&display=swap" rel="stylesheet" />
-        <!--
-        manifest.json provides metadata used when your web app is installed on a
-        user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-        -->
-        <!--
-        Notice the use of %PUBLIC_URL% in the tags above.
-        It will be replaced with the URL of the `public` folder during the build.
-        Only files inside the `public` folder can be referenced from the HTML.
 
-        Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-        work correctly both with client-side routing and a non-root public URL.
-        Learn how to configure a non-root public URL by running `npm run build`.
-        -->
-        <title>Emergent | Fullstack App</title>
+        <!-- JSON-LD Structured Data -->
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "BARBER HUB",
+          "description": "Premium barber booking platform with AI style advisor",
+          "url": "/",
+          "applicationCategory": "LifestyleApplication",
+          "operatingSystem": "Web, Android, iOS",
+          "browserRequirements": "Requires JavaScript. Requires HTML5.",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+        }
+        </script>
+
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
         <div id="root"></div>
-        <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
         <a
             id="emergent-badge"
             target="_blank"
@@ -57,8 +103,8 @@
                 right: 16px;
                 text-decoration: none;
                 font-family: -apple-system, BlinkMacSystemFont,
-                    &quot;Segoe UI&quot;, Roboto, Oxygen, Ubuntu, Cantarell,
-                    &quot;Open Sans&quot;, &quot;Helvetica Neue&quot;,
+                    'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell,
+                    'Open Sans', 'Helvetica Neue',
                     sans-serif !important;
                 font-size: 12px !important;
                 z-index: 9999 !important;
@@ -147,12 +193,25 @@
             })(document, window.posthog || []);
             posthog.init("phc_xAvL2Iq4tFmANRE7kzbKwaSqp1HJjN7x48s3vr0CMjs", {
                 api_host: "https://us.i.posthog.com",
-                person_profiles: "identified_only", // or 'always' to create profiles for anonymous users as well,
+                person_profiles: "identified_only",
                 session_recording: {
                     recordCrossOriginIframes: true,
                     capturePerformance: false,
                 },
             });
+        </script>
+
+        <!-- Capture beforeinstallprompt early (before React mounts) -->
+        <script>
+          (function(){
+            window.addEventListener('beforeinstallprompt', function(e) {
+              e.preventDefault();
+              window.__bh_deferred_prompt__ = e;
+            });
+            window.addEventListener('appinstalled', function() {
+              try { localStorage.setItem('__bh_pwa_installed__', '1'); } catch(e){}
+            });
+          })();
         </script>
     </body>
 </html>

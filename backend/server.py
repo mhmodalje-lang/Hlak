@@ -3093,6 +3093,82 @@ async def get_usage_stats(entity: Dict = Depends(require_barbershop)):
 async def root():
     return {"message": "Welcome to BARBER HUB API", "version": "3.0.0"}
 
+# ============== PWA / PUSH NOTIFICATIONS ==============
+
+@api_router.post("/push/subscribe")
+async def push_subscribe(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Store a Web Push subscription for the current user/device (auth optional)."""
+    try:
+        current_user = None
+        try:
+            if credentials:
+                current_user = await get_current_entity(credentials)
+        except Exception:
+            current_user = None
+        body = await request.json()
+        subscription = body.get("subscription")
+        if not subscription or not isinstance(subscription, dict) or "endpoint" not in subscription:
+            raise HTTPException(status_code=400, detail="Invalid subscription payload")
+        doc = {
+            "id": str(uuid.uuid4()),
+            "user_id": (current_user or {}).get("id"),
+            "entity_type": (current_user or {}).get("entity_type"),
+            "endpoint": subscription.get("endpoint"),
+            "keys": subscription.get("keys", {}),
+            "user_agent": request.headers.get("user-agent", ""),
+            "language": body.get("language", "ar"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # Upsert by endpoint (one subscription per device)
+        await db.push_subscriptions.update_one(
+            {"endpoint": doc["endpoint"]},
+            {"$set": doc},
+            upsert=True,
+        )
+        return {"success": True, "message": "Subscription stored"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store subscription: {e}")
+
+
+@api_router.delete("/push/unsubscribe")
+async def push_unsubscribe(request: Request):
+    try:
+        body = await request.json()
+        endpoint = body.get("endpoint")
+        if not endpoint:
+            raise HTTPException(status_code=400, detail="endpoint required")
+        await db.push_subscriptions.delete_one({"endpoint": endpoint})
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/push/vapid-public-key")
+async def push_vapid_public_key():
+    """Returns VAPID public key if configured; otherwise empty (Push disabled server-side)."""
+    key = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+    return {"public_key": key, "enabled": bool(key)}
+
+
+# ============== PWA MANIFEST STATUS ==============
+
+@api_router.get("/pwa/status")
+async def pwa_status():
+    """Health endpoint for PWA — used by the service worker to check connectivity."""
+    return {
+        "online": True,
+        "version": "3.1.0",
+        "features": {
+            "push_enabled": bool(os.environ.get("VAPID_PUBLIC_KEY", "")),
+            "offline_support": True,
+            "install_prompt": True,
+        },
+    }
+
 # Include the router
 app.include_router(api_router)
 

@@ -21,6 +21,7 @@ import ProfileSetup from "@/pages/ProfileSetup";
 import ProductShowcase from "@/pages/ProductShowcase";
 import AIAdvisor from "@/pages/AIAdvisor";
 import FavoritesPage from "@/pages/FavoritesPage";
+import InstallPrompt from "@/components/InstallPrompt";
 
 // Context
 const AppContext = createContext();
@@ -143,6 +144,7 @@ function App() {
           </Routes>
         </BrowserRouter>
         <Toaster position="top-center" richColors />
+        <InstallPrompt />
       </div>
     </AppContext.Provider>
   );

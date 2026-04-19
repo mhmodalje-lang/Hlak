@@ -369,10 +369,55 @@ backend:
         - agent: "testing"
         - comment: "✅ PASS - Style Card generation working correctly. PIL-based PNG generation integrated with AI Advisor analyze endpoint. Returns style_card_base64 as part of analysis response and WhatsApp share functionality."
 
+  - task: "PWA - Status Endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+        - agent: "main"
+        - comment: "New GET /api/pwa/status endpoint returns {online, version, features: {push_enabled, offline_support, install_prompt}}. Used by service worker/frontend to verify backend connectivity."
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - PWA Status endpoint working correctly. Returns expected JSON structure with online=true, version=3.1.0, and features object containing push_enabled, offline_support, and install_prompt fields."
+
+  - task: "PWA - VAPID Public Key Endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+        - agent: "main"
+        - comment: "GET /api/push/vapid-public-key returns {public_key, enabled}. Reads from VAPID_PUBLIC_KEY env. Currently empty/disabled (no VAPID keys set yet) - should return {public_key: '', enabled: false}."
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - VAPID Public Key endpoint working correctly. Returns expected JSON with public_key='' and enabled=false since VAPID_PUBLIC_KEY environment variable is not set."
+
+  - task: "PWA - Push Subscription Endpoints"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+        - agent: "main"
+        - comment: "POST /api/push/subscribe accepts {subscription: {endpoint, keys}} payload and stores in db.push_subscriptions collection. Auth optional (uses HTTPBearer security, gracefully accepts anonymous). Upserts by endpoint. DELETE /api/push/unsubscribe accepts {endpoint} and removes subscription. Test: POST with valid subscription dict, verify success=true. POST with invalid payload, verify 400. DELETE with endpoint, verify success=true."
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - Push Subscription endpoints working perfectly. POST /api/push/subscribe works both with and without authentication, correctly handles invalid payloads (returns 400), implements idempotency (upsert behavior), and stores subscriptions successfully. DELETE /api/push/unsubscribe works correctly and returns 400 for missing endpoint. All 6 test scenarios passed."
+
 metadata:
   created_by: "main_agent"
-  version: "3.0"
-  test_sequence: 5
+  version: "3.1"
+  test_sequence: 7
   run_ui: false
 
 test_plan:
@@ -390,3 +435,7 @@ agent_communication:
     - message: "BARBER HUB v3.0 - World-Class Upgrade: Added (1) Favorites System: POST /api/favorites, DELETE /api/favorites/{shop_id}, GET /api/favorites/my, GET /api/favorites/check/{shop_id}. (2) Advanced Search: GET /api/search/barbers with filters shop_type, user_lat, user_lng, max_distance_km, price_min, price_max, rating_min, country, city, services, search, sort (rating|distance|price_asc|price_desc). Haversine distance calculation. (3) AI Advisor with GPT-5 Vision via Emergent LLM Key: GET /api/ai-advisor/eligibility (locked unless user has confirmed/completed booking with unused session), POST /api/ai-advisor/analyze (ONE-TIME per booking, analyzes face shape + recommends 3 styles + matches barbers by expertise + generates Style Card PNG), GET /api/ai-advisor/my-advice (read-only), GET /api/ai-advisor/advice/{id}, POST /api/ai-advisor/share-whatsapp (returns wa.me link + style card base64). (4) Style Card: PIL-generated 1080x1350 PNG with BARBER HUB branding, face shape, 3 recommended styles, gendered colors (gold/black for men, rose/pearl for women), supports Arabic with reshaper+bidi. Test credentials: admin/admin123 and salon 0935964158/salon123. Need seed first: POST /api/seed. For AI advisor tests: login as regular user, create a booking, salon confirms it, then test eligibility + analyze flow."
     - agent: "testing"
     - message: "🎉 BARBER HUB v3.0 TESTING COMPLETE - ALL NEW ENDPOINTS WORKING PERFECTLY (26/26 tests passed, 100% success rate). ✅ Favorites System: All CRUD operations working, duplicate prevention, user-only access control. ✅ Advanced Search: All filters working (shop_type, distance, rating, price, text search), proper enrichment with distance_km/min_price/max_price. ✅ AI Advisor: Complete GPT-5 Vision integration working - eligibility logic, face analysis, style recommendations, WhatsApp sharing, style card generation. All endpoints properly secured and returning expected data structures. Ready for production deployment."
+    - agent: "main"
+    - message: "BARBER HUB v3.1 - PWA UPGRADE: Full Progressive Web App support added. (1) PWA manifest.json with 10 icons (72-512), maskable icons, shortcuts, screenshots, Google-compliant metadata. (2) Service Worker /service-worker.js with offline caching (static/runtime/images/api caches), stale-while-revalidate for assets, network-first for API, cache-first for images, background sync, push notifications handler, notification click routing. (3) Premium Install Prompt component (Bottom Sheet) with gold/black luxury theme, bilingual AR/EN, 3s delay, iOS manual instructions, feature grid (fast/secure/offline/notifications), Google-trust badge. (4) index.html fully updated with PWA meta tags: theme-color, apple-touch-icons, OG tags, Twitter cards, JSON-LD structured data, browserconfig.xml for Windows, robots.txt. (5) NEW Backend endpoints for push notifications: POST /api/push/subscribe (stores Web Push subscription, auth optional), DELETE /api/push/unsubscribe, GET /api/push/vapid-public-key (returns VAPID key if configured), GET /api/pwa/status (PWA health). (6) Offline fallback page /offline.html with Arabic/English. Test these new backend endpoints: /api/pwa/status, /api/push/vapid-public-key, /api/push/subscribe (POST with {subscription:{endpoint:'...',keys:{}}}), /api/push/unsubscribe."
+    - agent: "testing"
+    - message: "🎉 BARBER HUB v3.1 PWA TESTING COMPLETE - ALL 3 NEW PWA ENDPOINTS WORKING PERFECTLY (8/8 tests passed, 100% success rate). ✅ GET /api/pwa/status: Returns correct online=true, version=3.1.0, and features object. ✅ GET /api/push/vapid-public-key: Correctly returns empty public_key and enabled=false (VAPID not configured). ✅ POST /api/push/subscribe: Works with/without auth, handles invalid payloads (400), implements idempotency (upsert), stores subscriptions successfully. ✅ DELETE /api/push/unsubscribe: Works correctly, returns 400 for missing endpoint. All PWA backend infrastructure ready for production."

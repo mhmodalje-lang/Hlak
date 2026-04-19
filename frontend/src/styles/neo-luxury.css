@@ -1,0 +1,394 @@
+/* ============================================================
+   BARBER HUB  —  Dark Neo-Luxury Theme
+   Gold Neons · Glassmorphism · Burgundy highlights
+============================================================ */
+
+:root {
+  /* Core palette */
+  --bh-ink: #070303;            /* pure dark ink */
+  --bh-obsidian: #0A0605;       /* base background */
+  --bh-obsidian-2: #120A08;
+  --bh-obsidian-3: #1A120E;
+  --bh-obsidian-4: #241611;
+
+  /* Gold spectrum */
+  --bh-gold: #D4AF37;
+  --bh-gold-light: #F3E5AB;
+  --bh-gold-pale: #FAF0CD;
+  --bh-gold-deep: #8B6914;
+  --bh-gold-shadow: #5C4510;
+
+  /* Burgundy / Rose */
+  --bh-burgundy: #6E1E2B;
+  --bh-burgundy-light: #B24159;
+  --bh-rose: #B76E79;
+
+  /* Text */
+  --bh-text-primary: #F5E9BE;
+  --bh-text-secondary: rgba(245, 233, 190, 0.72);
+  --bh-text-muted: rgba(245, 233, 190, 0.5);
+  --bh-text-dim: rgba(245, 233, 190, 0.32);
+
+  /* Borders / glass */
+  --bh-glass-bg: rgba(20, 12, 8, 0.55);
+  --bh-glass-bg-hi: rgba(26, 18, 14, 0.75);
+  --bh-glass-border: rgba(212, 175, 55, 0.18);
+  --bh-glass-border-hi: rgba(212, 175, 55, 0.38);
+
+  /* Neon glows */
+  --bh-glow-gold: 0 0 40px rgba(212, 175, 55, 0.35), 0 0 80px rgba(212, 175, 55, 0.12);
+  --bh-glow-gold-soft: 0 0 24px rgba(212, 175, 55, 0.25);
+  --bh-glow-burgundy: 0 0 40px rgba(183, 110, 121, 0.3);
+
+  /* Gradients */
+  --bh-grad-gold: linear-gradient(135deg, #D4AF37 0%, #F3E5AB 45%, #B8931F 100%);
+  --bh-grad-gold-deep: linear-gradient(135deg, #8B6914 0%, #D4AF37 50%, #5C4510 100%);
+  --bh-grad-burgundy: linear-gradient(135deg, #6E1E2B 0%, #B76E79 100%);
+  --bh-grad-night: radial-gradient(ellipse at top, #1A120E 0%, #0A0605 60%, #050202 100%);
+  --bh-grad-night-side: linear-gradient(135deg, #0A0605 0%, #1A120E 50%, #0A0605 100%);
+  --bh-grad-vip: linear-gradient(135deg, #0A0605 0%, #241611 40%, #0A0605 100%);
+
+  /* Shadows */
+  --bh-shadow-lux: 0 20px 60px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(212, 175, 55, 0.15);
+  --bh-shadow-deep: 0 40px 80px rgba(0, 0, 0, 0.85);
+
+  /* Sizes */
+  --bh-radius-lg: 24px;
+  --bh-radius-xl: 32px;
+  --bh-radius-2xl: 48px;
+}
+
+/* ============ TYPOGRAPHY ============ */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Tajawal:wght@300;400;500;700;800;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+.font-display { font-family: 'Playfair Display', 'Tajawal', Georgia, serif; letter-spacing: -0.02em; }
+.font-display-italic { font-family: 'Playfair Display', serif; font-style: italic; }
+.font-cormorant { font-family: 'Cormorant Garamond', serif; }
+.font-body { font-family: 'Tajawal', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+html[dir="rtl"] .font-display { font-family: 'Tajawal', 'Playfair Display', serif; }
+
+body, html {
+  background: var(--bh-grad-night);
+  color: var(--bh-text-primary);
+  font-family: 'Tajawal', 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ============ BASE LAYOUT ============ */
+.bh-surface {
+  background: var(--bh-grad-night);
+  min-height: 100dvh;
+  position: relative;
+}
+
+.bh-surface::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 0%, rgba(212, 175, 55, 0.08), transparent 40%),
+    radial-gradient(circle at 80% 100%, rgba(183, 110, 121, 0.07), transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ============ GLASS CARD ============ */
+.bh-glass {
+  background: var(--bh-glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--bh-glass-border);
+  border-radius: var(--bh-radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.bh-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.06) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.bh-glass-hi {
+  background: var(--bh-glass-bg-hi);
+  border-color: var(--bh-glass-border-hi);
+  box-shadow: var(--bh-shadow-lux);
+}
+
+.bh-glass-vip {
+  background:
+    linear-gradient(135deg, rgba(212, 175, 55, 0.08) 0%, transparent 50%),
+    rgba(10, 6, 5, 0.85);
+  border: 1px solid var(--bh-gold);
+  box-shadow: var(--bh-glow-gold), var(--bh-shadow-lux);
+  backdrop-filter: blur(30px);
+}
+
+/* ============ GOLD TEXT ============ */
+.bh-gold-text {
+  background: var(--bh-grad-gold);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.bh-gold-text-deep {
+  background: var(--bh-grad-gold-deep);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.bh-rose-text {
+  background: linear-gradient(135deg, #B76E79 0%, #F3E5AB 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ============ BUTTONS (Micro-interactions) ============ */
+.bh-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.75rem;
+  font-family: 'Tajawal', 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+  will-change: transform;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
+.bh-btn:active { transform: scale(0.97); }
+
+.bh-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%);
+  transform: translateX(-100%);
+  transition: transform 0.8s ease;
+  pointer-events: none;
+}
+.bh-btn:hover::before { transform: translateX(100%); }
+
+/* PRIMARY — Gold Neon */
+.bh-btn-primary {
+  background: var(--bh-grad-gold);
+  color: var(--bh-obsidian);
+  box-shadow: var(--bh-glow-gold-soft), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.bh-btn-primary:hover {
+  box-shadow: var(--bh-glow-gold), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* SECONDARY — Glass */
+.bh-btn-ghost {
+  background: transparent;
+  color: var(--bh-text-primary);
+  border-color: var(--bh-glass-border-hi);
+}
+.bh-btn-ghost:hover {
+  background: var(--bh-glass-bg);
+  border-color: var(--bh-gold);
+  color: var(--bh-gold-light);
+}
+
+/* OUTLINE — Gold ring */
+.bh-btn-outline {
+  background: transparent;
+  color: var(--bh-gold);
+  border-color: var(--bh-gold);
+}
+.bh-btn-outline:hover {
+  background: rgba(212, 175, 55, 0.08);
+  box-shadow: var(--bh-glow-gold-soft);
+}
+
+/* BURGUNDY */
+.bh-btn-burgundy {
+  background: var(--bh-grad-burgundy);
+  color: #FFF5E6;
+  box-shadow: var(--bh-glow-burgundy);
+}
+
+.bh-btn-sm { padding: 0.55rem 1.1rem; font-size: 0.825rem; }
+.bh-btn-lg { padding: 1.1rem 2.25rem; font-size: 1.05rem; }
+.bh-btn-xl { padding: 1.25rem 2.5rem; font-size: 1.1rem; }
+
+/* ============ ORBS (ambient glow) ============ */
+.bh-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  pointer-events: none;
+  will-change: transform;
+}
+.bh-orb-gold {
+  background: radial-gradient(circle, #D4AF37 0%, transparent 70%);
+  animation: bh-float 12s ease-in-out infinite;
+}
+.bh-orb-burgundy {
+  background: radial-gradient(circle, #B76E79 0%, transparent 70%);
+  animation: bh-float 15s ease-in-out infinite reverse;
+}
+.bh-orb-deep {
+  background: radial-gradient(circle, #8B6914 0%, transparent 70%);
+  animation: bh-float 18s ease-in-out infinite;
+}
+
+@keyframes bh-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(40px, -30px) scale(1.1); }
+  66% { transform: translate(-30px, 20px) scale(0.95); }
+}
+
+/* ============ NEON PULSE ============ */
+@keyframes bh-pulse-gold {
+  0%, 100% { box-shadow: 0 0 24px rgba(212, 175, 55, 0.35); }
+  50% { box-shadow: 0 0 48px rgba(212, 175, 55, 0.65), 0 0 96px rgba(212, 175, 55, 0.25); }
+}
+.bh-pulse-gold { animation: bh-pulse-gold 2.5s ease-in-out infinite; }
+
+@keyframes bh-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.bh-shimmer {
+  background: linear-gradient(90deg, transparent 40%, rgba(212, 175, 55, 0.4) 50%, transparent 60%);
+  background-size: 200% 100%;
+  animation: bh-shimmer 3s ease-in-out infinite;
+}
+
+/* ============ DIVIDERS ============ */
+.bh-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.bh-divider::before, .bh-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--bh-gold), transparent);
+  opacity: 0.4;
+}
+.bh-divider-text {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--bh-gold-light);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* ============ CARD HOVER ============ */
+.bh-card-hover {
+  transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.bh-card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--bh-shadow-lux), var(--bh-glow-gold-soft);
+  border-color: var(--bh-glass-border-hi);
+}
+
+/* ============ VIP RIBBON ============ */
+.bh-vip-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  background: var(--bh-grad-gold);
+  color: var(--bh-obsidian);
+  border-radius: 999px;
+  box-shadow: var(--bh-glow-gold-soft);
+}
+
+/* ============ INPUT ============ */
+.bh-input {
+  width: 100%;
+  background: rgba(10, 6, 5, 0.6);
+  border: 1px solid var(--bh-glass-border);
+  border-radius: 16px;
+  padding: 0.9rem 1.25rem;
+  font-family: 'Tajawal', sans-serif;
+  font-size: 0.95rem;
+  color: var(--bh-text-primary);
+  transition: all 0.25s ease;
+  backdrop-filter: blur(12px);
+}
+.bh-input::placeholder { color: var(--bh-text-dim); }
+.bh-input:focus {
+  outline: none;
+  border-color: var(--bh-gold);
+  box-shadow: var(--bh-glow-gold-soft);
+  background: rgba(20, 12, 8, 0.7);
+}
+
+/* ============ CORNER ACCENTS ============ */
+.bh-corner-accents {
+  position: relative;
+}
+.bh-corner-accents::before,
+.bh-corner-accents::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--bh-gold);
+}
+.bh-corner-accents::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.bh-corner-accents::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+/* ============ SCROLLBAR ============ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bh-obsidian); }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(var(--bh-gold-deep), var(--bh-gold));
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--bh-gold); }
+
+/* ============ RTL TUNING ============ */
+[dir="rtl"] body { letter-spacing: 0; }
+[dir="rtl"] .font-display { letter-spacing: -0.01em; }
+
+/* ============ UTILITY ============ */
+.bh-no-tap-highlight { -webkit-tap-highlight-color: transparent; }
+.bh-safe-top { padding-top: env(safe-area-inset-top); }
+.bh-safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* ============ ANIMATION HELPERS ============ */
+@keyframes bh-fade-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes bh-scale-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+@keyframes bh-slide-right { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+
+.bh-anim-fade-up { animation: bh-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.bh-anim-scale-in { animation: bh-scale-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.bh-anim-slide-right { animation: bh-slide-right 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Stagger delays */
+.bh-delay-1 { animation-delay: 0.1s; }
+.bh-delay-2 { animation-delay: 0.2s; }
+.bh-delay-3 { animation-delay: 0.3s; }
+.bh-delay-4 { animation-delay: 0.4s; }
+.bh-delay-5 { animation-delay: 0.5s; }
+.bh-delay-6 { animation-delay: 0.6s; }

@@ -12,6 +12,7 @@ import { ServicesManagement, SocialMediaManagement } from '@/components/Dashboar
 import PortfolioManagement from '@/components/PortfolioManagement';
 import UsageStats from '@/components/UsageStats';
 import ShopOrdersManagement from '@/components/ShopOrdersManagement';
+import ImageUploader from '@/components/ImageUploader';
 import SponsoredAdsManagement from '@/components/SponsoredAdsManagement';
 import RevenueStats from '@/components/RevenueStats';
 import LeaveManagement from '@/components/LeaveManagement';
@@ -302,6 +303,84 @@ const BarberDashboard = () => {
             {t.editProfile}
           </Button>
         </div>
+
+        {/* v3.7 — Quick Setup Progress (visible until fully set up) */}
+        {(() => {
+          const hasLogo = !!profile?.logo_url;
+          const hasServices = Array.isArray(profile?.services) && profile.services.length > 0;
+          const hasProducts = products.length > 0;
+          const hasLocation = !!profile?.latitude || !!profile?.city || !!profile?.address;
+          const steps = [
+            { key: 'logo', ok: hasLogo,     icon: '📸', label: language === 'ar' ? 'صورة الملف / الشعار' : 'Profile photo / logo', cta: '/profile-setup' },
+            { key: 'loc',  ok: hasLocation, icon: '📍', label: language === 'ar' ? 'الموقع الجغرافي' : 'Location', cta: '/profile-setup' },
+            { key: 'srv',  ok: hasServices, icon: '✂️', label: language === 'ar' ? 'قائمة الخدمات والأسعار' : 'Services & prices', cta: '/profile-setup' },
+            { key: 'prd',  ok: hasProducts, icon: '🛍️', label: language === 'ar' ? 'المنتجات والعروض' : 'Products & offers' },
+          ];
+          const done = steps.filter(s => s.ok).length;
+          if (done === steps.length) return null;
+          return (
+            <div
+              className="rounded-2xl p-5 mb-6 bh-card-premium bh-depth-lg"
+              style={{ borderColor: 'rgba(212,175,55,0.35)', boxShadow: '0 20px 48px rgba(0,0,0,0.55), 0 0 30px rgba(212,175,55,0.15)' }}
+              data-testid="quick-setup-card"
+            >
+              <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
+                <div>
+                  <h3 className="text-xl font-bold" style={{ color: 'var(--bh-gold, #D4AF37)' }}>
+                    {language === 'ar' ? '✨ أكمل إعداد صالونك' : '✨ Finish setting up your salon'}
+                  </h3>
+                  <p className="text-xs mt-1 opacity-80" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                    {language === 'ar'
+                      ? 'كلما كان ملفك أكمل، ظهر صالونك أعلى في نتائج البحث'
+                      : 'The more complete your profile, the higher your salon ranks in search'}
+                  </p>
+                </div>
+                <div className="text-sm font-semibold px-3 py-1 rounded-full"
+                  style={{ background: 'rgba(212,175,55,0.15)', color: '#D4AF37', border: '1px solid rgba(212,175,55,0.35)' }}>
+                  {done}/{steps.length}
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div className="h-2 rounded-full mb-4" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${(done / steps.length) * 100}%`,
+                    background: 'linear-gradient(90deg, #D4AF37, #F4D03F)',
+                    boxShadow: '0 0 12px rgba(212,175,55,0.55)',
+                  }}
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {steps.map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => s.cta ? navigate(s.cta) : null}
+                    className="flex items-center gap-3 p-3 rounded-xl text-start bh-touch transition-all hover:-translate-y-0.5"
+                    style={{
+                      background: s.ok ? 'rgba(46,139,87,0.12)' : 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${s.ok ? 'rgba(46,139,87,0.5)' : 'rgba(212,175,55,0.25)'}`,
+                    }}
+                    data-testid={`setup-step-${s.key}`}
+                  >
+                    <span className="text-2xl">{s.ok ? '✅' : s.icon}</span>
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold" style={{ color: s.ok ? '#7FD4A4' : 'var(--bh-text, #fff)' }}>
+                        {s.label}
+                      </div>
+                      {!s.ok && (
+                        <div className="text-[11px] opacity-75" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                          {language === 'ar' ? 'اضغط للإضافة' : 'Tap to add'}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -601,11 +680,14 @@ const BarberDashboard = () => {
             </div>
             <div>
               <label className={`text-sm font-bold mb-1 block ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{t.productImage}</label>
-              <Input
+              {/* v3.7 — file-based image uploader (compresses to stay within backend 5MB limit) */}
+              <ImageUploader
                 value={productForm.image_url}
-                onChange={(e) => setProductForm({...productForm, image_url: e.target.value})}
-                placeholder="https://..."
-                className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : ''}
+                onChange={(v) => setProductForm({ ...productForm, image_url: v })}
+                helpText={language === 'ar' ? 'التقط صورة المنتج أو اختر من المعرض' : 'Take or pick a product photo'}
+                aspect="square"
+                language={language}
+                testId="product-image-uploader"
               />
             </div>
             <div className="flex items-center gap-2">

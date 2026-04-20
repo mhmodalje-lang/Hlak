@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import axios from 'axios';
 import LocationPicker from '@/components/LocationPicker';
+import ImageUploader from '@/components/ImageUploader';
 import { 
   ArrowRight, ArrowLeft, Plus, X, Loader2, Save,
   Clock, DollarSign, Image, Link as LinkIcon
@@ -329,6 +330,22 @@ const ProfileSetup = () => {
                   className={inputClass}
                 />
               </div>
+              {/* v3.7 Logo upload — replaces the old URL text input */}
+              <div>
+                <Label className={labelClass}>
+                  {language === 'ar' ? 'شعار الصالون / صورة الملف' : 'Salon logo / profile image'}
+                </Label>
+                <ImageUploader
+                  value={formData.logo_url}
+                  onChange={(v) => setFormData({ ...formData, logo_url: v })}
+                  helpText={language === 'ar'
+                    ? 'اختر صورة واضحة لواجهة الصالون أو الشعار (سيظهر للزبائن)'
+                    : 'Pick a clear storefront or logo photo (visible to customers)'}
+                  aspect="square"
+                  language={language}
+                  testId="shop-logo-uploader"
+                />
+              </div>
             </div>
           </div>
 
@@ -505,24 +522,35 @@ const ProfileSetup = () => {
               ))}
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <Input
-                placeholder={t.beforeUrl}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <ImageUploader
                 value={newImage.before}
-                onChange={(e) => setNewImage({ ...newImage, before: e.target.value })}
-                className={inputClass}
+                onChange={(v) => setNewImage({ ...newImage, before: v })}
+                label={language === 'ar' ? 'قبل' : 'Before'}
+                helpText={language === 'ar' ? 'صورة قبل القصة / التسريحة' : 'Photo before the haircut / style'}
+                aspect="square"
+                language={language}
+                testId="gallery-before"
               />
-              <Input
-                placeholder={t.afterUrl}
+              <ImageUploader
                 value={newImage.after}
-                onChange={(e) => setNewImage({ ...newImage, after: e.target.value })}
-                className={inputClass}
+                onChange={(v) => setNewImage({ ...newImage, after: v })}
+                label={language === 'ar' ? 'بعد' : 'After'}
+                helpText={language === 'ar' ? 'صورة بعد القصة / التسريحة' : 'Photo after the haircut / style'}
+                aspect="square"
+                language={language}
+                testId="gallery-after"
               />
-              <Button onClick={addImage} className={isMen ? 'btn-primary-men' : 'btn-primary-women'}>
-                <Plus className="w-4 h-4 me-1" />
-                {t.addImage}
-              </Button>
             </div>
+            <Button
+              onClick={addImage}
+              className={`mt-3 w-full ${isMen ? 'btn-primary-men' : 'btn-primary-women'}`}
+              disabled={!newImage.before || !newImage.after}
+              data-testid="add-gallery-pair"
+            >
+              <Plus className="w-4 h-4 me-2" />
+              {t.addImage}
+            </Button>
           </div>
 
           {/* Working Hours */}

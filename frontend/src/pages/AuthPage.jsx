@@ -112,6 +112,17 @@ const AuthPage = () => {
     } catch (e) { console.error(e); }
   }, [API]);
 
+  // v3.7 — route each role to its native surface.
+  // Salon -> /dashboard (their control panel: profile, products, services, gallery, bookings).
+  // Admin -> /admin (super-admin dashboard).
+  // Customer -> /home (discovery, booking, AI advisor, favorites).
+  const routeForEntity = (user) => {
+    const etype = user?.entity_type || user?.role || (user?.shop_name ? 'barbershop' : 'user');
+    if (etype === 'barbershop') return '/dashboard';
+    if (etype === 'admin' || etype === 'master_admin' || etype === 'sub_admin') return '/admin';
+    return '/home';
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -130,7 +141,7 @@ const AuthPage = () => {
         return;
       }
       toast.success(language === 'ar' ? '✨ مرحباً بعودتك!' : '✨ Welcome back!');
-      navigate('/home');
+      navigate(routeForEntity(res.data.user));
     } catch (err) {
       toast.error(err.response?.data?.detail || (language === 'ar' ? 'خطأ في تسجيل الدخول' : 'Login failed'));
     } finally {
@@ -150,7 +161,9 @@ const AuthPage = () => {
       const res = await axios.post(endpoint, data);
       login(res.data.access_token || res.data.token, res.data.user);
       toast.success(language === 'ar' ? '🎉 تم إنشاء حسابك!' : '🎉 Account created!');
-      navigate('/home');
+      // v3.7 — after salon registration, go directly to the dashboard
+      // so the owner can upload their logo, gallery, and products straight away.
+      navigate(authType === 'shop' ? '/dashboard' : '/home');
     } catch (err) {
       toast.error(err.response?.data?.detail || (language === 'ar' ? 'خطأ في التسجيل' : 'Registration failed'));
     } finally {

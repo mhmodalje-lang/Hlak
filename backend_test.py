@@ -1,412 +1,637 @@
 #!/usr/bin/env python3
 """
-BARBER HUB v3.6 - Ranking Tiers & Enhancements - Backend Testing
-Testing new ranking engine endpoints + seed/enrichment changes + zero regressions
+BARBER HUB v3.6.1 - Security Audit Verification + Regression Testing
+Testing all security features and regression items as specified in the review request.
 """
 
 import requests
 import json
-import sys
+import time
+import base64
+import re
 from typing import Dict, Any, Optional
-import urllib.parse
 
-# Backend URL from frontend/.env
+# Configuration
 BASE_URL = "https://vuln-checker-8.preview.emergentagent.com/api"
+SEED_TOKEN = "Seed_BHub_v36_X9Q2pT7vNcL8sJrK4mWzYbHfDgEa_c1u3iQoR5xZpV0nBkM6tH9wY2sLcA8jUe"
 
-# Test credentials from review request
-ADMIN_CREDENTIALS = {"phone_number": "admin", "password": "admin123"}
-SALON_CREDENTIALS = {"phone_number": "0935964158", "password": "salon123"}
+# Test credentials
+ADMIN_CREDS = {"phone_number": "admin", "password": "admin123"}
+SALON_CREDS = {"phone_number": "0935964158", "password": "salon123"}
 
-class BarberHubTester:
+class SecurityTester:
     def __init__(self):
+        self.session = requests.Session()
         self.admin_token = None
         self.salon_token = None
+        self.user_token = None
         self.test_results = []
         
     def log_test(self, test_name: str, passed: bool, details: str = ""):
         """Log test result"""
         status = "✅ PASS" if passed else "❌ FAIL"
-        self.test_results.append(f"{status} - {test_name}: {details}")
-        print(f"{status} - {test_name}: {details}")
-        
-    def make_request(self, method: str, endpoint: str, data: Dict = None, 
-                    token: str = None, params: Dict = None) -> Dict[str, Any]:
-        """Make HTTP request to backend"""
+        self.test_results.append({
+            "test": test_name,
+            "passed": passed,
+            "details": details
+        })
+        print(f"{status} - {test_name}")
+        if details:
+            print(f"    {details}")
+    
+    def make_request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
+        """Make HTTP request with error handling"""
         url = f"{BASE_URL}{endpoint}"
-        headers = {"Content-Type": "application/json"}
-        
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-            
         try:
-            if method == "GET":
-                response = requests.get(url, headers=headers, params=params, timeout=30)
-            elif method == "POST":
-                response = requests.post(url, headers=headers, json=data, timeout=30)
-            elif method == "PUT":
-                response = requests.put(url, headers=headers, json=data, timeout=30)
-            elif method == "DELETE":
-                response = requests.delete(url, headers=headers, timeout=30)
-            else:
-                return {"error": f"Unsupported method: {method}"}
+            # Set default timeout if not provided
+            if 'timeout' not in kwargs:
+                kwargs['timeout'] = 30
+            response = self.session.request(method, url, **kwargs)
+            return response
+        except Exception as e:
+            print(f"Request failed: {method} {url} - {e}")
+            raise
+    
+    def login_admin(self) -> bool:
+        """Login as admin and store token"""
+        try:
+            response = self.make_request("POST", "/auth/login", json=ADMIN_CREDS)
+            if response.status_code == 200:
+                data = response.json()
+                self.admin_token = data.get("access_token")
+                return True
+            return False
+        except Exception:
+            return False
+    
+    def login_salon(self) -> bool:
+        """Login as salon and store token"""
+        try:
+            response = self.make_request("POST", "/auth/login", json=SALON_CREDS)
+            if response.status_code == 200:
+                data = response.json()
+                self.salon_token = data.get("access_token")
+                return True
+            return False
+        except Exception:
+            return False
+    
+    def register_test_user(self) -> Optional[str]:
+        """Register a test user and return token"""
+        import random
+        phone = f"test{random.randint(100000, 999999)}"
+        user_data = {
+            "phone_number": phone,
+            "full_name": "Test User",
+            "password": "test123",
+            "gender": "male",
+            "country": "سوريا",
+            "city": "دمشق"
+        }
+        try:
+            response = self.make_request("POST", "/auth/register", json=user_data)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("access_token")
+            return None
+        except Exception:
+            return None
+    
+    def test_seed_endpoint_security(self):
+        """Test 1: POST /api/seed lock"""
+        print("\n=== Testing POST /api/seed Security ===")
+        
+        # Test 1.1: Without auth and without X-Seed-Token → expect 403
+        response = self.make_request("POST", "/seed")
+        expected_403 = response.status_code == 403
+        details = f"Status: {response.status_code}, Response: {response.text[:100]}"
+        self.log_test("Seed endpoint - No auth/token returns 403", expected_403, details)
+        
+        # Test 1.2: With wrong X-Seed-Token → expect 403
+        headers = {"X-Seed-Token": "wrong"}
+        response = self.make_request("POST", "/seed", headers=headers)
+        expected_403 = response.status_code == 403
+        details = f"Status: {response.status_code}, Response: {response.text[:100]}"
+        self.log_test("Seed endpoint - Wrong token returns 403", expected_403, details)
+        
+        # Test 1.3: With correct X-Seed-Token → expect 200
+        headers = {"X-Seed-Token": SEED_TOKEN}
+        response = self.make_request("POST", "/seed", headers=headers)
+        expected_200 = response.status_code == 200
+        if expected_200:
+            data = response.json()
+            has_count = "barbershop_count" in data
+            details = f"Status: {response.status_code}, Count: {data.get('barbershop_count', 'N/A')}"
+        else:
+            has_count = False
+            details = f"Status: {response.status_code}, Response: {response.text[:100]}"
+        self.log_test("Seed endpoint - Correct token returns 200", expected_200 and has_count, details)
+        
+        # Test 1.4: With admin Bearer token (no seed token) → expect 200
+        if self.login_admin():
+            headers = {"Authorization": f"Bearer {self.admin_token}"}
+            response = self.make_request("POST", "/seed", headers=headers)
+            expected_200 = response.status_code == 200
+            details = f"Status: {response.status_code}"
+            self.log_test("Seed endpoint - Admin token bypass works", expected_200, details)
+        else:
+            self.log_test("Seed endpoint - Admin token bypass works", False, "Failed to login as admin")
+    
+    def test_usage_stats_authorization(self):
+        """Test 2: GET /api/admin/usage-stats authorization & PII anonymization"""
+        print("\n=== Testing Usage Stats Authorization ===")
+        
+        # Test 2.1: Unauthenticated → 401
+        response = self.make_request("GET", "/admin/usage-stats")
+        expected_401 = response.status_code == 401
+        details = f"Status: {response.status_code}"
+        self.log_test("Usage stats - Unauthenticated returns 401", expected_401, details)
+        
+        # Test 2.2: As regular user → 403
+        user_token = self.register_test_user()
+        if user_token:
+            headers = {"Authorization": f"Bearer {user_token}"}
+            response = self.make_request("GET", "/admin/usage-stats", headers=headers)
+            expected_403 = response.status_code == 403
+            details = f"Status: {response.status_code}"
+            self.log_test("Usage stats - Regular user returns 403", expected_403, details)
+        else:
+            self.log_test("Usage stats - Regular user returns 403", False, "Failed to register test user")
+        
+        # Test 2.3: As salon → 200 with anonymized data
+        if self.login_salon():
+            headers = {"Authorization": f"Bearer {self.salon_token}"}
+            response = self.make_request("GET", "/admin/usage-stats", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                top_users = data.get("top_users", {})
+                advisor_users = top_users.get("ai_advisor", [])
+                tryon_users = top_users.get("ai_tryon", [])
                 
-            return {
-                "status_code": response.status_code,
-                "data": response.json() if response.content else {},
-                "headers": dict(response.headers)
+                # Check for anonymization (should have user_hash, not _id)
+                anonymized = True
+                for user in advisor_users + tryon_users:
+                    if "_id" in user or "user_id" in user:
+                        anonymized = False
+                        break
+                    if not ("user_hash" in user and "rank" in user and "count" in user):
+                        anonymized = False
+                        break
+                
+                details = f"Status: {response.status_code}, Anonymized: {anonymized}"
+                self.log_test("Usage stats - Salon gets anonymized data", anonymized, details)
+            else:
+                details = f"Status: {response.status_code}"
+                self.log_test("Usage stats - Salon gets anonymized data", False, details)
+        else:
+            self.log_test("Usage stats - Salon gets anonymized data", False, "Failed to login as salon")
+        
+        # Test 2.4: As admin → 200 with raw data allowed
+        if self.admin_token:
+            headers = {"Authorization": f"Bearer {self.admin_token}"}
+            response = self.make_request("GET", "/admin/usage-stats", headers=headers)
+            expected_200 = response.status_code == 200
+            details = f"Status: {response.status_code}"
+            self.log_test("Usage stats - Admin access works", expected_200, details)
+    
+    def test_booking_idor_fix(self):
+        """Test 3: GET /api/bookings/{booking_id} IDOR fix"""
+        print("\n=== Testing Booking IDOR Fix ===")
+        
+        # First, get a booking ID from salon's bookings
+        booking_id = None
+        if self.login_salon():
+            headers = {"Authorization": f"Bearer {self.salon_token}"}
+            # Get salon's shop ID first
+            response = self.make_request("GET", "/barbers/profile/me", headers=headers)
+            if response.status_code == 200:
+                shop_data = response.json()
+                shop_id = shop_data.get("id")
+                
+                # Get bookings for this shop
+                response = self.make_request("GET", f"/bookings/shop/{shop_id}", headers=headers)
+                if response.status_code == 200:
+                    bookings = response.json()
+                    if bookings:
+                        booking_id = bookings[0].get("id")
+        
+        if not booking_id:
+            self.log_test("Booking IDOR - Test setup", False, "No booking found to test with")
+            return
+        
+        # Test 3.1: As anonymous → expect 401
+        response = self.make_request("GET", f"/bookings/{booking_id}")
+        expected_401 = response.status_code == 401
+        details = f"Status: {response.status_code}"
+        self.log_test("Booking IDOR - Anonymous returns 401", expected_401, details)
+        
+        # Test 3.2: As different user → expect 403
+        user_token = self.register_test_user()
+        if user_token:
+            headers = {"Authorization": f"Bearer {user_token}"}
+            response = self.make_request("GET", f"/bookings/{booking_id}", headers=headers)
+            expected_403 = response.status_code == 403
+            details = f"Status: {response.status_code}"
+            self.log_test("Booking IDOR - Different user returns 403", expected_403, details)
+        
+        # Test 3.3: As owning salon → expect 200
+        if self.salon_token:
+            headers = {"Authorization": f"Bearer {self.salon_token}"}
+            response = self.make_request("GET", f"/bookings/{booking_id}", headers=headers)
+            expected_200 = response.status_code == 200
+            details = f"Status: {response.status_code}"
+            self.log_test("Booking IDOR - Owning salon returns 200", expected_200, details)
+        
+        # Test 3.4: As admin → expect 200
+        if self.admin_token:
+            headers = {"Authorization": f"Bearer {self.admin_token}"}
+            response = self.make_request("GET", f"/bookings/{booking_id}", headers=headers)
+            expected_200 = response.status_code == 200
+            details = f"Status: {response.status_code}"
+            self.log_test("Booking IDOR - Admin returns 200", expected_200, details)
+    
+    def test_register_barbershop_rate_limit(self):
+        """Test 4: POST /api/auth/register-barbershop rate limit"""
+        print("\n=== Testing Register Barbershop Rate Limit ===")
+        
+        # Send 11 sequential register-barbershop POSTs
+        success_count = 0
+        rate_limited = False
+        
+        for i in range(11):
+            shop_data = {
+                "owner_name": f"Test Owner {i}",
+                "shop_name": f"Test Shop {i}",
+                "shop_type": "male",
+                "phone_number": f"test{i}{int(time.time())}",
+                "password": "test123",
+                "country": "سوريا",
+                "city": "دمشق"
             }
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
-        except json.JSONDecodeError as e:
-            return {"error": f"JSON decode error: {e}", "status_code": response.status_code}
             
-    def authenticate(self) -> bool:
-        """Authenticate admin and salon users"""
-        print("🔐 Authenticating users...")
+            response = self.make_request("POST", "/auth/register-barbershop", json=shop_data)
+            
+            if response.status_code == 200:
+                success_count += 1
+            elif response.status_code == 429:
+                rate_limited = True
+                break
+            elif response.status_code == 400 and "already registered" in response.text:
+                # Phone number collision, try with different number
+                continue
+            
+            time.sleep(0.1)  # Small delay between requests
         
-        # Admin login
-        admin_resp = self.make_request("POST", "/auth/login", ADMIN_CREDENTIALS)
-        if admin_resp.get("status_code") == 200 and "access_token" in admin_resp.get("data", {}):
-            self.admin_token = admin_resp["data"]["access_token"]
-            self.log_test("Admin Authentication", True, "admin/admin123 login successful")
+        # The 11th request should return 429
+        expected_rate_limit = rate_limited and success_count >= 10
+        details = f"Successful registrations: {success_count}, Rate limited: {rate_limited}"
+        self.log_test("Register barbershop - Rate limit at 11th request", expected_rate_limit, details)
+    
+    def test_search_regex_safety(self):
+        """Test 5: GET /api/search/barbers regex safety"""
+        print("\n=== Testing Search Regex Safety ===")
+        
+        # Test 5.1: Malicious regex patterns should not cause 500 or hang
+        malicious_patterns = [".*+++++", "(((((", ".*.*.*.*.*", "(?:(?:(?:(?:(?:"]
+        
+        for pattern in malicious_patterns:
+            start_time = time.time()
+            response = self.make_request("GET", f"/search/barbers?search={pattern}", timeout=10)
+            elapsed = time.time() - start_time
+            
+            safe = response.status_code == 200 and elapsed < 5
+            details = f"Pattern: {pattern}, Status: {response.status_code}, Time: {elapsed:.2f}s"
+            self.log_test(f"Search regex safety - Pattern '{pattern[:10]}...'", safe, details)
+        
+        # Test 5.2: Valid search should work
+        response = self.make_request("GET", "/search/barbers?search=king")
+        if response.status_code == 200:
+            data = response.json()
+            has_results = len(data) > 0
+            details = f"Status: {response.status_code}, Results: {len(data)}"
+            self.log_test("Search regex safety - Valid search works", has_results, details)
         else:
-            self.log_test("Admin Authentication", False, f"Failed: {admin_resp}")
-            return False
+            details = f"Status: {response.status_code}"
+            self.log_test("Search regex safety - Valid search works", False, details)
+    
+    def test_products_featured_fallback(self):
+        """Test 6: GET /api/products/featured fallback"""
+        print("\n=== Testing Products Featured Fallback ===")
+        
+        # Test 6.1: Without query → expect 200 with at least 5 products
+        response = self.make_request("GET", "/products/featured")
+        if response.status_code == 200:
+            data = response.json()
+            has_enough = len(data) >= 5
             
-        # Salon login  
-        salon_resp = self.make_request("POST", "/auth/login", SALON_CREDENTIALS)
-        if salon_resp.get("status_code") == 200 and "access_token" in salon_resp.get("data", {}):
-            self.salon_token = salon_resp["data"]["access_token"]
-            self.log_test("Salon Authentication", True, "0935964158/salon123 login successful")
+            # Check if products have required fields
+            valid_structure = True
+            for product in data[:3]:  # Check first 3
+                if not all(field in product for field in ["shop_name", "shop_city", "shop_country"]):
+                    valid_structure = False
+                    break
+            
+            success = has_enough and valid_structure
+            details = f"Status: {response.status_code}, Count: {len(data)}, Valid structure: {valid_structure}"
+            self.log_test("Products featured - Default query returns enough products", success, details)
         else:
-            self.log_test("Salon Authentication", False, f"Failed: {salon_resp}")
-            return False
-            
-        return True
+            details = f"Status: {response.status_code}"
+            self.log_test("Products featured - Default query returns enough products", False, details)
         
-    def test_seed_endpoint(self) -> bool:
-        """Test POST /api/seed with admin token"""
-        print("\n🌱 Testing seed endpoint...")
-        
-        resp = self.make_request("POST", "/seed", token=self.admin_token)
-        if resp.get("status_code") == 200:
-            data = resp.get("data", {})
-            if "message" in data:
-                self.log_test("Seed Endpoint", True, f"Response: {data.get('message', '')}")
-                return True
-        
-        self.log_test("Seed Endpoint", False, f"Failed: {resp}")
-        return False
-        
-    def test_ranking_tiers_endpoint(self) -> bool:
-        """Test GET /api/ranking/tiers (no auth required)"""
-        print("\n🏆 Testing ranking tiers endpoint...")
-        
-        # Test 1: Basic request
-        resp = self.make_request("GET", "/ranking/tiers")
-        if resp.get("status_code") != 200:
-            self.log_test("Ranking Tiers - Basic", False, f"Status: {resp.get('status_code')}")
-            return False
-            
-        data = resp.get("data", {})
-        required_keys = ["global_elite", "country_top", "governorate_top", "city_top", "scope", "thresholds"]
-        missing_keys = [k for k in required_keys if k not in data]
-        if missing_keys:
-            self.log_test("Ranking Tiers - Basic", False, f"Missing keys: {missing_keys}")
-            return False
-            
-        self.log_test("Ranking Tiers - Basic", True, f"All required keys present")
-        
-        # Test 2: With gender and limit
-        params = {"gender": "male", "limit": 6}
-        resp = self.make_request("GET", "/ranking/tiers", params=params)
-        if resp.get("status_code") == 200:
-            data = resp.get("data", {})
-            # Check tier badge structure in returned shops
-            for tier_name in ["global_elite", "country_top", "governorate_top", "city_top"]:
-                shops = data.get(tier_name, [])
-                for shop in shops:
-                    if "tier_badge" in shop and shop["tier_badge"]:
-                        tier_badge = shop["tier_badge"]
-                        if tier_badge.get("tier") == tier_name:
-                            self.log_test(f"Ranking Tiers - {tier_name} tier_badge", True, "Tier badge matches parent array")
-                        else:
-                            self.log_test(f"Ranking Tiers - {tier_name} tier_badge", False, f"Tier mismatch: {tier_badge.get('tier')} != {tier_name}")
-            self.log_test("Ranking Tiers - Gender/Limit", True, "Gender=male, limit=6 works")
+        # Test 6.2: With limit=2 → expect exactly up to 2
+        response = self.make_request("GET", "/products/featured?limit=2")
+        if response.status_code == 200:
+            data = response.json()
+            correct_limit = len(data) <= 2
+            details = f"Status: {response.status_code}, Count: {len(data)}"
+            self.log_test("Products featured - Limit parameter works", correct_limit, details)
         else:
-            self.log_test("Ranking Tiers - Gender/Limit", False, f"Status: {resp.get('status_code')}")
-            
-        # Test 3: Country filter
-        params = {"gender": "male", "country": "سوريا"}
-        resp = self.make_request("GET", "/ranking/tiers", params=params)
-        if resp.get("status_code") == 200:
-            self.log_test("Ranking Tiers - Country Filter", True, "Country filter works")
-        else:
-            self.log_test("Ranking Tiers - Country Filter", False, f"Status: {resp.get('status_code')}")
-            
-        # Test 4: Non-existent country (should fallback)
-        params = {"gender": "male", "country": "NonExistentCountry"}
-        resp = self.make_request("GET", "/ranking/tiers", params=params)
-        if resp.get("status_code") == 200:
-            data = resp.get("data", {})
-            country_top = data.get("country_top", [])
-            self.log_test("Ranking Tiers - Fallback Country", True, f"Fallback works, got {len(country_top)} shops")
-        else:
-            self.log_test("Ranking Tiers - Fallback Country", False, f"Status: {resp.get('status_code')}")
-            
-        # Test 5: Invalid limit
-        params = {"limit": 100}
-        resp = self.make_request("GET", "/ranking/tiers", params=params)
-        if resp.get("status_code") in [422, 400]:
-            self.log_test("Ranking Tiers - Invalid Limit", True, "Limit validation works")
-        else:
-            self.log_test("Ranking Tiers - Invalid Limit", False, f"Expected 422/400, got {resp.get('status_code')}")
-            
-        return True
+            details = f"Status: {response.status_code}"
+            self.log_test("Products featured - Limit parameter works", False, details)
         
-    def test_admin_ranking_endpoints(self) -> bool:
-        """Test admin ranking endpoints"""
-        print("\n👑 Testing admin ranking endpoints...")
+        # Test 6.3: With limit=999 → should clamp to 50 and not error
+        response = self.make_request("GET", "/products/featured?limit=999")
+        if response.status_code == 200:
+            data = response.json()
+            clamped = len(data) <= 50
+            details = f"Status: {response.status_code}, Count: {len(data)}"
+            self.log_test("Products featured - Large limit clamped", clamped, details)
+        else:
+            details = f"Status: {response.status_code}"
+            self.log_test("Products featured - Large limit clamped", False, details)
+    
+    def test_tier_status_dependency_fix(self):
+        """Test 7: GET /api/barbershops/me/tier-status dependency fix"""
+        print("\n=== Testing Tier Status Dependency Fix ===")
         
-        # Test 1: POST /api/admin/ranking/recompute
-        resp = self.make_request("POST", "/admin/ranking/recompute", token=self.admin_token)
-        if resp.get("status_code") == 200:
-            data = resp.get("data", {})
-            required_keys = ["updated", "tier_counts", "computed_at"]
-            if all(k in data for k in required_keys):
-                tier_counts = data.get("tier_counts", {})
-                expected_tiers = ["global_elite", "country_top", "governorate_top", "city_top", "normal"]
-                if all(tier in tier_counts for tier in expected_tiers):
-                    self.log_test("Admin Ranking Recompute", True, f"Updated {data.get('updated')} shops")
-                else:
-                    self.log_test("Admin Ranking Recompute", False, f"Missing tier counts: {tier_counts}")
+        # Test 7.1: As salon → 200 with expected structure
+        if self.login_salon():
+            headers = {"Authorization": f"Bearer {self.salon_token}"}
+            response = self.make_request("GET", "/barbershops/me/tier-status", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                required_fields = ["current_tier", "tiers_status", "current_state"]
+                has_fields = all(field in data for field in required_fields)
+                details = f"Status: {response.status_code}, Has required fields: {has_fields}"
+                self.log_test("Tier status - Salon access works", has_fields, details)
             else:
-                self.log_test("Admin Ranking Recompute", False, f"Missing keys in response: {data}")
+                details = f"Status: {response.status_code}"
+                self.log_test("Tier status - Salon access works", False, details)
         else:
-            self.log_test("Admin Ranking Recompute", False, f"Status: {resp.get('status_code')}")
-            
-        # Test 2: POST /api/admin/ranking/recompute without auth
-        resp = self.make_request("POST", "/admin/ranking/recompute")
-        if resp.get("status_code") in [401, 403]:
-            self.log_test("Admin Ranking Recompute - No Auth", True, "Properly requires admin auth")
+            self.log_test("Tier status - Salon access works", False, "Failed to login as salon")
+        
+        # Test 7.2: As regular user → 403
+        user_token = self.register_test_user()
+        if user_token:
+            headers = {"Authorization": f"Bearer {user_token}"}
+            response = self.make_request("GET", "/barbershops/me/tier-status", headers=headers)
+            expected_403 = response.status_code == 403
+            details = f"Status: {response.status_code}"
+            self.log_test("Tier status - Regular user returns 403", expected_403, details)
+        
+        # Test 7.3: Unauthenticated → 401
+        response = self.make_request("GET", "/barbershops/me/tier-status")
+        expected_401 = response.status_code == 401
+        details = f"Status: {response.status_code}"
+        self.log_test("Tier status - Unauthenticated returns 401", expected_401, details)
+    
+    def test_ai_service_error_sanitization(self):
+        """Test 8: AI service error sanitization"""
+        print("\n=== Testing AI Service Error Sanitization ===")
+        
+        # This test requires a confirmed booking and AI services to be configured
+        # We'll test with garbage image data to trigger an error
+        user_token = self.register_test_user()
+        if not user_token:
+            self.log_test("AI error sanitization - Test setup", False, "Failed to register test user")
+            return
+        
+        # Try to call AI advisor with garbage data
+        headers = {"Authorization": f"Bearer {user_token}"}
+        payload = {
+            "booking_id": "fake-booking-id",
+            "image_base64": "not-an-image",
+            "language": "en"
+        }
+        
+        response = self.make_request("POST", "/ai-advisor/analyze", json=payload, headers=headers)
+        
+        # Should return a sanitized error message, not stack traces
+        if response.status_code in [500, 503, 404, 403]:
+            response_text = response.text.lower()
+            has_stack_trace = any(keyword in response_text for keyword in [
+                "traceback", "file \"", "line ", "import", "module", "error:", "exception:"
+            ])
+            sanitized = not has_stack_trace
+            details = f"Status: {response.status_code}, Sanitized: {sanitized}"
+            self.log_test("AI error sanitization - No stack traces leaked", sanitized, details)
         else:
-            self.log_test("Admin Ranking Recompute - No Auth", False, f"Expected 401/403, got {resp.get('status_code')}")
-            
-        # Test 3: GET /api/admin/ranking/stats
-        resp = self.make_request("GET", "/admin/ranking/stats", token=self.admin_token)
-        if resp.get("status_code") == 200:
-            data = resp.get("data", {})
-            required_keys = ["tier_counts", "total_shops", "last_computed_at"]
-            if all(k in data for k in required_keys):
-                total_shops = data.get("total_shops", 0)
-                self.log_test("Admin Ranking Stats", True, f"Total shops: {total_shops}")
-            else:
-                self.log_test("Admin Ranking Stats", False, f"Missing keys: {data}")
+            details = f"Status: {response.status_code}"
+            self.log_test("AI error sanitization - No stack traces leaked", True, details)
+    
+    def test_security_headers(self):
+        """Test 9: Security headers + CSP"""
+        print("\n=== Testing Security Headers ===")
+        
+        # Test on a JSON API response
+        response = self.make_request("GET", "/health")
+        
+        required_headers = {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "SAMEORIGIN", 
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Strict-Transport-Security": None,  # Just check presence
+            "Content-Security-Policy": None
+        }
+        
+        missing_headers = []
+        for header, expected_value in required_headers.items():
+            if header not in response.headers:
+                missing_headers.append(header)
+            elif expected_value and response.headers[header] != expected_value:
+                missing_headers.append(f"{header} (wrong value)")
+        
+        all_present = len(missing_headers) == 0
+        details = f"Status: {response.status_code}, Missing: {missing_headers}"
+        self.log_test("Security headers - All required headers present", all_present, details)
+        
+        # Check CSP for JSON response
+        csp = response.headers.get("Content-Security-Policy", "")
+        json_csp_correct = "default-src 'none'" in csp and "frame-ancestors 'none'" in csp
+        details = f"CSP: {csp[:50]}..."
+        self.log_test("Security headers - JSON CSP correct", json_csp_correct, details)
+    
+    def test_image_size_validation(self):
+        """Test 10: Image-size validation"""
+        print("\n=== Testing Image Size Validation ===")
+        
+        if not self.login_salon():
+            self.log_test("Image size validation - Test setup", False, "Failed to login as salon")
+            return
+        
+        headers = {"Authorization": f"Bearer {self.salon_token}"}
+        
+        # Create a large base64 string (~10MB)
+        large_data = "A" * (10 * 1024 * 1024)  # 10MB of 'A' characters
+        large_image = f"data:image/jpeg;base64,{large_data}"
+        
+        product_data = {
+            "name": "Test Product",
+            "price": 10.0,
+            "category": "test",
+            "image_url": large_image
+        }
+        
+        response = self.make_request("POST", "/products", json=product_data, headers=headers)
+        
+        # Should return 413 with size error
+        expected_413 = response.status_code == 413
+        has_size_message = "too large" in response.text.lower() or "max" in response.text.lower()
+        
+        success = expected_413 and has_size_message
+        details = f"Status: {response.status_code}, Has size message: {has_size_message}"
+        self.log_test("Image size validation - Large image rejected", success, details)
+        
+        # Test with empty image_url → should work
+        product_data["image_url"] = ""
+        response = self.make_request("POST", "/products", json=product_data, headers=headers)
+        expected_200 = response.status_code == 200
+        details = f"Status: {response.status_code}"
+        self.log_test("Image size validation - Empty image accepted", expected_200, details)
+    
+    def test_regression_endpoints(self):
+        """Test regression - must still pass"""
+        print("\n=== Testing Regression Endpoints ===")
+        
+        # Test admin login
+        response = self.make_request("POST", "/auth/login", json=ADMIN_CREDS)
+        admin_login_ok = response.status_code == 200 and "access_token" in response.json()
+        self.log_test("Regression - Admin login works", admin_login_ok)
+        
+        # Test salon login  
+        response = self.make_request("POST", "/auth/login", json=SALON_CREDS)
+        salon_login_ok = response.status_code == 200 and "access_token" in response.json()
+        self.log_test("Regression - Salon login works", salon_login_ok)
+        
+        # Test health endpoint
+        response = self.make_request("GET", "/health")
+        health_ok = response.status_code == 200 and response.json().get("status") == "ok"
+        self.log_test("Regression - Health endpoint works", health_ok)
+        
+        # Test public config
+        response = self.make_request("GET", "/config/public")
+        config_ok = response.status_code == 200 and "admin_whatsapp" in response.json()
+        self.log_test("Regression - Public config works", config_ok)
+        
+        # Test barbers listing
+        response = self.make_request("GET", "/barbers")
+        if response.status_code == 200:
+            data = response.json()
+            barbers_ok = len(data) == 10 and all("tier_badge" in shop for shop in data)
+            details = f"Count: {len(data)}, Has tier_badge: {all('tier_badge' in shop for shop in data)}"
         else:
-            self.log_test("Admin Ranking Stats", False, f"Status: {resp.get('status_code')}")
-            
-        # Test 4: GET /api/admin/ranking/stats without auth
-        resp = self.make_request("GET", "/admin/ranking/stats")
-        if resp.get("status_code") in [401, 403]:
-            self.log_test("Admin Ranking Stats - No Auth", True, "Properly requires admin auth")
+            barbers_ok = False
+            details = f"Status: {response.status_code}"
+        self.log_test("Regression - Barbers listing works", barbers_ok, details)
+        
+        # Test ranking tiers
+        response = self.make_request("GET", "/ranking/tiers")
+        if response.status_code == 200:
+            data = response.json()
+            required_keys = ["global_elite", "country_top", "governorate_top", "city_top"]
+            tiers_ok = all(key in data for key in required_keys)
         else:
-            self.log_test("Admin Ranking Stats - No Auth", False, f"Expected 401/403, got {resp.get('status_code')}")
-            
-        return True
+            tiers_ok = False
+        self.log_test("Regression - Ranking tiers works", tiers_ok)
         
-    def test_barbers_enrichment(self) -> bool:
-        """Test GET /api/barbers enrichment"""
-        print("\n💎 Testing barbers enrichment...")
+        # Test admin stats (requires admin token)
+        if self.admin_token:
+            headers = {"Authorization": f"Bearer {self.admin_token}"}
+            response = self.make_request("GET", "/admin/stats", headers=headers)
+            admin_stats_ok = response.status_code == 200
+            self.log_test("Regression - Admin stats works", admin_stats_ok)
+    
+    def test_login_rate_limiting(self):
+        """Test login rate limiting regression"""
+        print("\n=== Testing Login Rate Limiting ===")
         
-        resp = self.make_request("GET", "/barbers")
-        if resp.get("status_code") != 200:
-            self.log_test("Barbers Enrichment", False, f"Status: {resp.get('status_code')}")
-            return False
-            
-        data = resp.get("data", [])
-        if not data:
-            self.log_test("Barbers Enrichment", False, "No barbers returned")
-            return False
-            
-        # Check first barber for required enrichment fields
-        barber = data[0]
-        required_fields = ["tier_badge", "rating", "ranking_score", "total_reviews", "before_after_images", "products_count"]
-        missing_fields = [f for f in required_fields if f not in barber]
+        # Test rate limiting on wrong password attempts
+        wrong_creds = {"phone_number": "0935964158", "password": "wrongpassword"}
         
-        if missing_fields:
-            self.log_test("Barbers Enrichment", False, f"Missing fields: {missing_fields}")
-            return False
-            
-        # Verify rating != ranking_score (bug fix check)
-        rating = barber.get("rating", 0)
-        ranking_score = barber.get("ranking_score", 0)
-        if rating == ranking_score and rating != 0:
-            self.log_test("Barbers Enrichment - Rating Fix", False, "Rating equals ranking_score (bug not fixed)")
-        else:
-            self.log_test("Barbers Enrichment - Rating Fix", True, "Rating and ranking_score are distinct")
-            
-        self.log_test("Barbers Enrichment", True, f"All required fields present, {len(data)} barbers returned")
-        return True
+        rate_limited = False
+        for i in range(9):  # Try 9 times
+            response = self.make_request("POST", "/auth/login", json=wrong_creds)
+            if response.status_code == 429:
+                rate_limited = True
+                break
+            time.sleep(0.1)
         
-    def test_seed_data_quality(self) -> bool:
-        """Test seed data quality"""
-        print("\n🔍 Testing seed data quality...")
+        # Should be rate limited by 8th or 9th attempt
+        self.log_test("Regression - Login rate limiting works", rate_limited)
         
-        # Get barbers list
-        resp = self.make_request("GET", "/barbers", params={"limit": 10})
-        if resp.get("status_code") != 200:
-            self.log_test("Seed Data Quality", False, f"Failed to get barbers: {resp.get('status_code')}")
-            return False
-            
-        barbers = resp.get("data", [])
-        if not barbers:
-            self.log_test("Seed Data Quality", False, "No barbers found")
-            return False
-            
-        quality_issues = []
+        # Admin login should still work (different identifier)
+        if not rate_limited:
+            # If we didn't hit rate limit, try a few more times
+            for i in range(3):
+                response = self.make_request("POST", "/auth/login", json=wrong_creds)
+                if response.status_code == 429:
+                    rate_limited = True
+                    break
+                time.sleep(0.1)
         
-        for i, barber in enumerate(barbers):
-            shop_id = barber.get("id")
-            shop_name = barber.get("shop_name", f"Shop {i+1}")
-            
-            # Check before_after_images
-            images = barber.get("before_after_images", [])
-            if len(images) < 1:
-                quality_issues.append(f"{shop_name}: No before_after_images")
-                
-            # Check products_count
-            products_count = barber.get("products_count", 0)
-            if products_count < 1:
-                # Double-check by calling products endpoint
-                prod_resp = self.make_request("GET", f"/products/shop/{shop_id}")
-                if prod_resp.get("status_code") == 200:
-                    products = prod_resp.get("data", [])
-                    if len(products) < 1:
-                        quality_issues.append(f"{shop_name}: No products")
-                    else:
-                        # Check if products have image_url
-                        for prod in products:
-                            if not prod.get("image_url"):
-                                quality_issues.append(f"{shop_name}: Product '{prod.get('name', 'Unknown')}' has empty image_url")
-                                
-            # Check total_reviews
-            total_reviews = barber.get("total_reviews", 0)
-            if total_reviews <= 0:
-                quality_issues.append(f"{shop_name}: No reviews (total_reviews={total_reviews})")
-                
-        if quality_issues:
-            self.log_test("Seed Data Quality", False, f"Issues found: {'; '.join(quality_issues[:5])}")
-        else:
-            self.log_test("Seed Data Quality", True, f"All {len(barbers)} shops have proper seed data")
-            
-        return len(quality_issues) == 0
-        
-    def test_regression_endpoints(self) -> bool:
-        """Test regression endpoints that must still work"""
-        print("\n🔄 Testing regression endpoints...")
-        
-        regression_tests = [
-            ("GET", "/health", None, None, "Health Check"),
-            ("GET", "/config/public", None, None, "Public Config"),
-            ("GET", "/sponsored/active", None, None, "Sponsored Active"),
-            ("GET", "/search/barbers", None, {"shop_type": "male", "sort": "rating"}, "Search Barbers"),
-            ("GET", "/pwa/status", None, None, "PWA Status"),
-        ]
-        
-        all_passed = True
-        
-        for method, endpoint, token, params, test_name in regression_tests:
-            resp = self.make_request(method, endpoint, token=token, params=params)
-            if resp.get("status_code") == 200:
-                self.log_test(f"Regression - {test_name}", True, "Endpoint working")
-            else:
-                self.log_test(f"Regression - {test_name}", False, f"Status: {resp.get('status_code')}")
-                all_passed = False
-                
-        # Test admin users endpoint with auth
-        resp = self.make_request("GET", "/admin/users", token=self.admin_token, params={"skip": 0, "limit": 2, "user_type": "user"})
-        if resp.get("status_code") == 200:
-            data = resp.get("data", [])
-            if len(data) <= 2:
-                self.log_test("Regression - Admin Users", True, f"Returned {len(data)} users")
-            else:
-                self.log_test("Regression - Admin Users", False, f"Limit not respected: {len(data)} > 2")
-                all_passed = False
-        else:
-            self.log_test("Regression - Admin Users", False, f"Status: {resp.get('status_code')}")
-            all_passed = False
-            
-        return all_passed
-        
-    def test_rate_limiting(self) -> bool:
-        """Test rate limiting on auth endpoints"""
-        print("\n🚦 Testing rate limiting...")
-        
-        # Try 9 failed login attempts
-        failed_attempts = 0
-        for i in range(9):
-            resp = self.make_request("POST", "/auth/login", {"phone_number": "testphone", "password": "wrongpass"})
-            if resp.get("status_code") == 401:
-                failed_attempts += 1
-            elif resp.get("status_code") == 429:
-                self.log_test("Rate Limiting", True, f"Rate limited after {failed_attempts} attempts")
-                return True
-                
-        if failed_attempts >= 8:
-            self.log_test("Rate Limiting", True, f"8+ failed attempts allowed, rate limiting working")
-            return True
-        else:
-            self.log_test("Rate Limiting", False, f"Only {failed_attempts} attempts before rate limit")
-            return False
-            
-    def run_all_tests(self) -> bool:
-        """Run all tests"""
-        print("🚀 Starting BARBER HUB v3.6 Backend Testing...")
+        # Test that admin can still login
+        response = self.make_request("POST", "/auth/login", json=ADMIN_CREDS)
+        admin_still_works = response.status_code == 200
+        self.log_test("Regression - Admin login works after rate limit", admin_still_works)
+    
+    def run_all_tests(self):
+        """Run all security tests"""
+        print("🔒 BARBER HUB v3.6.1 - Security Audit Verification")
         print("=" * 60)
         
-        # Authentication
-        if not self.authenticate():
-            print("❌ Authentication failed, cannot continue")
-            return False
-            
-        # Seed data first
-        self.test_seed_endpoint()
-        
-        # New ranking endpoints
-        self.test_ranking_tiers_endpoint()
-        self.test_admin_ranking_endpoints()
-        
-        # Enrichment tests
-        self.test_barbers_enrichment()
-        self.test_seed_data_quality()
-        
-        # Regression tests
+        # Run all test methods
+        self.test_seed_endpoint_security()
+        self.test_usage_stats_authorization()
+        self.test_booking_idor_fix()
+        self.test_register_barbershop_rate_limit()
+        self.test_search_regex_safety()
+        self.test_products_featured_fallback()
+        self.test_tier_status_dependency_fix()
+        self.test_ai_service_error_sanitization()
+        self.test_security_headers()
+        self.test_image_size_validation()
         self.test_regression_endpoints()
-        
-        # Rate limiting
-        self.test_rate_limiting()
+        self.test_login_rate_limiting()
         
         # Summary
         print("\n" + "=" * 60)
-        print("📊 TEST SUMMARY:")
+        print("📊 TEST SUMMARY")
         print("=" * 60)
         
-        passed = sum(1 for result in self.test_results if "✅ PASS" in result)
-        failed = sum(1 for result in self.test_results if "❌ FAIL" in result)
+        passed = sum(1 for result in self.test_results if result["passed"])
+        total = len(self.test_results)
         
-        for result in self.test_results:
-            print(result)
-            
-        print(f"\n📈 TOTAL: {passed} passed, {failed} failed")
+        print(f"Total Tests: {total}")
+        print(f"Passed: {passed}")
+        print(f"Failed: {total - passed}")
+        print(f"Success Rate: {(passed/total)*100:.1f}%")
         
-        if failed == 0:
-            print("🎉 ALL TESTS PASSED! Backend ready for production.")
-            return True
+        # Show failed tests
+        failed_tests = [result for result in self.test_results if not result["passed"]]
+        if failed_tests:
+            print(f"\n❌ FAILED TESTS ({len(failed_tests)}):")
+            for test in failed_tests:
+                print(f"  - {test['test']}")
+                if test['details']:
+                    print(f"    {test['details']}")
         else:
-            print(f"⚠️  {failed} tests failed. Please review and fix issues.")
-            return False
+            print("\n🎉 ALL TESTS PASSED!")
+        
+        return passed, total
 
 if __name__ == "__main__":
-    tester = BarberHubTester()
-    success = tester.run_all_tests()
-    sys.exit(0 if success else 1)
+    tester = SecurityTester()
+    passed, total = tester.run_all_tests()
+    
+    # Exit with appropriate code
+    exit(0 if passed == total else 1)

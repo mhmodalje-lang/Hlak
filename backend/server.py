@@ -38,6 +38,10 @@ APP_URL = os.environ.get('APP_URL', 'https://vuln-checker-8.preview.emergentagen
 # Admin WhatsApp phone (for payment confirmations) - can be set via env
 ADMIN_WHATSAPP = os.environ.get('ADMIN_WHATSAPP', '963935964158')
 
+# Security limits
+MAX_IMAGE_BASE64_LEN = int(os.environ.get('MAX_IMAGE_BASE64_LEN', 7 * 1024 * 1024))  # ~5MB image
+SEED_TOKEN = os.environ.get('SEED_TOKEN', '').strip()  # If set, /api/seed requires X-Seed-Token header
+
 # AI Services (GPT-5 Vision + Style Card)
 try:
     from ai_services import analyze_face_and_recommend, generate_style_card
@@ -76,7 +80,7 @@ JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 24 * 7))
 MIN_PASSWORD_LENGTH = 6  # minimal for UX; frontend enforces stronger UX
 
 # Create the main app
-app = FastAPI(title="BARBER HUB API", version="3.5.0")
+app = FastAPI(title="BARBER HUB API", version="3.6.1")
 
 # Initialize rate limiter (keyed by client IP)
 if RATE_LIMIT_OK:
@@ -522,6 +526,33 @@ def calculate_end_time(start_time: str, duration_minutes: int) -> str:
     start = datetime.strptime(start_time, "%H:%M")
     end = start + timedelta(minutes=duration_minutes)
     return end.strftime("%H:%M")
+
+
+def validate_image_base64(value: Optional[str], field: str = "image") -> Optional[str]:
+    """Validate that an uploaded base64/data-URL image stays under the configured size limit.
+    Returns the trimmed value or raises 413 / 400 on violation. Empty/None passes through.
+    """
+    if not value:
+        return value
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"Invalid {field}")
+    # Strip data URL prefix length from estimate
+    payload = value.split(',', 1)[1] if value.startswith('data:') and ',' in value else value
+    if len(payload) > MAX_IMAGE_BASE64_LEN:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{field} too large (max {MAX_IMAGE_BASE64_LEN // 1024}KB base64). Please compress your image."
+        )
+    return value
+
+
+def safe_error_message(e: Exception, fallback: str = "Internal error") -> str:
+    """Return a safe error message without leaking stack traces or internal paths."""
+    msg = str(e)
+    # Strip file paths and module references
+    if '/' in msg or '\\' in msg or 'Traceback' in msg:
+        return fallback
+    return msg[:120] if len(msg) > 120 else msg
 
 async def enrich_barbershop_for_frontend(shop: Dict) -> Dict:
     """Transform barbershop data to match frontend expectations"""
@@ -1073,7 +1104,15 @@ async def get_loyalty_status(entity: Dict = Depends(require_auth)):
 # ============== BARBERSHOP REGISTRATION ==============
 
 @api_router.post("/auth/register-barbershop", response_model=TokenResponse)
-async def register_barbershop(shop_data: BarbershopCreate):
+async def register_barbershop(shop_data: BarbershopCreate, request: Request):
+    # SECURITY: Same rate limit as customer registration to prevent automated abuse.
+    ip = _client_ip(request)
+    if not _rate_limit_check(f"reg-shop:ip:{ip}", 10):
+        raise HTTPException(status_code=429, detail="Too many registration attempts. Please try again later.")
+
+    # Validate optional logo size to prevent DB bloat / DoS
+    validate_image_base64(shop_data.shop_logo, "shop_logo")
+
     existing = await db.barbershops.find_one({"phone_number": shop_data.phone_number})
     if existing:
         raise HTTPException(status_code=400, detail="Phone number already registered")
@@ -1548,15 +1587,13 @@ async def admin_ranking_stats(admin: Dict = Depends(require_admin)):
 
 
 @api_router.get("/barbershops/me/tier-status")
-async def get_my_tier_status(entity: Dict = Depends(get_current_user)):
+async def get_my_tier_status(entity: Dict = Depends(require_barbershop)):
     """
     For the authenticated barbershop: return current tier, current metrics,
     and the requirements/gap to reach each higher tier.
     Used by the Dashboard "Why am I not in X tier?" explainer page.
+    SECURITY: uses require_barbershop directly (cleaner than indirect dependency).
     """
-    if not entity or entity.get("entity_type") != "barbershop":
-        raise HTTPException(status_code=403, detail="Only barbershops can access this")
-
     shop_id = entity["id"]
     shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "password": 0})
     if not shop:
@@ -2092,7 +2129,11 @@ async def add_gallery_image(image_data: GalleryImageCreate, shop: Dict = Depends
     count = await db.gallery_images.count_documents({"barbershop_id": shop['id']})
     if count >= 4:
         raise HTTPException(status_code=400, detail="Maximum 4 portfolio images allowed. Please delete one to add a new image.")
-    
+
+    # SECURITY: enforce max base64 image size to prevent DB bloat / DoS
+    validate_image_base64(image_data.image_before or image_data.before, "image_before")
+    validate_image_base64(image_data.image_after or image_data.after, "image_after")
+
     image_id = str(uuid.uuid4())
     image_doc = {
         "id": image_id,
@@ -2140,6 +2181,9 @@ async def create_product(product_data: ProductCreate, shop: Dict = Depends(requi
     if existing_count >= 10:
         raise HTTPException(status_code=400, detail="MAX_PRODUCTS_REACHED")
 
+    # SECURITY: prevent oversized base64 images that bloat the DB / cause DoS
+    validate_image_base64(product_data.image_url, "image_url")
+
     product_doc = {
         "id": str(uuid.uuid4()),
         "shop_id": shop['id'],
@@ -2173,16 +2217,34 @@ async def get_shop_products(shop_id: str, category: Optional[str] = None):
 
 @api_router.get("/products/featured")
 async def get_featured_products(limit: int = 20):
-    """Get featured products across all shops"""
-    products = await db.products.find({"featured": True, "in_stock": True}, {"_id": 0}).sort("created_at", -1).to_list(limit)
-    # Enrich with shop info
+    """Get featured products across all shops.
+    UX FIX: If no shop has marked products as featured, fall back to the most recent
+    in-stock products so the global showcase is never empty.
+    """
+    limit = max(1, min(limit, 50))
+    products = await db.products.find(
+        {"featured": True, "in_stock": True}, {"_id": 0}
+    ).sort("created_at", -1).to_list(limit)
+
+    # Fallback: if too few featured products, top up with recent in-stock products
+    if len(products) < limit:
+        seen_ids = {p["id"] for p in products}
+        backfill = await db.products.find(
+            {"in_stock": True, "id": {"$nin": list(seen_ids)}}, {"_id": 0}
+        ).sort("created_at", -1).to_list(limit - len(products))
+        products.extend(backfill)
+
+    # Enrich with shop info (skip products with no live shop)
+    enriched = []
     for product in products:
         shop = await db.barbershops.find_one({"id": product["shop_id"]}, {"_id": 0, "password": 0})
-        if shop:
-            product["shop_name"] = shop.get("shop_name", "")
-            product["shop_city"] = shop.get("city", "")
-            product["shop_country"] = shop.get("country", "")
-    return products
+        if not shop:
+            continue
+        product["shop_name"] = shop.get("shop_name", "")
+        product["shop_city"] = shop.get("city", "")
+        product["shop_country"] = shop.get("country", "")
+        enriched.append(product)
+    return enriched
 
 @api_router.put("/products/{product_id}")
 async def update_product(product_id: str, product_data: ProductUpdate, shop: Dict = Depends(require_barbershop)):
@@ -2190,10 +2252,13 @@ async def update_product(product_id: str, product_data: ProductUpdate, shop: Dic
     product = await db.products.find_one({"id": product_id, "shop_id": shop['id']})
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
     update_data = product_data.model_dump(exclude_none=True)
+    # SECURITY: validate image size if updated
+    if "image_url" in update_data:
+        validate_image_base64(update_data["image_url"], "image_url")
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    
+
     await db.products.update_one({"id": product_id}, {"$set": update_data})
     updated = await db.products.find_one({"id": product_id}, {"_id": 0})
     return updated
@@ -2528,6 +2593,14 @@ async def get_booking(booking_id: str, entity: Dict = Depends(require_auth)):
     booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+    # SECURITY (IDOR fix): Only the owning user, the owning shop, or an admin can read a booking.
+    etype = entity.get("entity_type")
+    if etype == "user" and booking.get("user_id") != entity.get("id"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if etype == "barbershop" and booking.get("barbershop_id") != entity.get("id"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if etype not in ("user", "barbershop", "admin"):
+        raise HTTPException(status_code=403, detail="Not authorized")
     return enrich_booking_for_frontend(booking)
 
 @api_router.put("/bookings/{booking_id}/status")
@@ -3233,10 +3306,34 @@ async def generate_booking_link(
 # ============== SEED DATA ==============
 
 @api_router.post("/seed")
-async def seed_database():
-    """Inject seed data: 10 salons (5 men, 5 women) with services, reviews, bookings"""
+async def seed_database(request: Request):
+    """Inject seed data: 10 salons (5 men, 5 women) with services, reviews, bookings.
+    SECURITY: Protected — requires admin Bearer token OR a matching X-Seed-Token header
+    when SEED_TOKEN env var is set. If neither is configured, the endpoint is locked.
+    """
     import random
-    
+
+    # ---- AuthZ guard ----
+    provided_token = request.headers.get("X-Seed-Token", "").strip()
+    is_admin = False
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        try:
+            payload = decode_token(auth_header.split(" ", 1)[1].strip())
+            if payload and payload.get("entity_type") == "admin":
+                is_admin = True
+        except Exception:
+            is_admin = False
+
+    if not is_admin:
+        if not SEED_TOKEN:
+            raise HTTPException(
+                status_code=403,
+                detail="Seed endpoint is locked. Configure SEED_TOKEN env var or use admin token."
+            )
+        if not provided_token or not secrets.compare_digest(provided_token, SEED_TOKEN):
+            raise HTTPException(status_code=403, detail="Invalid or missing X-Seed-Token")
+
     # Check if seed data already exists
     existing_count = await db.barbershops.count_documents({})
     if existing_count >= 10:
@@ -3995,23 +4092,26 @@ async def advanced_search(
         query["rating"] = {"$gte": rating_min}
 
     # Build $or for text search + area search
+    # SECURITY: escape user input before using in $regex to prevent ReDoS / regex injection.
     or_clauses: List[Dict[str, Any]] = []
     if search:
+        safe_search = re.escape(search.strip())[:100]
         or_clauses.extend([
-            {"shop_name": {"$regex": search, "$options": "i"}},
-            {"description": {"$regex": search, "$options": "i"}},
-            {"city": {"$regex": search, "$options": "i"}},
-            {"district": {"$regex": search, "$options": "i"}},
-            {"neighborhood": {"$regex": search, "$options": "i"}},
-            {"village": {"$regex": search, "$options": "i"}},
+            {"shop_name": {"$regex": safe_search, "$options": "i"}},
+            {"description": {"$regex": safe_search, "$options": "i"}},
+            {"city": {"$regex": safe_search, "$options": "i"}},
+            {"district": {"$regex": safe_search, "$options": "i"}},
+            {"neighborhood": {"$regex": safe_search, "$options": "i"}},
+            {"village": {"$regex": safe_search, "$options": "i"}},
         ])
     if area:
+        safe_area = re.escape(area.strip())[:100]
         or_clauses.extend([
-            {"city": {"$regex": area, "$options": "i"}},
-            {"district": {"$regex": area, "$options": "i"}},
-            {"neighborhood": {"$regex": area, "$options": "i"}},
-            {"village": {"$regex": area, "$options": "i"}},
-            {"address": {"$regex": area, "$options": "i"}},
+            {"city": {"$regex": safe_area, "$options": "i"}},
+            {"district": {"$regex": safe_area, "$options": "i"}},
+            {"neighborhood": {"$regex": safe_area, "$options": "i"}},
+            {"village": {"$regex": safe_area, "$options": "i"}},
+            {"address": {"$regex": safe_area, "$options": "i"}},
         ])
     if or_clauses:
         query["$or"] = or_clauses
@@ -4134,7 +4234,9 @@ async def ai_advisor_analyze(payload: AIAdvisorAnalyzeRequest, entity: Dict = De
         raise HTTPException(status_code=403, detail="Only users can use the AI Advisor")
 
     if not AI_SERVICES_OK:
-        raise HTTPException(status_code=500, detail=f"AI service unavailable: {_AI_IMPORT_ERROR if '_AI_IMPORT_ERROR' in globals() else 'unknown'}")
+        # SECURITY: don't leak internal import error details to clients.
+        logger.error(f"AI service unavailable: {_AI_IMPORT_ERROR if '_AI_IMPORT_ERROR' in globals() else 'unknown'}")
+        raise HTTPException(status_code=503, detail="AI service is temporarily unavailable. Please try again later.")
 
     # Validate booking
     booking = await db.bookings.find_one({"id": payload.booking_id, "user_id": entity['id']}, {"_id": 0})
@@ -4161,7 +4263,7 @@ async def ai_advisor_analyze(payload: AIAdvisorAnalyzeRequest, entity: Dict = De
         )
     except Exception as e:
         logger.error(f"AI analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)[:200]}")
+        raise HTTPException(status_code=500, detail="AI analysis failed. Please try again with a clearer photo.")
 
     # Match recommended barbers based on expertise keywords
     expertise_keywords = (result.get("ideal_barber_expertise") or []) + (result.get("ideal_barber_expertise_ar") or [])
@@ -4412,7 +4514,9 @@ async def ai_tryon_generate(payload: AITryOnRequest, entity: Dict = Depends(requ
         raise HTTPException(status_code=403, detail="Only users can use AI Try-On")
 
     if not AI_TRYON_OK:
-        raise HTTPException(status_code=500, detail=f"AI Try-On unavailable: {_TRYON_IMPORT_ERROR if '_TRYON_IMPORT_ERROR' in globals() else 'unknown'}")
+        # SECURITY: don't leak internal import error details to clients.
+        logger.error(f"AI Try-On unavailable: {_TRYON_IMPORT_ERROR if '_TRYON_IMPORT_ERROR' in globals() else 'unknown'}")
+        raise HTTPException(status_code=503, detail="AI Try-On is temporarily unavailable. Please try again later.")
 
     # Validate booking
     booking = await db.bookings.find_one({"id": payload.booking_id, "user_id": entity['id']}, {"_id": 0})
@@ -4466,7 +4570,7 @@ async def ai_tryon_generate(payload: AITryOnRequest, entity: Dict = Depends(requ
         )
     except Exception as e:
         logger.error(f"AI Try-On failed: {e}")
-        raise HTTPException(status_code=500, detail=f"AI Try-On failed: {str(e)[:200]}")
+        raise HTTPException(status_code=500, detail="AI Try-On failed. Please try a clearer photo or another hairstyle.")
 
     if not result_image:
         raise HTTPException(status_code=500, detail="Failed to generate try-on image")
@@ -4527,50 +4631,68 @@ async def get_tryon_presets(gender: str = "male", language: str = "en"):
 # ============== ADMIN USAGE STATS ==============
 
 @api_router.get("/admin/usage-stats")
-async def get_usage_stats(entity: Dict = Depends(require_barbershop)):
+async def get_usage_stats(entity: Dict = Depends(require_auth)):
     """
     Get AI usage statistics for monitoring API credits consumption.
-    Returns total AI Advisor calls and AI Try-On generations.
+    SECURITY: Accessible to barbershops and admins only. Customer user IDs are
+    anonymized (only counts and a salted short hash are exposed) to prevent privacy leaks.
     """
+    if entity.get("entity_type") not in ("barbershop", "admin"):
+        raise HTTPException(status_code=403, detail="Barbershop or admin access required")
+    is_admin = entity.get("entity_type") == "admin"
+
     # Get all AI Advisor analyses
     total_ai_advisor = await db.style_advices.count_documents({})
-    
+
     # Get all AI Try-On generations
     total_ai_tryon = await db.ai_tryon_sessions.count_documents({})
-    
+
     # Get recent activity (last 30 days)
     from datetime import timedelta
     thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    
+
     recent_advisor = await db.style_advices.count_documents({
         "created_at": {"$gte": thirty_days_ago}
     })
-    
+
     recent_tryon = await db.ai_tryon_sessions.count_documents({
         "created_at": {"$gte": thirty_days_ago}
     })
-    
-    # Get per-user breakdown (top 10 users)
+
+    # Per-user breakdown (top 10) — only visible to admin; for barbers we expose anonymized counts.
     advisor_pipeline = [
         {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 10}
     ]
-    
     tryon_pipeline = [
         {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 10}
     ]
-    
-    top_advisor_users = await db.style_advices.aggregate(advisor_pipeline).to_list(10)
-    top_tryon_users = await db.ai_tryon_sessions.aggregate(tryon_pipeline).to_list(10)
-    
+    top_advisor_users_raw = await db.style_advices.aggregate(advisor_pipeline).to_list(10)
+    top_tryon_users_raw = await db.ai_tryon_sessions.aggregate(tryon_pipeline).to_list(10)
+
+    import hashlib
+    def _anonymize(rows):
+        out = []
+        for i, r in enumerate(rows, start=1):
+            uid = r.get("_id") or ""
+            short = hashlib.sha256(f"barberhub:{uid}".encode()).hexdigest()[:8] if uid else "anon"
+            out.append({"rank": i, "user_hash": short, "count": r.get("count", 0)})
+        return out
+
+    if is_admin:
+        # Admin gets raw IDs (operational use only)
+        top_advisor_users = top_advisor_users_raw
+        top_tryon_users = top_tryon_users_raw
+    else:
+        top_advisor_users = _anonymize(top_advisor_users_raw)
+        top_tryon_users = _anonymize(top_tryon_users_raw)
+
     # Estimated cost (rough estimate)
-    # AI Advisor (GPT-5 Vision): ~$0.01 per call
-    # AI Try-On (Gemini Nano Banana): ~$0.005 per generation
     estimated_cost = (total_ai_advisor * 0.01) + (total_ai_tryon * 0.005)
-    
+
     return {
         "total_api_calls": {
             "ai_advisor": total_ai_advisor,
@@ -4589,7 +4711,7 @@ async def get_usage_stats(entity: Dict = Depends(require_barbershop)):
         "estimated_cost_usd": round(estimated_cost, 2),
         "policy": {
             "ai_advisor": "1 analysis per confirmed booking",
-            "ai_tryon": f"1 attempt per confirmed booking (ONE-SHOT POLICY)"
+            "ai_tryon": "1 attempt per confirmed booking (ONE-SHOT POLICY)"
         }
     }
 
@@ -4722,6 +4844,26 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
         # HSTS (only when served over HTTPS by the ingress)
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        # Content-Security-Policy: only apply to HTML responses to avoid breaking image/JSON/APK downloads.
+        # API/JSON responses still get a minimal restrictive default for safety.
+        ct = response.headers.get("content-type", "").lower()
+        if "text/html" in ct:
+            # Permissive enough to allow our React app + needed CDNs while blocking inline scripts.
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                "img-src 'self' data: blob: https:; "
+                "media-src 'self' data: blob: https:; "
+                "font-src 'self' data: https://fonts.gstatic.com; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; "
+                "connect-src 'self' https: wss:; "
+                "frame-ancestors 'self'; "
+                "base-uri 'self'; "
+                "form-action 'self';"
+            )
+        elif "application/json" in ct:
+            response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)

@@ -49,6 +49,70 @@ const COUNTRY_TO_REGION = {
   'default': { ar: 'أفخم صالونات الحلاقة', en: 'Premium Barbers Worldwide', currency: 'USD', paymentRegion: 'global' }
 };
 
+/**
+ * Country-specific administrative division label.
+ * Returns the correct term for the user's country (governorate / state / province / emirate / ...).
+ * Used to dynamically label the second-level regional ranking tier in the UI.
+ */
+const REGION_LABELS = {
+  // Arab "محافظة" (governorate)
+  SY: { ar: 'المحافظة', en: 'Governorate' },
+  EG: { ar: 'المحافظة', en: 'Governorate' },
+  LB: { ar: 'المحافظة', en: 'Governorate' },
+  JO: { ar: 'المحافظة', en: 'Governorate' },
+  IQ: { ar: 'المحافظة', en: 'Governorate' },
+  PS: { ar: 'المحافظة', en: 'Governorate' },
+  KW: { ar: 'المحافظة', en: 'Governorate' },
+  BH: { ar: 'المحافظة', en: 'Governorate' },
+  OM: { ar: 'المحافظة', en: 'Governorate' },
+  YE: { ar: 'المحافظة', en: 'Governorate' },
+  QA: { ar: 'البلدية',   en: 'Municipality' },
+  // Arab "ولاية" (wilayah)
+  TN: { ar: 'الولاية', en: 'Governorate' },
+  DZ: { ar: 'الولاية', en: 'Province' },
+  SD: { ar: 'الولاية', en: 'State' },
+  MR: { ar: 'الولاية', en: 'Region' },
+  LY: { ar: 'الشعبية',  en: 'District' },
+  MA: { ar: 'الجهة',    en: 'Region' },
+  SA: { ar: 'المنطقة',  en: 'Region' },
+  // Emirates
+  AE: { ar: 'الإمارة', en: 'Emirate' },
+  // States
+  US: { ar: 'الولاية', en: 'State' },
+  MX: { ar: 'الولاية', en: 'State' },
+  BR: { ar: 'الولاية', en: 'State' },
+  AU: { ar: 'الولاية', en: 'State' },
+  IN: { ar: 'الولاية', en: 'State' },
+  DE: { ar: 'الولاية', en: 'State' },
+  AT: { ar: 'الولاية', en: 'State' },
+  NG: { ar: 'الولاية', en: 'State' },
+  MY: { ar: 'الولاية', en: 'State' },
+  // Provinces
+  CA: { ar: 'المقاطعة', en: 'Province' },
+  CN: { ar: 'المقاطعة', en: 'Province' },
+  ES: { ar: 'المقاطعة', en: 'Province' },
+  IT: { ar: 'المقاطعة', en: 'Province' },
+  NL: { ar: 'المقاطعة', en: 'Province' },
+  AR: { ar: 'المقاطعة', en: 'Province' },
+  ZA: { ar: 'المقاطعة', en: 'Province' },
+  // Counties
+  GB: { ar: 'المقاطعة', en: 'County' },
+  IE: { ar: 'المقاطعة', en: 'County' },
+  // Departments (FR)
+  FR: { ar: 'المنطقة',  en: 'Region' },
+  // Cantons
+  CH: { ar: 'الكانتون', en: 'Canton' },
+  // Prefectures
+  JP: { ar: 'المحافظة', en: 'Prefecture' },
+  // Generic
+  default: { ar: 'المنطقة', en: 'Region' }
+};
+
+const getRegionLabelForCountry = (countryCode, lang = 'ar') => {
+  const entry = REGION_LABELS[countryCode] || REGION_LABELS.default;
+  return entry[lang] || entry.en;
+};
+
 export const GeoLocationProvider = ({ children }) => {
   const [geoData, setGeoData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -160,9 +224,11 @@ export const GeoLocationProvider = ({ children }) => {
     country: geoData?.country || 'Unknown',
     countryCode: geoData?.countryCode || 'XX',
     city: geoData?.city || '',
+    region: geoData?.region || '',
     getDynamicHeader,
     getCurrency,
     getPaymentRegion,
+    getRegionLabel: (lang = 'ar') => getRegionLabelForCountry(geoData?.countryCode, lang),
   };
 
   return (

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useCurrency } from '@/contexts/CurrencyContext';
 import {
   Plus, Trash2, Edit, Save, X, Check, DollarSign, Clock, Scissors,
   Instagram, Facebook, Youtube, Twitter, Globe, MessageCircle, Share2,
@@ -46,11 +47,13 @@ export const ServicesManagement = ({ API, token, isMen, language }) => {
   const [form, setForm] = useState(emptyServiceForm);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(true);
+  const { formatPrice, currency } = useCurrency();
 
   const T = language === 'ar' ? {
     title: 'الخدمات والأسعار', add: 'إضافة خدمة', edit: 'تعديل',
     name: 'اسم الخدمة (EN)', nameAr: 'اسم الخدمة (AR)', desc: 'الوصف',
     price: 'السعر (USD)', duration: 'المدة (دقائق)', category: 'الفئة',
+    priceHint: 'السعر يُدخل بالدولار USD ويُعرض للعملاء بعملتهم المحلية تلقائياً',
     save: 'حفظ', cancel: 'إلغاء', delete: 'حذف',
     empty: 'لم تتم إضافة خدمات بعد. أضف أول خدمة لعرضها للعملاء.',
     min: 'د', confirmDelete: 'هل تريد حذف هذه الخدمة؟',
@@ -60,6 +63,7 @@ export const ServicesManagement = ({ API, token, isMen, language }) => {
     title: 'Services & Prices', add: 'Add Service', edit: 'Edit',
     name: 'Service Name (EN)', nameAr: 'Service Name (AR)', desc: 'Description',
     price: 'Price (USD)', duration: 'Duration (min)', category: 'Category',
+    priceHint: 'Price is entered in USD and automatically displayed in the customer\'s local currency',
     save: 'Save', cancel: 'Cancel', delete: 'Delete',
     empty: 'No services yet. Add your first service to appear for customers.',
     min: 'min', confirmDelete: 'Delete this service?',
@@ -176,6 +180,14 @@ export const ServicesManagement = ({ API, token, isMen, language }) => {
                       </label>
                       <Input type="number" step="0.5" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}
                         className={isMen ? 'bg-[#2A1F14] border-[#3A2E1F] text-white' : 'bg-white border-[#E7E5E4]'} />
+                      {form.price && !isNaN(parseFloat(form.price)) && currency !== 'USD' && (
+                        <div className={`text-[11px] mt-1 ${isMen ? 'text-[#F3E5AB]/70' : 'text-[#9E5B66]/80'}`}>
+                          ≈ {formatPrice(parseFloat(form.price))} <span className="opacity-60">({currency})</span>
+                        </div>
+                      )}
+                      <div className={`text-[10px] mt-1 opacity-60 ${isMen ? 'text-[#F3E5AB]' : 'text-[#9E5B66]'}`}>
+                        {T.priceHint}
+                      </div>
                     </div>
                     <div>
                       <label className={`text-xs font-medium mb-1 block ${isMen ? 'text-[#F3E5AB]' : 'text-[#9E5B66]'}`}>
@@ -234,8 +246,13 @@ export const ServicesManagement = ({ API, token, isMen, language }) => {
                         )}
                       </div>
                       {s.description && <div className={`text-xs truncate mt-0.5 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>{s.description}</div>}
-                      <div className={`text-xs mt-1 flex gap-3 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
-                        <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>${s.price}</span>
+                      <div className={`text-xs mt-1 flex gap-3 items-center flex-wrap ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
+                        <span className={`font-bold ${isMen ? 'text-[#D4AF37]' : 'text-[#B76E79]'}`}>
+                          {formatPrice(s.price)}
+                        </span>
+                        {currency !== 'USD' && (
+                          <span className="text-[10px] opacity-60">(USD {s.price})</span>
+                        )}
                         <span><Clock className="w-3 h-3 inline" /> {s.duration_minutes} {T.min}</span>
                       </div>
                     </div>

@@ -566,7 +566,7 @@ async def enrich_barbershop_for_frontend(shop: Dict) -> Dict:
         "village": profile_ext.get("village", shop.get("village", "")) if profile_ext else shop.get("village", ""),
         "latitude": shop.get("latitude"),
         "longitude": shop.get("longitude"),
-        "rating": shop.get("ranking_score", 0.0),
+        "rating": shop.get("computed_rating", shop.get("rating", 0.0)),
         "ranking_score": shop.get("ranking_score", 0.0),
         "total_reviews": shop.get("total_reviews", 0),
         "total_bookings": total_bookings,
@@ -616,8 +616,197 @@ async def enrich_barbershop_for_frontend(shop: Dict) -> Dict:
     # Add products count
     products_count = await db.products.count_documents({"shop_id": shop_id})
     enriched["products_count"] = products_count
-    
+
+    # Tier badge (localized label derived from ranking_tier)
+    tier_key = shop.get("ranking_tier", "normal")
+    if tier_key in TIER_THRESHOLDS:
+        th = TIER_THRESHOLDS[tier_key]
+        enriched["tier_badge"] = {
+            "tier": tier_key,
+            "label_ar": th["label_ar"],
+            "label_en": th["label_en"],
+            "icon": th["icon"],
+        }
+    else:
+        enriched["tier_badge"] = None
+
     return enriched
+
+# ============== RANKING ENGINE ==============
+# Tiered ranking system: each shop is classified into one of 5 tiers based on
+# composite quality metrics (rating, review volume, recent activity, verification).
+# Only shops meeting ALL thresholds for a tier qualify — this protects the reputation
+# of top tiers so they only contain truly excellent shops.
+
+TIER_THRESHOLDS = {
+    "global_elite": {
+        "min_rating": 4.7, "min_reviews": 100, "min_completed_90d": 100,
+        "require_verified": True, "require_subscription": True, "min_gallery": 4,
+        "label_ar": "النخبة العالمية", "label_en": "Global Elite", "icon": "🌍",
+    },
+    "country_top": {
+        "min_rating": 4.5, "min_reviews": 50, "min_completed_90d": 50,
+        "require_verified": True, "require_subscription": True, "min_gallery": 0,
+        "label_ar": "الأفضل على مستوى الدولة", "label_en": "Country Top", "icon": "🏳️",
+    },
+    "governorate_top": {
+        "min_rating": 4.3, "min_reviews": 25, "min_completed_90d": 20,
+        "require_verified": True, "require_subscription": False, "min_gallery": 0,
+        "label_ar": "الأفضل في المحافظة", "label_en": "Governorate Top", "icon": "🏛️",
+    },
+    "city_top": {
+        "min_rating": 4.0, "min_reviews": 10, "min_completed_90d": 5,
+        "require_verified": False, "require_subscription": False, "min_gallery": 0,
+        "label_ar": "الأفضل في المدينة", "label_en": "City Top", "icon": "🏙️",
+    },
+}
+
+# Order matters: highest tier first
+TIER_ORDER = ["global_elite", "country_top", "governorate_top", "city_top"]
+
+
+async def compute_shop_metrics(shop_id: str) -> Dict:
+    """Aggregate all metrics needed to rank + tier a single shop."""
+    now = datetime.now(timezone.utc)
+    since_30d = (now - timedelta(days=30)).isoformat()
+    since_90d = (now - timedelta(days=90)).isoformat()
+
+    # Reviews (count + average + 30-day velocity)
+    reviews_cursor = db.reviews.find(
+        {"barbershop_id": shop_id},
+        {"_id": 0, "rating": 1, "created_at": 1}
+    )
+    reviews = await reviews_cursor.to_list(None)
+    total_reviews = len(reviews)
+    avg_rating = (sum(r.get("rating", 0) for r in reviews) / total_reviews) if total_reviews else 0.0
+    reviews_30d = sum(1 for r in reviews if str(r.get("created_at", "")) >= since_30d)
+
+    # Completed bookings in last 90 & 30 days
+    completed_90d = await db.bookings.count_documents({
+        "barbershop_id": shop_id,
+        "status": "completed",
+        "updated_at": {"$gte": since_90d},
+    })
+    completed_30d = await db.bookings.count_documents({
+        "barbershop_id": shop_id,
+        "status": "completed",
+        "updated_at": {"$gte": since_30d},
+    })
+
+    # Product orders in last 30 days
+    products_30d = await db.orders.count_documents({
+        "shop_id": shop_id,
+        "status": {"$in": ["completed", "delivered", "confirmed"]},
+        "created_at": {"$gte": since_30d},
+    })
+
+    # Gallery image count (for global_elite requirement)
+    gallery_count = await db.gallery_images.count_documents({"barbershop_id": shop_id})
+
+    return {
+        "total_reviews": total_reviews,
+        "avg_rating": round(avg_rating, 2),
+        "reviews_30d": reviews_30d,
+        "completed_90d": completed_90d,
+        "completed_30d": completed_30d,
+        "products_30d": products_30d,
+        "gallery_count": gallery_count,
+    }
+
+
+def calculate_ranking_score(metrics: Dict, shop: Dict) -> float:
+    """
+    Composite ranking score:
+      base    = rating * log10(1+reviews) * 10   (quality × reputation)
+      + review_velocity * 2                       (active & loved)
+      + booking_velocity * 3                      (real demand)
+      + product_sales * 0.5                       (e-commerce traction)
+      + verified ? 10                             (trust boost)
+      + subscribed ? 5                            (committed shop)
+    """
+    rating = metrics["avg_rating"] or 0.0
+    reviews = metrics["total_reviews"] or 0
+    base = rating * math.log10(1 + reviews) * 10
+    score = base
+    score += metrics["reviews_30d"] * 2
+    score += metrics["completed_30d"] * 3
+    score += metrics["products_30d"] * 0.5
+    if shop.get("is_verified"):
+        score += 10
+    if shop.get("subscription_status") == "active":
+        score += 5
+    return round(score, 2)
+
+
+def classify_shop_tier(metrics: Dict, shop: Dict) -> str:
+    """Return the HIGHEST tier the shop qualifies for, or 'normal'."""
+    rating = metrics["avg_rating"]
+    reviews = metrics["total_reviews"]
+    completed = metrics["completed_90d"]
+    gallery = metrics["gallery_count"]
+    is_verified = bool(shop.get("is_verified"))
+    sub_active = shop.get("subscription_status") == "active"
+
+    for tier in TIER_ORDER:
+        th = TIER_THRESHOLDS[tier]
+        if rating < th["min_rating"]:
+            continue
+        if reviews < th["min_reviews"]:
+            continue
+        if completed < th["min_completed_90d"]:
+            continue
+        if th["require_verified"] and not is_verified:
+            continue
+        if th["require_subscription"] and not sub_active:
+            continue
+        if gallery < th["min_gallery"]:
+            continue
+        return tier
+    return "normal"
+
+
+async def recompute_all_rankings() -> Dict:
+    """Nightly/manual job: recompute ranking_score + ranking_tier for every shop."""
+    shops = await db.barbershops.find(
+        {}, {"_id": 0, "id": 1, "is_verified": 1, "subscription_status": 1}
+    ).to_list(10000)
+
+    updated = 0
+    tier_counts = {"global_elite": 0, "country_top": 0, "governorate_top": 0,
+                   "city_top": 0, "normal": 0}
+
+    for shop in shops:
+        try:
+            metrics = await compute_shop_metrics(shop["id"])
+            score = calculate_ranking_score(metrics, shop)
+            tier = classify_shop_tier(metrics, shop)
+            tier_counts[tier] = tier_counts.get(tier, 0) + 1
+            await db.barbershops.update_one(
+                {"id": shop["id"]},
+                {"$set": {
+                    "ranking_score": score,
+                    "ranking_tier": tier,
+                    "total_reviews": metrics["total_reviews"],
+                    "computed_rating": metrics["avg_rating"],
+                    "completed_90d": metrics["completed_90d"],
+                    "reviews_30d": metrics["reviews_30d"],
+                    "bookings_30d": metrics["completed_30d"],
+                    "products_30d": metrics["products_30d"],
+                    "ranking_computed_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            updated += 1
+        except Exception as e:
+            logger.error(f"Ranking recompute failed for shop {shop.get('id')}: {e}")
+
+    result = {
+        "updated": updated,
+        "tier_counts": tier_counts,
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    logger.info(f"Ranking recompute done: {result}")
+    return result
+
 
 def enrich_booking_for_frontend(booking: Dict) -> Dict:
     """Transform booking data to match frontend expectations"""
@@ -1174,6 +1363,122 @@ async def get_ranked_top(
         }.get(scope, {"en": "Top", "ar": "متميز"})
 
     return result
+
+# ============== RANKING TIERS (PUBLIC) ==============
+
+@api_router.get("/ranking/tiers")
+async def get_ranking_tiers(
+    gender: Optional[str] = None,
+    country: Optional[str] = None,
+    governorate: Optional[str] = None,
+    city: Optional[str] = None,
+    limit: int = Query(8, ge=1, le=30),
+):
+    """
+    Return top shops grouped by tier (global_elite / country_top / governorate_top / city_top).
+    Each list contains ONLY shops that qualified for that tier.
+    Frontend typically displays: city_top (most personalised) → governorate_top → country_top → global_elite.
+    """
+    base_query: Dict[str, Any] = {}
+    if gender:
+        base_query["shop_type"] = gender
+
+    async def fetch_tier(tier: str, scope_query: Dict[str, Any]) -> List[Dict]:
+        q = {**base_query, **scope_query, "ranking_tier": tier}
+        shops = await db.barbershops.find(
+            q, {"_id": 0, "password": 0}
+        ).sort("ranking_score", -1).limit(limit).to_list(limit)
+        out = []
+        for s in shops:
+            out.append(await enrich_barbershop_for_frontend(s))
+        return out
+
+    global_elite = await fetch_tier("global_elite", {})
+
+    # Country tier — try scoped first, fall back to global if empty
+    if country:
+        country_top = await fetch_tier("country_top", {"country": country})
+        if not country_top:
+            country_top = await fetch_tier("country_top", {})
+    else:
+        country_top = await fetch_tier("country_top", {})
+
+    # Governorate tier — try scoped (district) → country → global
+    if governorate:
+        governorate_top = await fetch_tier("governorate_top", {"district": governorate})
+        if not governorate_top and country:
+            governorate_top = await fetch_tier("governorate_top", {"country": country})
+        if not governorate_top:
+            governorate_top = await fetch_tier("governorate_top", {})
+    elif country:
+        governorate_top = await fetch_tier("governorate_top", {"country": country})
+        if not governorate_top:
+            governorate_top = await fetch_tier("governorate_top", {})
+    else:
+        governorate_top = await fetch_tier("governorate_top", {})
+
+    # City tier — try scoped, fall back to global
+    if city:
+        city_top = await fetch_tier("city_top", {"city": city})
+        if not city_top:
+            city_top = await fetch_tier("city_top", {})
+    else:
+        city_top = await fetch_tier("city_top", {})
+
+    thresholds_info = {}
+    for k, v in TIER_THRESHOLDS.items():
+        thresholds_info[k] = {
+            "label_ar": v["label_ar"],
+            "label_en": v["label_en"],
+            "icon": v["icon"],
+            "min_rating": v["min_rating"],
+            "min_reviews": v["min_reviews"],
+            "min_completed_90d": v["min_completed_90d"],
+            "require_verified": v["require_verified"],
+            "require_subscription": v["require_subscription"],
+            "min_gallery": v["min_gallery"],
+        }
+
+    return {
+        "global_elite": global_elite,
+        "country_top": country_top,
+        "governorate_top": governorate_top,
+        "city_top": city_top,
+        "scope": {
+            "gender": gender, "country": country,
+            "governorate": governorate, "city": city,
+        },
+        "thresholds": thresholds_info,
+    }
+
+
+@api_router.post("/admin/ranking/recompute")
+async def admin_recompute_rankings(admin: Dict = Depends(require_admin)):
+    """Admin-triggered full recompute of ranking_score + ranking_tier for every shop."""
+    result = await recompute_all_rankings()
+    return result
+
+
+@api_router.get("/admin/ranking/stats")
+async def admin_ranking_stats(admin: Dict = Depends(require_admin)):
+    """Admin: current tier distribution & last recompute timestamp."""
+    tier_counts = {"global_elite": 0, "country_top": 0, "governorate_top": 0,
+                   "city_top": 0, "normal": 0}
+    last_computed: Optional[str] = None
+    shops = await db.barbershops.find(
+        {}, {"_id": 0, "ranking_tier": 1, "ranking_computed_at": 1}
+    ).to_list(None)
+    for s in shops:
+        t = s.get("ranking_tier") or "normal"
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+        rc = s.get("ranking_computed_at")
+        if rc and (last_computed is None or rc > last_computed):
+            last_computed = rc
+    return {
+        "tier_counts": tier_counts,
+        "total_shops": len(shops),
+        "last_computed_at": last_computed,
+    }
 
 # ============== PHASE 4: SPONSORED ADS ==============
 
@@ -3093,7 +3398,22 @@ async def seed_database():
         # Pick 2-4 random products per shop
         num_products = random.randint(2, min(4, len(products_to_seed)))
         selected_products = random.sample(products_to_seed, num_products)
-        
+
+        # Curated Unsplash images by category — keeps DB small and deterministic
+        male_product_imgs = {
+            "styling":   "https://images.unsplash.com/photo-1622286346003-c47988e0cd1f?w=600",
+            "beard":     "https://images.unsplash.com/photo-1625535138499-a03a8a01d87c?w=600",
+            "shaving":   "https://images.unsplash.com/photo-1621607512022-6aecc4fed814?w=600",
+            "hair_care": "https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=600",
+        }
+        female_product_imgs = {
+            "hair_care": "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?w=600",
+            "nails":     "https://images.unsplash.com/photo-1604654894610-df63bc536371?w=600",
+            "skin_care": "https://images.unsplash.com/photo-1570194065650-d99fb4bedf0a?w=600",
+            "makeup":    "https://images.unsplash.com/photo-1522335789203-aaa4a91f3fe4?w=600",
+        }
+        img_map = male_product_imgs if shop_data["shop_type"] == "male" else female_product_imgs
+
         for prod in selected_products:
             product_doc = {
                 "id": str(uuid.uuid4()),
@@ -3104,13 +3424,83 @@ async def seed_database():
                 "description_ar": prod.get("description_ar", ""),
                 "price": float(prod["price"]),
                 "category": prod["category"],
-                "image_url": "",
+                "image_url": img_map.get(prod["category"], "https://images.unsplash.com/photo-1585751119414-ef2636f8aede?w=600"),
                 "in_stock": True,
                 "featured": prod.get("featured", False),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
             await db.products.insert_one(product_doc)
+
+        # ---- Gallery images (before/after) for showcase ----
+        male_gallery_pool = [
+            "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=900",
+            "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=900",
+            "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?w=900",
+            "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=900",
+            "https://images.unsplash.com/photo-1521490878406-dbbe2bd1c8ee?w=900",
+            "https://images.unsplash.com/photo-1517196624979-e1c7218fb44b?w=900",
+            "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=900",
+        ]
+        female_gallery_pool = [
+            "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=900",
+            "https://images.unsplash.com/photo-1562322140-8baeececf3df?w=900",
+            "https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=900",
+            "https://images.unsplash.com/photo-1571646034647-52e6ea84b28c?w=900",
+            "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=900",
+            "https://images.unsplash.com/photo-1560869713-da86bd4f31c8?w=900",
+            "https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=900",
+        ]
+        gallery_pool = male_gallery_pool if shop_data["shop_type"] == "male" else female_gallery_pool
+        # Higher-rated shops get more gallery images (to qualify for higher tiers)
+        if target_rating >= 4.7:
+            gallery_count = 4  # global_elite qualifying
+        elif target_rating >= 4.5:
+            gallery_count = 3
+        elif target_rating >= 4.0:
+            gallery_count = 2
+        else:
+            gallery_count = 1
+        gallery_pairs = random.sample(gallery_pool, min(gallery_count * 2, len(gallery_pool)))
+        for gi in range(gallery_count):
+            before_url = gallery_pairs[gi * 2] if gi * 2 < len(gallery_pairs) else gallery_pool[0]
+            after_url = gallery_pairs[gi * 2 + 1] if gi * 2 + 1 < len(gallery_pairs) else gallery_pool[-1]
+            img_doc = {
+                "id": str(uuid.uuid4()),
+                "barbershop_id": shop_id,
+                "image_before": before_url,
+                "image_after": after_url,
+                "before": before_url,
+                "after": after_url,
+                "caption": f"Style {gi + 1}",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.gallery_images.insert_one(img_doc)
+
+        # Seed some COMPLETED bookings for the ranking engine (90-day window)
+        # This is what lets a shop qualify for City/Governorate/Country/Global tiers.
+        if target_reviews >= 10:
+            num_completed = int(min(max(target_reviews * 1.2, 10), 150))
+            # Spread completions over last 90 days
+            for ci in range(num_completed):
+                days_ago = random.randint(1, 90)
+                bk_time = datetime.now(timezone.utc) - timedelta(days=days_ago)
+                await db.bookings.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "user_id": None,
+                    "barbershop_id": shop_id,
+                    "barbershop_name": shop_data["shop_name"],
+                    "service_id": None,
+                    "service_name": "Historical booking",
+                    "booking_date": bk_time.strftime("%Y-%m-%d"),
+                    "start_time": "10:00",
+                    "end_time": "10:30",
+                    "status": "completed",
+                    "customer_name": "Past Customer",
+                    "total_price": 10,
+                    "created_at": bk_time.isoformat(),
+                    "updated_at": bk_time.isoformat(),
+                })
         
         created_shops.append({
             "id": shop_id,
@@ -4151,6 +4541,32 @@ async def startup_db():
                     "⚠️  DEFAULT ADMIN CREATED (admin/admin123). Set ADMIN_BOOTSTRAP_PASSWORD env var "
                     "and ALLOW_DEFAULT_ADMIN=false in production!"
                 )
+
+    # ---------- Ranking recompute: initial + nightly schedule ----------
+    import asyncio
+
+    async def _nightly_ranking_task():
+        """Background task: recompute all shop rankings every 24 hours."""
+        while True:
+            try:
+                await asyncio.sleep(60 * 60 * 24)   # wait 24h then recompute
+                await recompute_all_rankings()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Nightly ranking task error: {e}")
+
+    # Run once at startup (non-blocking; don't delay server boot)
+    async def _initial_recompute():
+        try:
+            # Small delay so the event loop can finish binding
+            await asyncio.sleep(2)
+            await recompute_all_rankings()
+        except Exception as e:
+            logger.error(f"Initial ranking recompute failed: {e}")
+
+    asyncio.create_task(_initial_recompute())
+    asyncio.create_task(_nightly_ranking_task())
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

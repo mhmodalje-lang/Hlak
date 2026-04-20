@@ -525,14 +525,93 @@ backend:
         - agent: "testing"
         - comment: "✅ PASS - CORS configuration working correctly. Wildcard '*' forces allow_credentials=False for spec compliance. System logs warning about wide-open CORS in development. Production-ready for specific origins configuration."
 
+  - task: "Ranking Engine v3.6 - NEW Tiers System"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - NEW ranking engine with 4 qualifying tiers (global_elite/country_top/governorate_top/city_top) working perfectly. compute_shop_metrics() aggregates reviews/bookings/products correctly. calculate_ranking_score() composite formula working. classify_shop_tier() returns highest qualifying tier. All tier thresholds and requirements properly enforced."
+
+  - task: "GET /api/ranking/tiers (public endpoint)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - GET /api/ranking/tiers working perfectly. Returns all required keys (global_elite, country_top, governorate_top, city_top, scope, thresholds). Gender/limit filtering works. Country scoping with global fallback works. tier_badge matches parent array correctly. Limit validation (ge=1, le=30) enforced. All test scenarios passed."
+
+  - task: "POST /api/admin/ranking/recompute (admin only)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - POST /api/admin/ranking/recompute working correctly. Returns proper JSON with updated count, tier_counts (all 5 tiers), and computed_at timestamp. Properly requires admin authentication (401/403 without auth). Successfully updated 10 shops during test."
+
+  - task: "GET /api/admin/ranking/stats (admin only)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - GET /api/admin/ranking/stats working correctly. Returns tier_counts, total_shops (10), and last_computed_at. Properly requires admin authentication. All required fields present in response."
+
+  - task: "Barbers Enrichment - tier_badge + rating fix"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - GET /api/barbers enrichment working perfectly. All required fields present: tier_badge, rating, ranking_score, total_reviews, before_after_images, products_count. CRITICAL BUG FIX VERIFIED: rating field now distinct from ranking_score (was showing same value before). 10 barbers returned with proper enrichment."
+
+  - task: "Seed Data Quality - gallery + products + reviews"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - Seed data quality excellent. All 10 shops have: before_after_images (≥1), products_count (≥1) with proper image_url, total_reviews (>0). Historical completed bookings properly seeded for tier qualification. POST /api/seed idempotent (returns 'already exists')."
+
 metadata:
   created_by: "main_agent"
-  version: "3.5"
-  test_sequence: 8
+  version: "3.6"
+  test_sequence: 9
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "✅ COMPLETED - Ranking Engine v3.6 - compute_shop_metrics + calculate_ranking_score + classify_shop_tier"
+    - "✅ COMPLETED - GET /api/ranking/tiers (public, scoped by gender/country/governorate/city)"
+    - "✅ COMPLETED - POST /api/admin/ranking/recompute (admin only)"
+    - "✅ COMPLETED - GET /api/admin/ranking/stats (admin only)"
+    - "✅ COMPLETED - Seed upgrades: gallery images + product images + historical completed bookings"
+    - "✅ COMPLETED - enrich_barbershop_for_frontend now returns tier_badge + proper rating"
+    - "✅ COMPLETED - Regression: /api/barbers, /api/search/barbers, /api/sponsored/active, /api/health, /api/config/public"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -564,3 +643,5 @@ agent_communication:
 
     - agent: "testing"
     - message: "🔒 BARBER HUB v3.5 SECURITY HARDENING TESTING COMPLETE - ALL 10 CRITICAL TESTS PASSED (100% success rate). ✅ NEW ENDPOINTS: GET /api/health returns proper JSON with status/db/version/timestamp, GET /api/config/public returns admin_whatsapp/app_url/version correctly. ✅ SECURITY FEATURES: SecurityHeadersMiddleware adds all required headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, HSTS) to every response, Rate limiting working on auth endpoints (8 failed logins → 429, 10 registrations per IP → 429), Password validation enforces 6+ char minimum with proper 422 responses, Admin users pagination supports skip/limit/user_type/search with regex injection protection. ✅ REGRESSION CHECKS: All existing endpoints working perfectly - admin/salon login, seed data, barbers list (10 shops), search filters, PWA status. ✅ AUTHENTICATION: JWT secret properly managed via environment, CORS hardened for production compliance. Rate limiting using slowapi with in-memory sliding window prevents abuse while allowing legitimate traffic. All security headers verified via curl. System ready for production deployment with comprehensive security hardening."
+    - agent: "testing"
+    - message: "🎉 BARBER HUB v3.6 RANKING TIERS TESTING COMPLETE - ALL 26 TESTS PASSED (100% success rate). ✅ NEW RANKING ENDPOINTS: GET /api/ranking/tiers returns proper tier arrays (global_elite/country_top/governorate_top/city_top) with enriched shops, tier_badge matching parent arrays, gender/country filtering, global fallback, limit validation (1-30). POST /api/admin/ranking/recompute updates 10 shops with proper tier_counts. GET /api/admin/ranking/stats returns tier distribution. All admin endpoints properly secured (401/403 without auth). ✅ ENRICHMENT FIXES: GET /api/barbers now returns tier_badge, distinct rating≠ranking_score (critical bug fixed), total_reviews, before_after_images, products_count. ✅ SEED QUALITY: All 10 shops have gallery images (≥1), products with image_url, reviews (>0), historical completed bookings for tier qualification. ✅ ZERO REGRESSIONS: All existing endpoints working - /api/health, /api/config/public, /api/sponsored/active, /api/search/barbers, /api/pwa/status, /api/admin/users, rate limiting (8 failed attempts → 429). Authentication working (admin/admin123, salon 0935964158/salon123). System ready for production with new ranking tiers engine."

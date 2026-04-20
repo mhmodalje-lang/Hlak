@@ -39,11 +39,18 @@ const HomePage = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [favoriteIds, setFavoriteIds] = useState(new Set());
+  // Phase 6: sponsored shops + tiered ranking
+  const [sponsoredShops, setSponsoredShops] = useState([]);
+  const [tiers, setTiers] = useState({ global_elite: [], country_top: [], governorate_top: [], city_top: [] });
 
   const isMen = gender === 'male';
 
   // Dynamic geo-based header
   const dynamicHeader = getDynamicHeader(language);
+
+  // Normalize: treat "Unknown"/empty as no location
+  const normalizedCountry = country && country !== 'Unknown' ? country : null;
+  const normalizedCity = city && city !== 'Unknown' ? city : null;
 
   const t = language === 'ar' ? {
     welcome: 'مرحباً', guest: 'زائر', search: 'ابحث عن صالون أو مدينة...',
@@ -56,7 +63,11 @@ const HomePage = () => {
     heroSubtitle: 'احجز موعدك مع نخبة الحلاقين في منطقتك',
     exploreNow: 'استكشف الآن', topRated: 'الأعلى تقييماً', bookNow: 'احجز الآن',
     location: 'الموقع', rating: 'التقييم', startJourney: 'ابدأ رحلتك',
-    km: 'كم'
+    km: 'كم',
+    sponsoredTitle: 'إعلانات مميّزة في مدينتك', sponsoredSubtitle: 'صالونات راعية',
+    tierGlobal: 'النخبة العالمية', tierCountry: 'الأفضل في الدولة',
+    tierGovernorate: 'الأفضل في المحافظة', tierCity: 'الأفضل في مدينتك',
+    tierInCountry: 'في', inCity: 'في',
   } : {
     welcome: 'Welcome', guest: 'Guest', search: 'Search for salons or cities...',
     allCities: 'All Cities', topBarbers: 'Top Barbers', topSalons: 'Top Salons',
@@ -68,7 +79,11 @@ const HomePage = () => {
     heroSubtitle: 'Book your appointment with elite barbers in your area',
     exploreNow: 'Explore Now', topRated: 'Top Rated', bookNow: 'Book Now',
     location: 'Location', rating: 'Rating', startJourney: 'Start Your Journey',
-    km: 'km'
+    km: 'km',
+    sponsoredTitle: 'Featured in Your City', sponsoredSubtitle: 'Sponsored Salons',
+    tierGlobal: 'Global Elite', tierCountry: 'Country Top',
+    tierGovernorate: 'Governorate Top', tierCity: 'Top in Your City',
+    tierInCountry: 'in', inCity: 'in',
   };
 
   // Fetch favorites
@@ -104,9 +119,48 @@ const HomePage = () => {
     }
   }, [API, gender, searchQuery, selectedCity]);
 
+  // Fetch sponsored shops scoped to user's city
+  const fetchSponsored = useCallback(async () => {
+    try {
+      const params = { limit: 6 };
+      if (gender) params.gender = gender;
+      if (country) params.country = country;
+      if (city) params.city = city;
+      const res = await axios.get(`${API}/sponsored/active`, { params });
+      setSponsoredShops(res.data || []);
+    } catch (err) {
+      console.error('Sponsored fetch failed:', err);
+      setSponsoredShops([]);
+    }
+  }, [API, gender, country, city]);
+
+  // Fetch tiered ranking (city → governorate → country → global)
+  const fetchTiers = useCallback(async () => {
+    try {
+      const params = { limit: 6 };
+      if (gender) params.gender = gender;
+      if (country) params.country = country;
+      if (selectedCity && selectedCity !== 'all') {
+        params.city = selectedCity;
+      } else if (city) {
+        params.city = city;
+      }
+      const res = await axios.get(`${API}/ranking/tiers`, { params });
+      setTiers(res.data || { global_elite: [], country_top: [], governorate_top: [], city_top: [] });
+    } catch (err) {
+      console.error('Tiers fetch failed:', err);
+      setTiers({ global_elite: [], country_top: [], governorate_top: [], city_top: [] });
+    }
+  }, [API, gender, country, city, selectedCity]);
+
   useEffect(() => {
     fetchBarbers();
   }, [fetchBarbers]);
+
+  useEffect(() => {
+    fetchSponsored();
+    fetchTiers();
+  }, [fetchSponsored, fetchTiers]);
 
   const fetchLocations = useCallback(async () => {
     try {
@@ -142,17 +196,27 @@ const HomePage = () => {
     } catch (err) { toast.error('Error'); }
   };
 
-  const BarberCard = ({ barber, index }) => {
+  const BarberCard = ({ barber, index, showSponsoredTag = false }) => {
     const rating = barber.rating || 0;
     const isTopRanked = rating >= 4.5;
     const isFav = favoriteIds.has(barber.id);
+    const tierBadge = barber.tier_badge;
+
+    // Color map for tier badges
+    const tierStyle = {
+      global_elite:    { bg: 'from-purple-600 to-pink-600',   ring: 'ring-purple-400/60' },
+      country_top:     { bg: 'from-amber-500 to-orange-600',  ring: 'ring-amber-400/60' },
+      governorate_top: { bg: 'from-emerald-500 to-teal-600',  ring: 'ring-emerald-400/60' },
+      city_top:        { bg: 'from-sky-500 to-indigo-600',    ring: 'ring-sky-400/60' },
+    };
+    const ts = tierBadge ? tierStyle[tierBadge.tier] : null;
 
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: Math.min(index * 0.05, 0.5) }}
-        className="bh-glass bh-card-hover cursor-pointer overflow-hidden"
+        className={`bh-glass bh-card-hover cursor-pointer overflow-hidden ${ts ? `ring-1 ${ts.ring}` : ''}`}
         onClick={() => navigate(`/barber/${barber.id}`)}
       >
         <div className="relative h-56 overflow-hidden">
@@ -160,10 +224,28 @@ const HomePage = () => {
             src={barber.before_after_images?.[0]?.after || barber.shop_logo || '/images/ai/hero_home.png'}
             alt={barber.shop_name}
             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+            loading="lazy"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
 
-          {isTopRanked && (
+          {/* Sponsored badge (highest priority) */}
+          {showSponsoredTag && (
+            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-gradient-to-r from-yellow-500 to-amber-600 text-black shadow-lg flex items-center gap-1">
+              <Fire className="w-3 h-3" />
+              {language === 'ar' ? 'مُموَّل' : 'Sponsored'}
+            </div>
+          )}
+
+          {/* Tier badge */}
+          {!showSponsoredTag && tierBadge && ts && (
+            <div className={`absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold bg-gradient-to-r ${ts.bg} text-white shadow-lg flex items-center gap-1.5 backdrop-blur-sm`}>
+              <span>{tierBadge.icon}</span>
+              <span>{language === 'ar' ? tierBadge.label_ar : tierBadge.label_en}</span>
+            </div>
+          )}
+
+          {/* Fallback top-rated */}
+          {!showSponsoredTag && !tierBadge && isTopRanked && (
             <div className="absolute top-3 left-3 bh-vip-badge">
               <Crown className="w-3.5 h-3.5" />
               <span>{t.topRated}</span>
@@ -235,6 +317,35 @@ const HomePage = () => {
           </div>
         </div>
       </motion.div>
+    );
+  };
+
+  // Section renderer for tier lists
+  const TierSection = ({ tierKey, title, subtitle, icon, shops, accent }) => {
+    if (!shops || shops.length === 0) return null;
+    return (
+      <section className="py-12" data-testid={`tier-${tierKey}`}>
+        <div className="container mx-auto px-4">
+          <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <span className="text-3xl">{icon}</span>
+                <h2 className={`text-2xl md:text-3xl font-display font-bold ${accent}`}>{title}</h2>
+              </div>
+              {subtitle && (
+                <p className="text-sm text-[var(--bh-text-muted)] ps-10">{subtitle}</p>
+              )}
+            </div>
+            <Link to="/top-barbers" className="bh-btn bh-btn-outline flex items-center gap-2 text-sm">
+              {t.viewAll}
+              {language === 'ar' ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {shops.slice(0, 6).map((b, i) => <BarberCard key={b.id} barber={b} index={i} />)}
+          </div>
+        </div>
+      </section>
     );
   };
 
@@ -386,8 +497,83 @@ const HomePage = () => {
         </div>
       </section>
 
-      {/* Top Barbers */}
-      {topBarbers.length > 0 && (
+      {/* ====== Sponsored in Your City ====== */}
+      {sponsoredShops.length > 0 && (
+        <section className="py-12" data-testid="sponsored-section">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <Fire className="w-7 h-7 text-orange-400" />
+                  <h2 className="text-2xl md:text-3xl font-display font-bold text-white">
+                    {t.sponsoredTitle}
+                  </h2>
+                </div>
+                {normalizedCity && (
+                  <p className="text-sm text-[var(--bh-text-muted)] ps-10">
+                    {t.inCity} <strong className="text-[var(--bh-gold)]">{normalizedCity}</strong>
+                    {normalizedCountry ? ` · ${normalizedCountry}` : ''}
+                  </p>
+                )}
+              </div>
+              <span className="text-xs px-3 py-1 rounded-full bg-gradient-to-r from-yellow-500/20 to-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold">
+                {t.sponsoredSubtitle}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {sponsoredShops.slice(0, 6).map((b, i) => <BarberCard key={b.id} barber={b} index={i} showSponsoredTag={true} />)}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ====== TIERED RANKING (City → Governorate → Country → Global) ====== */}
+
+      {/* City Top — الأفضل في مدينتك */}
+      <TierSection
+        tierKey="city_top"
+        title={t.tierCity}
+        subtitle={normalizedCity ? `${t.inCity} ${normalizedCity}` : null}
+        icon="🏙️"
+        shops={tiers.city_top}
+        accent="text-sky-300"
+      />
+
+      {/* Governorate Top — الأفضل في المحافظة */}
+      <TierSection
+        tierKey="governorate_top"
+        title={t.tierGovernorate}
+        subtitle={normalizedCountry ? `${t.tierInCountry} ${normalizedCountry}` : null}
+        icon="🏛️"
+        shops={tiers.governorate_top}
+        accent="text-emerald-300"
+      />
+
+      {/* Country Top — الأفضل في الدولة */}
+      <TierSection
+        tierKey="country_top"
+        title={t.tierCountry}
+        subtitle={normalizedCountry ? `${t.tierInCountry} ${normalizedCountry}` : null}
+        icon="🏳️"
+        shops={tiers.country_top}
+        accent="text-amber-300"
+      />
+      {/* Global Elite — النخبة العالمية */}
+      <TierSection
+        tierKey="global_elite"
+        title={t.tierGlobal}
+        subtitle={language === 'ar' ? 'النخبة من جميع أنحاء العالم' : 'The elite from around the world'}
+        icon="🌍"
+        shops={tiers.global_elite}
+        accent="text-purple-300"
+      />
+
+      {/* Fallback Top Barbers (shown when no tiered results) */}
+      {topBarbers.length > 0 &&
+        tiers.city_top.length === 0 &&
+        tiers.governorate_top.length === 0 &&
+        tiers.country_top.length === 0 &&
+        tiers.global_elite.length === 0 && (
         <section className="py-16">
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between mb-10">

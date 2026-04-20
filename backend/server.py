@@ -21,7 +21,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Get APP_URL from environment for QR codes and referral links
-APP_URL = os.environ.get('APP_URL', 'https://web-repo-tool.preview.emergentagent.com')
+APP_URL = os.environ.get('APP_URL', 'https://db-manager-12.preview.emergentagent.com')
 
 # AI Services (GPT-5 Vision + Style Card)
 try:

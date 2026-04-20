@@ -7,7 +7,7 @@ import requests
 import json
 
 # API Configuration
-BASE_URL = "https://web-repo-tool.preview.emergentagent.com/api"
+BASE_URL = "https://db-manager-12.preview.emergentagent.com/api"
 SALON_CREDENTIALS = {"phone_number": "0935964158", "password": "salon123"}
 
 def clear_gallery():

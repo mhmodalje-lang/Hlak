@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any, Optional
 
 # API Configuration
-BASE_URL = "https://web-repo-tool.preview.emergentagent.com/api"
+BASE_URL = "https://db-manager-12.preview.emergentagent.com/api"
 
 # Test Credentials
 ADMIN_CREDENTIALS = {"phone_number": "admin", "password": "admin123"}

@@ -10,7 +10,7 @@ import sys
 from typing import Dict
 
 # Configuration
-BASE_URL = "https://web-repo-tool.preview.emergentagent.com/api"
+BASE_URL = "https://db-manager-12.preview.emergentagent.com/api"
 
 class PWATester:
     def __init__(self):

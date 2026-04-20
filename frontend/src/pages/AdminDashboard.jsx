@@ -7,7 +7,8 @@ import { toast } from 'sonner';
 import axios from 'axios';
 import { 
   Users, Calendar, DollarSign, AlertTriangle, Check, X, 
-  Loader2, Crown, Ban, CreditCard, LayoutDashboard, Shield
+  Loader2, Crown, Ban, CreditCard, LayoutDashboard, Shield,
+  Megaphone, TrendingUp
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -78,16 +79,18 @@ const AdminDashboard = () => {
     setIsLoading(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [statsRes, usersRes, subsRes, reportsRes] = await Promise.all([
+      const [statsRes, usersRes, subsRes, reportsRes, adsRes] = await Promise.all([
         axios.get(`${API}/admin/stats`, { headers }),
         axios.get(`${API}/admin/users`, { headers }),
         axios.get(`${API}/admin/subscriptions`, { headers }),
-        axios.get(`${API}/admin/reports`, { headers })
+        axios.get(`${API}/admin/reports`, { headers }),
+        axios.get(`${API}/admin/sponsored/pending`, { headers })
       ]);
       setStats(statsRes.data);
       setUsers(usersRes.data);
       setSubscriptions(subsRes.data);
       setReports(reportsRes.data);
+      setSponsoredAds(adsRes.data);
     } catch (err) {
       console.error('Failed to fetch admin data:', err);
     } finally {
@@ -113,6 +116,18 @@ const AdminDashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success(language === 'ar' ? 'تم معالجة البلاغ' : 'Report resolved');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleAdAction = async (adId, action) => {
+    try {
+      await axios.put(`${API}/admin/sponsored/${adId}/${action}`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success(language === 'ar' ? (action === 'approve' ? 'تم التفعيل' : 'تم الرفض') : (action === 'approve' ? 'Approved' : 'Rejected'));
       fetchData();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error');
@@ -213,6 +228,58 @@ const AdminDashboard = () => {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <CreditCard className="w-12 h-12 mx-auto mb-2 opacity-30" />
+              <p>{t.noData}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Sponsored Ads Approval */}
+        <div className="bg-gray-900 rounded-3xl p-6 border border-gray-800 mb-8" data-testid="admin-sponsored-section">
+          <h3 className="font-bold text-xl mb-6 flex items-center gap-2 text-amber-400">
+            <Megaphone size={20}/> {language === 'ar' ? 'طلبات الإعلانات الممولة' : 'Sponsored Ad Requests'}
+            <span className="ms-2 text-sm text-gray-500">({sponsoredAds.length})</span>
+          </h3>
+          {sponsoredAds.length > 0 ? (
+            <div className="space-y-4">
+              {sponsoredAds.map(ad => (
+                <div key={ad.id} className="bg-gray-800/50 rounded-2xl p-4 flex flex-wrap items-center gap-4" data-testid={`ad-${ad.id}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold">{ad.shop_name}</p>
+                    <p className="text-xs text-gray-500">
+                      {ad.shop_type === 'male' ? '♂' : '♀'} · {ad.city}, {ad.country}
+                    </p>
+                    <p className="text-sm mt-1">
+                      <span className="text-purple-400 font-bold">{language === 'ar' ? ad.plan_label_ar : ad.plan_label_en}</span>
+                      <span className="text-gray-500 mx-2">·</span>
+                      <span className="text-yellow-500 font-black">{ad.price_eur}€</span>
+                      <span className="text-gray-500 mx-2">·</span>
+                      <span className="text-gray-400">{ad.duration_days} {language === 'ar' ? 'يوم' : 'days'}</span>
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleAdAction(ad.id, 'approve')}
+                      className="bg-green-600 text-white px-4 py-1 rounded-full text-xs font-bold hover:bg-green-500"
+                      data-testid={`approve-ad-${ad.id}`}
+                    >
+                      <Check size={12} className="inline me-1"/>
+                      {language === 'ar' ? 'موافقة' : 'Approve'}
+                    </button>
+                    <button
+                      onClick={() => handleAdAction(ad.id, 'reject')}
+                      className="bg-red-600 text-white px-3 py-1 rounded-full text-xs font-bold hover:bg-red-500"
+                      data-testid={`reject-ad-${ad.id}`}
+                    >
+                      <X size={12} className="inline me-1"/>
+                      {language === 'ar' ? 'رفض' : 'Reject'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Megaphone className="w-12 h-12 mx-auto mb-2 opacity-30" />
               <p>{t.noData}</p>
             </div>
           )}

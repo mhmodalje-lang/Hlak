@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Query, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Query, Request, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -348,6 +348,21 @@ class OrderCreate(BaseModel):
 class OrderStatusUpdate(BaseModel):
     status: str  # "pending" | "confirmed" | "preparing" | "shipped" | "delivered" | "cancelled"
     tracking_note: Optional[str] = None
+
+# --- Sponsored Ads ---
+class SponsoredAdRequest(BaseModel):
+    plan: str  # "basic_city" | "pro_country" | "elite_region"
+    duration_days: int = 7
+    payment_method: Optional[str] = None
+    receipt_image: Optional[str] = None
+
+class SponsoredAdAdminAction(BaseModel):
+    admin_note: Optional[str] = None
+
+# --- Leave / Unavailable days ---
+class LeaveSet(BaseModel):
+    dates: List[str]  # ["2026-03-01", "2026-03-02", ...]
+    reason: Optional[str] = None
 
 # --- AI Try-On ---
 class AITryOnRequest(BaseModel):
@@ -963,7 +978,7 @@ async def update_barber_profile(profile_data: BarberProfileCreate, entity: Dict 
 
 @api_router.get("/barbers/top/{gender}")
 async def get_top_barbers(gender: str, limit: int = 20):
-    """Get top rated barbers by gender"""
+    """Get top rated barbers by gender (legacy - global scope)"""
     query = {"shop_type": gender}
     shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).sort("ranking_score", -1).limit(limit).to_list(limit)
     
@@ -973,6 +988,316 @@ async def get_top_barbers(gender: str, limit: int = 20):
         result.append(enriched)
     
     return result
+
+# ============== PHASE 4: GEO-TIERED RANKING ==============
+
+SPONSORED_PLANS = {
+    "basic_city":    {"price_eur": 10.0, "scope": "city",    "duration_days": 7,  "label_ar": "متميز بالمدينة", "label_en": "City Spotlight"},
+    "pro_country":   {"price_eur": 30.0, "scope": "country", "duration_days": 14, "label_ar": "محترف - الدولة", "label_en": "Country Pro"},
+    "elite_region":  {"price_eur": 80.0, "scope": "region",  "duration_days": 30, "label_ar": "النخبة - الإقليم", "label_en": "Regional Elite"},
+}
+
+@api_router.get("/sponsored/plans")
+async def list_sponsored_plans():
+    """Public catalogue of sponsored ad packages."""
+    return {"plans": [{"id": k, **v} for k, v in SPONSORED_PLANS.items()]}
+
+@api_router.get("/ranking/top")
+async def get_ranked_top(
+    scope: str = "global",              # global | city | country | region
+    gender: Optional[str] = None,
+    country: Optional[str] = None,
+    city: Optional[str] = None,
+    limit: int = 20,
+):
+    """Unified ranking endpoint — returns the top shops for a geographic tier.
+    Sorted by ranking_score desc with sponsored shops pinned on top.
+    """
+    query: Dict[str, Any] = {}
+    if gender in ("male", "female"):
+        query["shop_type"] = gender
+    if scope == "city":
+        if not country or not city:
+            raise HTTPException(status_code=400, detail="country and city required for scope=city")
+        query["country"] = country
+        query["city"] = city
+    elif scope == "country":
+        if not country:
+            raise HTTPException(status_code=400, detail="country required for scope=country")
+        query["country"] = country
+    # 'region' & 'global' use query as-is (all matching gender)
+
+    shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).sort("ranking_score", -1).limit(limit).to_list(limit)
+
+    # Get active sponsored ads matching scope
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ad_query: Dict[str, Any] = {"status": "active", "end_date": {"$gte": now_iso}}
+    sponsored_shop_ids: set = set()
+    async for ad in db.sponsored_ads.find(ad_query, {"_id": 0}):
+        plan = SPONSORED_PLANS.get(ad.get("plan"), {})
+        plan_scope = plan.get("scope", "city")
+        if scope == "city" and plan_scope in ("city", "country", "region"):
+            sponsored_shop_ids.add(ad["shop_id"])
+        elif scope == "country" and plan_scope in ("country", "region"):
+            sponsored_shop_ids.add(ad["shop_id"])
+        elif scope in ("region", "global") and plan_scope == "region":
+            sponsored_shop_ids.add(ad["shop_id"])
+
+    result = []
+    for shop in shops:
+        enriched = await enrich_barbershop_for_frontend(shop)
+        enriched["is_sponsored"] = shop.get("id") in sponsored_shop_ids
+        result.append(enriched)
+
+    # Pin sponsored shops to the top
+    result.sort(key=lambda x: (0 if x.get("is_sponsored") else 1, -(x.get("ranking_score") or 0)))
+
+    # Compute scoped tier label
+    for r in result[:3]:
+        r["tier_badge"] = {
+            "city":    {"en": "Top in City",    "ar": "الأول في المدينة"},
+            "country": {"en": "Top in Country", "ar": "الأول في الدولة"},
+            "region":  {"en": "Regional Elite", "ar": "النخبة الإقليمية"},
+            "global":  {"en": "Global Top",     "ar": "عالمي"},
+        }.get(scope, {"en": "Top", "ar": "متميز"})
+
+    return result
+
+# ============== PHASE 4: SPONSORED ADS ==============
+
+@api_router.post("/sponsored/request")
+async def create_sponsored_request(payload: SponsoredAdRequest, shop: Dict = Depends(require_barbershop)):
+    """Shop requests a sponsored placement. Pending admin approval."""
+    plan = SPONSORED_PLANS.get(payload.plan)
+    if not plan:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    duration = max(1, int(payload.duration_days or plan["duration_days"]))
+    now = datetime.now(timezone.utc)
+    ad_doc = {
+        "id": str(uuid.uuid4()),
+        "shop_id": shop["id"],
+        "shop_name": shop.get("shop_name", ""),
+        "shop_type": shop.get("shop_type", "male"),
+        "country": shop.get("country", ""),
+        "city": shop.get("city", ""),
+        "plan": payload.plan,
+        "plan_label_ar": plan["label_ar"],
+        "plan_label_en": plan["label_en"],
+        "scope": plan["scope"],
+        "price_eur": plan["price_eur"],
+        "duration_days": duration,
+        "payment_method": payload.payment_method or "",
+        "receipt_image": payload.receipt_image or "",
+        "status": "pending",
+        "admin_note": "",
+        "start_date": None,
+        "end_date": None,
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+    }
+    await db.sponsored_ads.insert_one(ad_doc)
+    ad_doc.pop("_id", None)
+    return ad_doc
+
+@api_router.get("/sponsored/my")
+async def get_my_sponsored(shop: Dict = Depends(require_barbershop)):
+    """Shop's own sponsored ads history."""
+    ads = await db.sponsored_ads.find({"shop_id": shop["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return ads
+
+@api_router.get("/sponsored/active")
+async def get_active_sponsored(
+    scope: Optional[str] = None,        # city | country | region
+    gender: Optional[str] = None,
+    country: Optional[str] = None,
+    city: Optional[str] = None,
+    limit: int = 10,
+):
+    """Public: list currently-running sponsored shops for homepage etc."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    q: Dict[str, Any] = {"status": "active", "end_date": {"$gte": now_iso}}
+    if scope:
+        q["scope"] = scope
+    if gender:
+        q["shop_type"] = gender
+    if country:
+        q["country"] = country
+    if city:
+        q["city"] = city
+    ads = await db.sponsored_ads.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    # Enrich each ad with shop info
+    result = []
+    for ad in ads:
+        shop = await db.barbershops.find_one({"id": ad["shop_id"]}, {"_id": 0, "password": 0})
+        if not shop:
+            continue
+        enriched = await enrich_barbershop_for_frontend(shop)
+        enriched["ad_id"] = ad["id"]
+        enriched["ad_plan"] = ad["plan"]
+        enriched["ad_scope"] = ad["scope"]
+        enriched["is_sponsored"] = True
+        enriched["ad_end_date"] = ad["end_date"]
+        result.append(enriched)
+    return result
+
+@api_router.get("/admin/sponsored/pending")
+async def admin_list_pending_ads(admin: Dict = Depends(require_admin)):
+    """Admin: list sponsored ads awaiting approval."""
+    ads = await db.sponsored_ads.find({"status": "pending"}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    return ads
+
+@api_router.get("/admin/sponsored/all")
+async def admin_list_all_ads(status: Optional[str] = None, admin: Dict = Depends(require_admin)):
+    q = {"status": status} if status else {}
+    ads = await db.sponsored_ads.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return ads
+
+@api_router.put("/admin/sponsored/{ad_id}/approve")
+async def admin_approve_ad(ad_id: str, payload: SponsoredAdAdminAction = Body(default=SponsoredAdAdminAction()), admin: Dict = Depends(require_admin)):
+    """Admin: approve & activate a sponsored ad."""
+    ad = await db.sponsored_ads.find_one({"id": ad_id}, {"_id": 0})
+    if not ad:
+        raise HTTPException(status_code=404, detail="Ad not found")
+    if ad.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Ad already processed")
+    now = datetime.now(timezone.utc)
+    end = now + timedelta(days=int(ad.get("duration_days") or 7))
+    update = {
+        "status": "active",
+        "start_date": now.isoformat(),
+        "end_date": end.isoformat(),
+        "admin_note": (payload.admin_note if payload else "") or "",
+        "updated_at": now.isoformat(),
+    }
+    await db.sponsored_ads.update_one({"id": ad_id}, {"$set": update})
+    updated = await db.sponsored_ads.find_one({"id": ad_id}, {"_id": 0})
+    return updated
+
+@api_router.put("/admin/sponsored/{ad_id}/reject")
+async def admin_reject_ad(ad_id: str, payload: SponsoredAdAdminAction = Body(default=SponsoredAdAdminAction()), admin: Dict = Depends(require_admin)):
+    ad = await db.sponsored_ads.find_one({"id": ad_id}, {"_id": 0})
+    if not ad:
+        raise HTTPException(status_code=404, detail="Ad not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.sponsored_ads.update_one(
+        {"id": ad_id},
+        {"$set": {"status": "rejected", "admin_note": (payload.admin_note if payload else "") or "", "updated_at": now}}
+    )
+    return await db.sponsored_ads.find_one({"id": ad_id}, {"_id": 0})
+
+# ============== PHASE 5: REVENUE & STATS ==============
+
+@api_router.get("/barbershops/me/stats")
+async def get_shop_stats(days: int = 30, shop: Dict = Depends(require_barbershop)):
+    """Revenue, bookings, orders, top products — last N days window."""
+    shop_id = shop["id"]
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+    cutoff_iso = cutoff_dt.isoformat()
+
+    # Completed bookings + revenue
+    bookings = await db.bookings.find(
+        {"barbershop_id": shop_id, "created_at": {"$gte": cutoff_iso}},
+        {"_id": 0}
+    ).to_list(10000)
+
+    total_bookings = len(bookings)
+    completed_bookings = [b for b in bookings if b.get("status") == "completed"]
+    service_revenue = sum(float(b.get("total_price") or 0) for b in completed_bookings)
+
+    # Orders + revenue
+    orders = await db.orders.find(
+        {"shop_id": shop_id, "created_at": {"$gte": cutoff_iso}},
+        {"_id": 0}
+    ).to_list(10000)
+
+    total_orders = len(orders)
+    delivered_or_shipped = [o for o in orders if o.get("status") in ("delivered", "shipped", "confirmed", "preparing")]
+    product_revenue = sum(float(o.get("total") or 0) for o in delivered_or_shipped)
+
+    # Revenue by day
+    by_day: Dict[str, Dict[str, float]] = {}
+    for b in completed_bookings:
+        day = (b.get("created_at") or "")[:10]
+        if not day:
+            continue
+        by_day.setdefault(day, {"services": 0.0, "products": 0.0})["services"] += float(b.get("total_price") or 0)
+    for o in delivered_or_shipped:
+        day = (o.get("created_at") or "")[:10]
+        if not day:
+            continue
+        by_day.setdefault(day, {"services": 0.0, "products": 0.0})["products"] += float(o.get("total") or 0)
+
+    revenue_by_day = [
+        {"date": d, "services": round(v["services"], 2), "products": round(v["products"], 2), "total": round(v["services"] + v["products"], 2)}
+        for d, v in sorted(by_day.items())
+    ]
+
+    # Top products (by quantity sold)
+    product_counts: Dict[str, Dict[str, Any]] = {}
+    for o in delivered_or_shipped:
+        pid = o.get("product_id")
+        if not pid:
+            continue
+        entry = product_counts.setdefault(pid, {
+            "product_id": pid,
+            "name": o.get("product_name", ""),
+            "name_ar": o.get("product_name_ar", ""),
+            "image": o.get("product_image", ""),
+            "qty": 0,
+            "revenue": 0.0,
+        })
+        entry["qty"] += int(o.get("quantity") or 1)
+        entry["revenue"] += float(o.get("total") or 0)
+    top_products = sorted(product_counts.values(), key=lambda x: x["revenue"], reverse=True)[:5]
+    for tp in top_products:
+        tp["revenue"] = round(tp["revenue"], 2)
+
+    # Top services (by bookings count)
+    service_counts: Dict[str, Dict[str, Any]] = {}
+    for b in completed_bookings:
+        svc_list = b.get("services") or []
+        for svc in svc_list:
+            name = svc.get("name_ar") or svc.get("name") or "?"
+            entry = service_counts.setdefault(name, {"name": name, "qty": 0})
+            entry["qty"] += 1
+    top_services = sorted(service_counts.values(), key=lambda x: x["qty"], reverse=True)[:5]
+
+    return {
+        "window_days": days,
+        "total_bookings": total_bookings,
+        "completed_bookings": len(completed_bookings),
+        "total_orders": total_orders,
+        "paid_orders": len(delivered_or_shipped),
+        "service_revenue": round(service_revenue, 2),
+        "product_revenue": round(product_revenue, 2),
+        "total_revenue": round(service_revenue + product_revenue, 2),
+        "revenue_by_day": revenue_by_day,
+        "top_products": top_products,
+        "top_services": top_services,
+    }
+
+# ============== PHASE 5: LEAVE / OFF DAYS ==============
+
+@api_router.post("/barbershops/me/leave")
+async def set_leave_dates(payload: LeaveSet, shop: Dict = Depends(require_barbershop)):
+    """Set or replace the shop's leave/off-day calendar."""
+    # Normalise dates as YYYY-MM-DD strings
+    dates = sorted({d for d in (payload.dates or []) if isinstance(d, str) and len(d) >= 10})
+    now = datetime.now(timezone.utc).isoformat()
+    await db.barbershops.update_one(
+        {"id": shop["id"]},
+        {"$set": {"leave_dates": dates, "leave_reason": payload.reason or "", "updated_at": now}}
+    )
+    return {"leave_dates": dates, "leave_reason": payload.reason or ""}
+
+@api_router.get("/barbershops/{shop_id}/leave")
+async def get_leave_dates(shop_id: str):
+    """Public: inspect off-day calendar for a shop."""
+    shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "leave_dates": 1, "leave_reason": 1})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    return {"leave_dates": shop.get("leave_dates", []) or [], "leave_reason": shop.get("leave_reason", "") or ""}
+
 
 @api_router.get("/barbers/nearby")
 async def get_nearby_barbers(
@@ -2777,12 +3102,18 @@ async def advanced_search(
     rating_min: Optional[float] = None,
     country: Optional[str] = None,
     city: Optional[str] = None,
+    area: Optional[str] = None,      # village / neighborhood / district soft match
     services: Optional[str] = None,  # Comma separated service names/categories
     search: Optional[str] = None,
     sort: str = "rating",  # rating | distance | price_asc | price_desc
     limit: int = 100,
 ):
-    """Advanced search with multi-filter + sorting + distance calculation"""
+    """Advanced search with multi-filter + sorting + distance calculation.
+
+    `area` performs a case-insensitive OR match against village / neighborhood
+    / district / city — used when the customer types a locality name that isn't
+    on the city dropdown (common for villages / remote areas).
+    """
     query: Dict[str, Any] = {}
     if shop_type in ("male", "female"):
         query["shop_type"] = shop_type
@@ -2792,12 +3123,28 @@ async def advanced_search(
         query["city"] = city
     if rating_min is not None:
         query["rating"] = {"$gte": rating_min}
+
+    # Build $or for text search + area search
+    or_clauses: List[Dict[str, Any]] = []
     if search:
-        query["$or"] = [
+        or_clauses.extend([
             {"shop_name": {"$regex": search, "$options": "i"}},
             {"description": {"$regex": search, "$options": "i"}},
             {"city": {"$regex": search, "$options": "i"}},
-        ]
+            {"district": {"$regex": search, "$options": "i"}},
+            {"neighborhood": {"$regex": search, "$options": "i"}},
+            {"village": {"$regex": search, "$options": "i"}},
+        ])
+    if area:
+        or_clauses.extend([
+            {"city": {"$regex": area, "$options": "i"}},
+            {"district": {"$regex": area, "$options": "i"}},
+            {"neighborhood": {"$regex": area, "$options": "i"}},
+            {"village": {"$regex": area, "$options": "i"}},
+            {"address": {"$regex": area, "$options": "i"}},
+        ])
+    if or_clauses:
+        query["$or"] = or_clauses
 
     shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).limit(limit * 2).to_list(limit * 2)
 
@@ -3493,6 +3840,15 @@ async def startup_db():
     await db.orders.create_index("user_id")
     await db.orders.create_index("shop_id")
     await db.orders.create_index([("shop_id", 1), ("status", 1)])
+    await db.sponsored_ads.create_index("id", unique=True)
+    await db.sponsored_ads.create_index([("status", 1), ("end_date", 1)])
+    await db.sponsored_ads.create_index("shop_id")
+    # Expire any active ads whose end_date has passed
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.sponsored_ads.update_many(
+        {"status": "active", "end_date": {"$lt": now_iso}},
+        {"$set": {"status": "expired", "updated_at": now_iso}}
+    )
     await db.referrals.create_index("user_id", unique=True)
     await db.referrals.create_index("referral_code", unique=True)
     await db.favorites.create_index([("user_id", 1), ("shop_id", 1)], unique=True)

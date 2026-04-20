@@ -1,18 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '@/App';
 import { Button } from '@/components/ui/button';
 import axios from 'axios';
 import { 
   Star, MapPin, Crown, ArrowRight, ArrowLeft, Trophy, 
-  Scissors, Sparkles, Calendar
+  Scissors, Sparkles, Calendar, Globe, Megaphone
 } from 'lucide-react';
 
 const TopBarbers = () => {
   const navigate = useNavigate();
-  const { API, gender, language, themeClass } = useApp();
+  const { API, gender, language, themeClass, user } = useApp();
   const [topBarbers, setTopBarbers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [scope, setScope] = useState(user?.country ? 'country' : 'region'); // city | country | region
+  const [country, setCountry] = useState(user?.country || '');
+  const [city, setCity] = useState(user?.city || '');
 
   const isMen = gender === 'male';
 
@@ -22,48 +25,64 @@ const TopBarbers = () => {
       title: 'أفضل الحلاقين',
       titleWomen: 'أفضل الصالونات',
       subtitle: 'الأكثر تقييماً ونشاطاً',
-      rank: 'المرتبة',
+      scopeCity: 'مدينتك',
+      scopeCountry: 'دولتك',
+      scopeRegion: 'الإقليم',
       reviews: 'تقييم',
       bookings: 'حجز',
       book: 'احجز الآن',
       noResults: 'لا توجد نتائج',
       top: 'الأفضل',
-      featured: 'مميز'
+      sponsored: 'ممول',
+      setCountry: 'أدخل رمز دولتك (مثال: سوريا)',
+      setCity: 'أدخل اسم مدينتك'
     },
     en: {
       back: 'Back',
       title: 'Top Barbers',
       titleWomen: 'Top Salons',
       subtitle: 'Highest Rated & Most Active',
-      rank: 'Rank',
+      scopeCity: 'Your City',
+      scopeCountry: 'Your Country',
+      scopeRegion: 'Region',
       reviews: 'reviews',
       bookings: 'bookings',
       book: 'Book Now',
       noResults: 'No results found',
       top: 'Top',
-      featured: 'Featured'
+      sponsored: 'Sponsored',
+      setCountry: 'Enter your country',
+      setCity: 'Enter your city'
     }
   };
 
   const t = texts[language] || texts.ar;
 
-  useEffect(() => {
-    fetchTopBarbers();
-  }, [gender]);
-
-  const fetchTopBarbers = async () => {
+  const fetchTopBarbers = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await axios.get(`${API}/barbers/top/${gender}`, {
-        params: { limit: 20 }
-      });
+      const params = { gender, limit: 20, scope };
+      if (scope === 'city') {
+        if (!country || !city) { setTopBarbers([]); setIsLoading(false); return; }
+        params.country = country; params.city = city;
+      }
+      if (scope === 'country') {
+        if (!country) { setTopBarbers([]); setIsLoading(false); return; }
+        params.country = country;
+      }
+      const res = await axios.get(`${API}/ranking/top`, { params });
       setTopBarbers(res.data);
     } catch (err) {
       console.error('Failed to fetch top barbers:', err);
+      setTopBarbers([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [API, gender, scope, country, city]);
+
+  useEffect(() => {
+    fetchTopBarbers();
+  }, [fetchTopBarbers]);
 
   const getRankBadge = (index) => {
     if (index === 0) return { bg: 'bg-gradient-to-r from-yellow-400 to-yellow-600', text: '🥇' };
@@ -71,6 +90,12 @@ const TopBarbers = () => {
     if (index === 2) return { bg: 'bg-gradient-to-r from-amber-600 to-amber-800', text: '🥉' };
     return { bg: isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]', text: `#${index + 1}` };
   };
+
+  const SCOPES = [
+    { id: 'city', label: t.scopeCity, icon: MapPin },
+    { id: 'country', label: t.scopeCountry, icon: Crown },
+    { id: 'region', label: t.scopeRegion, icon: Globe },
+  ];
 
   return (
     <div className={`min-h-screen ${themeClass} py-8 px-4`} data-testid="top-barbers-page">
@@ -95,6 +120,53 @@ const TopBarbers = () => {
           </div>
         </div>
 
+        {/* Scope tabs */}
+        <div className="flex gap-2 overflow-x-auto pb-3 mb-2" data-testid="scope-tabs">
+          {SCOPES.map(s => {
+            const Icon = s.icon;
+            const active = scope === s.id;
+            return (
+              <button
+                key={s.id}
+                onClick={() => setScope(s.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap text-sm font-bold transition-all ${
+                  active
+                    ? (isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white')
+                    : (isMen ? 'bg-[#2A1F14] text-gray-400 hover:bg-[#3A2E1F]' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')
+                }`}
+                data-testid={`scope-${s.id}`}
+              >
+                <Icon size={14} />
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Country/City inputs when needed */}
+        {(scope === 'country' || scope === 'city') && (
+          <div className="flex gap-2 mb-6">
+            <input
+              type="text"
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              placeholder={t.setCountry}
+              className={`flex-1 px-4 py-2 rounded-xl text-sm ${isMen ? 'bg-[#2A1F14] border border-[#3A2E1F] text-white' : 'bg-white border border-gray-200 text-gray-900'}`}
+              data-testid="scope-country-input"
+            />
+            {scope === 'city' && (
+              <input
+                type="text"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder={t.setCity}
+                className={`flex-1 px-4 py-2 rounded-xl text-sm ${isMen ? 'bg-[#2A1F14] border border-[#3A2E1F] text-white' : 'bg-white border border-gray-200 text-gray-900'}`}
+                data-testid="scope-city-input"
+              />
+            )}
+          </div>
+        )}
+
         {/* Leaderboard */}
         {isLoading ? (
           <div className="space-y-4">
@@ -109,10 +181,15 @@ const TopBarbers = () => {
               return (
                 <div 
                   key={barber.id}
-                  className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in`}
+                  className={`${isMen ? 'card-men' : 'card-women'} p-6 animate-fade-in relative overflow-hidden`}
                   style={{ animationDelay: `${index * 0.1}s` }}
                   data-testid={`top-barber-${index}`}
                 >
+                  {barber.is_sponsored && (
+                    <span className={`absolute top-2 ${language === 'ar' ? 'left-2' : 'right-2'} px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${isMen ? 'bg-[#D4AF37] text-black' : 'bg-[#B76E79] text-white'}`} data-testid={`sponsored-badge-${index}`}>
+                      <Megaphone size={10} /> {t.sponsored}
+                    </span>
+                  )}
                   <div className="flex items-center gap-4">
                     {/* Rank Badge */}
                     <div className={`w-14 h-14 rounded-xl ${rankBadge.bg} flex items-center justify-center text-2xl font-bold ${index > 2 ? (isMen ? 'text-[#94A3B8]' : 'text-[#57534E]') : 'text-white'}`}>
@@ -146,7 +223,7 @@ const TopBarbers = () => {
                       </div>
                       <p className={`text-sm flex items-center gap-1 ${isMen ? 'text-[#94A3B8]' : 'text-[#57534E]'}`}>
                         <MapPin className="w-3 h-3" />
-                        {barber.city}, {barber.country}
+                        {[barber.village, barber.neighborhood, barber.city, barber.country].filter(Boolean).join(' · ')}
                       </p>
                       <div className="flex items-center gap-4 mt-2">
                         <div className="flex items-center gap-1">

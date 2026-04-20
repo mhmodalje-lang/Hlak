@@ -12,6 +12,9 @@ import { ServicesManagement, SocialMediaManagement } from '@/components/Dashboar
 import PortfolioManagement from '@/components/PortfolioManagement';
 import UsageStats from '@/components/UsageStats';
 import ShopOrdersManagement from '@/components/ShopOrdersManagement';
+import SponsoredAdsManagement from '@/components/SponsoredAdsManagement';
+import RevenueStats from '@/components/RevenueStats';
+import LeaveManagement from '@/components/LeaveManagement';
 import { 
   ArrowRight, ArrowLeft, Calendar, Clock, Star, 
   Check, X, Loader2, Settings, QrCode, Users,
@@ -440,7 +443,10 @@ const BarberDashboard = () => {
 
         {/* Bookings Tabs */}
         <PortfolioManagement API={API} token={token} isMen={isMen} language={language} />
+        <RevenueStats API={API} token={token} isMen={isMen} language={language} />
         <ShopOrdersManagement API={API} token={token} isMen={isMen} language={language} />
+        <SponsoredAdsManagement API={API} token={token} isMen={isMen} language={language} />
+        <LeaveManagement API={API} token={token} isMen={isMen} language={language} />
         <ServicesManagement API={API} token={token} isMen={isMen} language={language} />
         <SocialMediaManagement API={API} token={token} isMen={isMen} language={language} profile={profile} onUpdate={() => window.location.reload()} />
 

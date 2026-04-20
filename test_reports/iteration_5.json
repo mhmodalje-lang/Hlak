@@ -1,0 +1,86 @@
+{
+  "summary": "Phase 4 (geo-tiered ranking + sponsored ads + admin approval) + Phase 5 (revenue stats + leave calendar) + village/area search enhancement backend regression. 25/25 pytest cases passed against REACT_APP_BACKEND_URL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PUT /api/admin/sponsored/{id}/approve",
+        "issue": "When admin re-approves an already-active ad the endpoint correctly returns 400, but when admin calls it on a rejected ad it also returns 400 ('Ad already processed'). That is the intended single-shot lifecycle, but UI copy may be misleading because 'already processed' is reused for both active and rejected. Consider returning a more specific detail string (e.g. 'Ad is in status=<x> and cannot be approved')."
+      },
+      {
+        "endpoint": "GET /api/ranking/top (scope=region, scope=global)",
+        "issue": "Review states scope must be one of global|city|country|region but there is no validation — arbitrary values fall through to the 'else' branch (treated as global). A 400 for unknown scope would be safer."
+      },
+      {
+        "endpoint": "GET /api/ranking/top",
+        "issue": "Pinning logic uses a second in-Python sort after the DB-level sort and scope filter. If a sponsored shop does NOT match the current `shop_type`/country/city query it is silently dropped from the pinned group (query is applied to shops, not to ads). That is actually the desired behaviour but is relying on the shop query, not the ad scope — worth documenting."
+      },
+      {
+        "endpoint": "POST /api/sponsored/request",
+        "issue": "No cap on how many 'pending' or 'active' ads a single shop may stack. A shop can currently request many concurrent ads of the same plan — admin panel will show duplicates. Consider rejecting with 409 if an active ad with the same scope is already running for the shop."
+      },
+      {
+        "endpoint": "POST /api/barbershops/me/leave",
+        "issue": "Accepts arbitrary strings as long as len>=10 (`isinstance(d, str) and len(d) >= 10`). 'abcdefghij' would pass validation. Recommend validating ISO-8601 YYYY-MM-DD via regex/datetime.fromisoformat."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "passed_tests": {
+    "backend": [
+      "TestSponsoredPlans::test_list_plans (3 plans w/ correct price/scope/duration/labels)",
+      "TestRanking::test_global_ranking_sorted (is_sponsored bool + ranking_score desc)",
+      "TestRanking::test_scope_city_requires_country_and_city (400 when missing)",
+      "TestRanking::test_scope_country_requires_country (400 when missing)",
+      "TestRanking::test_scope_city_ok",
+      "TestRanking::test_scope_country_pins_sponsored (seed salon pinned first, is_sponsored=true)",
+      "TestSponsoredRequestFlow::test_request_invalid_plan (400)",
+      "TestSponsoredRequestFlow::test_request_requires_barbershop_auth (user token -> 401/403)",
+      "TestSponsoredRequestFlow::test_create_pending_ad (basic_city, price 10€, status pending, start/end null)",
+      "TestSponsoredRequestFlow::test_my_sponsored_contains_new_ad",
+      "TestSponsoredRequestFlow::test_admin_list_pending_contains_ad",
+      "TestSponsoredRequestFlow::test_admin_approve_activates_ad (status=active, start/end populated from duration_days, admin_note persisted)",
+      "TestSponsoredRequestFlow::test_approve_already_active_returns_400",
+      "TestSponsoredRequestFlow::test_active_list_filters (scope=city returns ad w/ is_sponsored=true + ad_scope=city; country filter works)",
+      "TestSponsoredRequestFlow::test_reject_flow (status=rejected, admin_note persisted)",
+      "TestShopStats::test_stats_requires_shop (user token -> 401/403)",
+      "TestShopStats::test_stats_structure (all 11 keys present; total = services + products)",
+      "TestLeaveCalendar::test_leave_requires_shop",
+      "TestLeaveCalendar::test_leave_set_and_fetch (sorted + deduped, public GET returns same payload)",
+      "TestLeaveCalendar::test_leave_missing_shop_404",
+      "TestAreaSearch::test_search_by_area_matches_seed_village (area=Dummar -> seed salon)",
+      "TestAreaSearch::test_search_by_area_neighborhood",
+      "TestAreaSearch::test_search_by_area_case_insensitive (DUMMAR == dummar)",
+      "TestAreaSearch::test_search_by_search_param_matches_neighborhood (search=Dummar -> seed salon via extended fields)",
+      "TestAreaSearch::test_search_empty_area_returns_list"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase4_phase5.py",
+    "/app/test_reports/pytest/phase4_phase5.xml"
+  ],
+  "action_items": [
+    "(optional) Add 409 guard to POST /api/sponsored/request when the shop already has an active ad in the same scope to prevent duplicate active ads.",
+    "(optional) Tighten date validation in POST /api/barbershops/me/leave (use datetime.fromisoformat).",
+    "(optional) Return 400 for unknown `scope` values in /api/ranking/top instead of silently treating them as global."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now ~3875 lines. Phase 4/5 additions (~350 lines) push it further past the 700-line guideline. Recommend splitting into routers/: sponsored.py, stats.py, leave.py, search.py.",
+    "SPONSORED_PLANS is a module-level dict — any live edit forces a full restart. Consider moving to DB or a settings collection so admins can adjust prices without deploy.",
+    "admin_approve_ad uses `ad.get('status') != 'pending'` — a rejected ad can therefore never be revived to active. That's OK, but combined with the single error message 'Ad already processed' it may confuse admins. Consider storing a history array on the ad document.",
+    "get_shop_stats treats orders with status in ('delivered','shipped','confirmed','preparing') as revenue. Including 'confirmed' + 'preparing' may double-count revenue that is later cancelled. Consider computing revenue only from terminal states (delivered) and exposing a separate 'pending_revenue'.",
+    "LeaveSet validation (`len(d) >= 10`) is too permissive; any non-date string of length>=10 is persisted.",
+    "Ranking endpoint recomputes sponsored shop ids by iterating every active ad on every call — fine now, but will need an index-driven join once sponsored volume grows. The existing index ('status',1),('end_date',1) helps the find but the Python-side filter stays O(N)."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase4_phase5.py"],
+  "success_rate": {"backend": "100% (25/25)"},
+  "test_credentials": {
+    "admin": {"phone": "admin", "password": "admin123"},
+    "salon": {"phone": "0935964158", "password": "salon123", "shop_id": "23a8effc-7e65-4869-9202-b1447430cf45"}
+  },
+  "seed_data_creation": "Each run creates 2-3 sponsored ads on seed salon: (1) basic_city ad that gets approved (active for 3 days), (2) basic_city ad that gets rejected, and consumes one fresh TEST_ user registration per session. Previous iteration_4 TEST_Dummar/TEST_Al-Mazzeh village fields on the seed salon were leveraged and remain in place — needed for area-search tests to continue passing. Leave calendar on salon is left set to ['2026-04-01','2026-04-05','2026-04-10'] with reason 'TEST_holiday' — main agent can clear if desired.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 4 (sponsored ads + ranking) and Phase 5 (stats + leave) + the village/area search extension are all green. Suite is idempotent but each run adds two more ad documents to db.sponsored_ads (1 approved + 1 rejected). Seed salon 23a8effc-7e65-4869-9202-b1447430cf45 currently has multiple active 'basic_city' ads from repeated runs. No frontend tests were performed (scope was backend-only per request).",
+  "rca of the issue": "No regression — all 25 Phase 4/Phase 5 backend contracts verified. Minor robustness gaps noted above are non-blocking."
+}

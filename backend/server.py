@@ -1013,6 +1013,9 @@ async def get_ranked_top(
     """Unified ranking endpoint — returns the top shops for a geographic tier.
     Sorted by ranking_score desc with sponsored shops pinned on top.
     """
+    if scope not in ("global", "city", "country", "region"):
+        raise HTTPException(status_code=400, detail="scope must be one of global|city|country|region")
+
     query: Dict[str, Any] = {}
     if gender in ("male", "female"):
         query["shop_type"] = gender
@@ -1071,6 +1074,20 @@ async def create_sponsored_request(payload: SponsoredAdRequest, shop: Dict = Dep
     plan = SPONSORED_PLANS.get(payload.plan)
     if not plan:
         raise HTTPException(status_code=400, detail="Invalid plan")
+
+    # Reject duplicate active/pending ads in the same scope
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conflict = await db.sponsored_ads.find_one({
+        "shop_id": shop["id"],
+        "scope": plan["scope"],
+        "$or": [
+            {"status": "pending"},
+            {"status": "active", "end_date": {"$gte": now_iso}},
+        ]
+    })
+    if conflict:
+        raise HTTPException(status_code=409, detail="You already have a pending or active ad for this scope")
+
     duration = max(1, int(payload.duration_days or plan["duration_days"]))
     now = datetime.now(timezone.utc)
     ad_doc = {
@@ -1280,9 +1297,18 @@ async def get_shop_stats(days: int = 30, shop: Dict = Depends(require_barbershop
 
 @api_router.post("/barbershops/me/leave")
 async def set_leave_dates(payload: LeaveSet, shop: Dict = Depends(require_barbershop)):
-    """Set or replace the shop's leave/off-day calendar."""
-    # Normalise dates as YYYY-MM-DD strings
-    dates = sorted({d for d in (payload.dates or []) if isinstance(d, str) and len(d) >= 10})
+    """Set or replace the shop's leave/off-day calendar. Dates must be ISO YYYY-MM-DD."""
+    # Validate and normalize dates as YYYY-MM-DD strings
+    valid_dates: List[str] = []
+    for d in (payload.dates or []):
+        if not isinstance(d, str):
+            continue
+        try:
+            parsed = datetime.fromisoformat(d).date()
+            valid_dates.append(parsed.isoformat())
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Invalid date format: {d} (expected YYYY-MM-DD)")
+    dates = sorted(set(valid_dates))
     now = datetime.now(timezone.utc).isoformat()
     await db.barbershops.update_one(
         {"id": shop["id"]},

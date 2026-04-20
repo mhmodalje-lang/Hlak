@@ -7,101 +7,80 @@ BARBER HUB is a **global marketplace super-app** connecting barbers, salons, and
 - **Frontend**: React 19 + Tailwind CSS + Shadcn UI + framer-motion + lucide-react
 - **Backend**: FastAPI (Python 3.11) with JWT auth + bcrypt
 - **Database**: MongoDB (uuid ids, no ObjectId in responses)
-- **Theme**: `--bh-gold`, `--bh-chocolate`, `--bh-pearl`, `theme-men` / `theme-women`
 - **Routing**: `/api/*` for backend, `REACT_APP_BACKEND_URL` for front->back calls
 
-## User Personas
-1. **Customer (زبون)** — Books appointments, buys products, rates barbers, collects loyalty.
-2. **Barber (حلاق)** — Male salon; manages services, portfolio, products, orders.
-3. **Salon (صالون نسائي)** — Female salon variant of Barber.
-4. **Admin (مدير)** — Platform administrator (verification, subscriptions).
-
 ## Roadmap — Super App Vision 2026
-1. **Phase 1 — UI VIP Warm Luxury** ✅ (Payment, Favorites, Booking, Home)
-2. **Phase 2 — Professional Portfolio** ✅ (Hero slider + 4-image gallery + Lightbox)
-3. **Phase 3 — Social Commerce (Mini-Store + Orders)** ✅ *(this release)*
-4. **Phase 4 — Ranking & Sponsored Ads** ⏳ P1
-5. **Phase 5 — Advanced Dashboard (services / leave / revenue)** ⏳ P1
-6. **Phase 6 — Regional Payments (Zain Cash, Syriatel, Asia Hawala)** ⏳ P2
-7. **Phase 7 — Loyalty & Engagement** (loyalty MVP already live) ⏳ P1
+1. **Phase 1 — UI VIP Warm Luxury** ✅
+2. **Phase 2 — Professional Portfolio (4-image Lightbox)** ✅
+3. **Phase 3 — Social Commerce (Mini-Store + Orders)** ✅
+4. **Phase 4 — Geo-Tiered Ranking + Sponsored Ads** ✅ *(this release)*
+5. **Phase 5 — Advanced Dashboard (stats, leave, services)** ✅ *(this release)*
+6. **Phase 6 — Regional Payments (Zain, Syriatel/MTN, Asia Hawala)** ⏳ P2
+7. **Phase 7 — Loyalty & Engagement (MVP live, expand)** ⏳ P1
 
-## Core Features Implemented
+## Phase 4 — Geo-Tiered Ranking + Sponsored Ads (NEW)
 
-### Phase 3 (2026-02) - Social Commerce
-- **Product model extended**: `shipping_options` (pickup | local_delivery | courier), `local_delivery_fee`, `stock_quantity`.
-- **Hard cap: 10 products/shop** — backend returns 400 `MAX_PRODUCTS_REACHED`, dashboard disables the Add button.
-- **Orders system**
-  - `POST /api/orders` — create order (guest or authenticated); validates shipping method belongs to product's allowed set; computes subtotal/shipping_fee/total.
-  - `GET /api/orders/my` — customer-scoped orders.
-  - `GET /api/orders/shop` — shop-scoped received orders (with optional `status` filter).
-  - `GET /api/orders/{id}` — owner or shop only.
-  - `PUT /api/orders/{id}/status` — shop updates (pending → confirmed → preparing → shipped → delivered → cancelled); appends `status_history`.
-  - `PUT /api/orders/{id}/cancel` — customer or shop; customers blocked after shipped.
-- **Frontend**
-  - `components/OrderDialog.jsx` — checkout modal with shipping method picker, qty stepper, totals.
-  - `components/ShopOrdersManagement.jsx` — barber dashboard orders card with filters (active / all / by-status) and one-click phone/WhatsApp.
-  - `pages/MyOrders.jsx` — customer orders timeline with cancel action.
-  - `pages/ProductShowcase.jsx` — now triggers OrderDialog instead of WhatsApp-only link.
-  - `pages/BarberDashboard.jsx` — shipping options checkboxes + local-delivery fee field; 10-product counter `(N/10)`.
-- **Order awards loyalty points**: `int(total)` is added to `users.loyalty_points` on authenticated orders; surfaced via `order_points` in `/api/users/me/loyalty`.
+### Backend endpoints
+- `GET /api/sponsored/plans` — 3 packages:
+  - `basic_city` (10€, 7 days, city scope)
+  - `pro_country` (30€, 14 days, country scope)
+  - `elite_region` (80€, 30 days, region scope)
+- `GET /api/ranking/top?scope=global|city|country|region&gender=&country=&city=&limit=` — returns top shops pinned by sponsored; unknown scope → 400.
+- `POST /api/sponsored/request` — shop requests; duplicate active/pending in same scope → 409.
+- `GET /api/sponsored/my`, `GET /api/sponsored/active`
+- `GET /api/admin/sponsored/pending`, `GET /api/admin/sponsored/all`
+- `PUT /api/admin/sponsored/{id}/approve` (activates with `start_date`+`end_date`)
+- `PUT /api/admin/sponsored/{id}/reject`
+- Auto-expire on startup: active ads with `end_date < now` → status `expired`.
 
-### Phase 3 (2026-02) - Hyper-Local Mapping
-- **Profile fields added**: `latitude`, `longitude`, `district`, `neighborhood`, `village` — persisted to both `barbershops` and `barber_profiles`.
-- **`components/LocationPicker.jsx`** — GPS "use my location" button, editable coordinates, district / neighborhood / village manual input + detailed address; hint explicitly covers unmapped villages.
-- **Enrichment**: `enrich_barbershop_for_frontend` now exposes `village` + `neighborhood` + `district` for lossless round-trip.
+### Frontend
+- `components/SponsoredAdsManagement.jsx` — barber dashboard card with plan picker dialog and own-ads status list.
+- `pages/TopBarbers.jsx` — scope tabs (City / Country / Region) with country+city inputs; sponsored badge (Megaphone icon) on each pinned shop.
+- `pages/AdminDashboard.jsx` — new "Sponsored Ad Requests" section with Approve/Reject buttons.
 
-### Phase 2 (2026-01) - Professional Portfolio
-- Hero Slider + Lightbox gallery; max 4 images/shop; `PortfolioManagement.jsx` integrated into dashboard.
+## Phase 5 — Advanced Dashboard (NEW)
 
-### Phase 1 (2026-01) - UI + Globalization
-- VIP Warm Luxury theme across Home/Payment/Favorites/MyBookings/Booking.
-- Auto-fill form data when user is authenticated; dynamic phone code based on geolocation (`lib/phoneFormat.js`).
-- All "Syria"/localized strings removed — app is country-agnostic.
-- 14 currencies via `CurrencyContext` + `GeoLocationContext`.
+### Backend endpoints
+- `GET /api/barbershops/me/stats?days=N` — revenue analytics. Returns `total_revenue`, `service_revenue`, `product_revenue`, `revenue_by_day[]`, `top_products[]` (5), `top_services[]` (5), `completed_bookings`, `paid_orders`, `total_bookings`, `total_orders`, `window_days`.
+- `POST /api/barbershops/me/leave` — set leave dates; ISO-8601 YYYY-MM-DD enforced (400 on invalid).
+- `GET /api/barbershops/{shop_id}/leave` — public read.
 
-### Loyalty Points (2026-02 bug-fix)
-- Fixed `entity.get('role')` → `entity.get('entity_type')` (was always returning `is_user:false`).
-- `/api/users/me/loyalty` now returns `booking_points`, `order_points`, `points = booking + order`, tier, progress.
+### Frontend
+- `components/RevenueStats.jsx` — KPI cards + CSS bar chart for `revenue_by_day` + top products & services tables. Selector for 7/30/90 days.
+- `components/LeaveManagement.jsx` — date picker to add dates, remove individually, reason field.
 
-## Backend API Reference (selected)
+## Village / Area Search Enhancement (NEW)
+- `GET /api/search/barbers` now accepts `area=<text>` — case-insensitive OR match against `city`, `district`, `neighborhood`, `village`, `address`.
+- The existing `search=<text>` parameter was also extended to include `district`, `neighborhood`, `village`.
+- Enables customers in unmapped villages to find their local barbers by typing the village name.
 
-### Orders (NEW)
-- `POST /api/orders` — body `{product_id, shop_id, quantity, shipping_method, customer_name?, customer_phone, shipping_address?, shipping_city?, shipping_country?, notes?}`
-- `GET /api/orders/my`
-- `GET /api/orders/shop?status=pending|...`
-- `GET /api/orders/{id}`
-- `PUT /api/orders/{id}/status` — body `{status, tracking_note?}`
-- `PUT /api/orders/{id}/cancel`
-
-### Products (EXTENDED)
-- `POST /api/products` — now takes `shipping_options[]`, `local_delivery_fee`, enforces 10-per-shop limit.
-- `GET /api/products/shop/{shop_id}?category=`
-- `GET /api/products/featured`
-- `GET /api/products/my`
-- `PUT /api/products/{id}` / `DELETE /api/products/{id}`
-
-### Loyalty / Users
-- `GET /api/users/me/loyalty` — returns `{is_user, points, booking_points, order_points, bookings_completed, tier, next_tier, progress_to_next_pct, ...}`.
-
-### Barber Profile (EXTENDED)
-- `POST /api/barbers/profile` — now accepts `latitude`, `longitude`, `district`, `neighborhood`, `village`; syncs to barbershops collection for search.
+## Phase 3 — Social Commerce (2026-02) — Still live
+- Product model with `shipping_options` (pickup | local_delivery | courier) + `local_delivery_fee`; 10-product-per-shop cap.
+- Full Orders CRUD (user + shop scopes, status history, customer-cannot-cancel-after-shipped).
+- Order awards loyalty points to authenticated user (`int(total)` added to `users.loyalty_points`).
+- Frontend: `OrderDialog`, `ShopOrdersManagement`, `MyOrders` page, route `/my-orders`.
+- `LocationPicker` for hyper-local mapping: GPS capture + manual village/neighborhood/district input.
 
 ## Test Credentials
 - **Admin**: `admin` / `admin123`
-- **Salon**: `0935964158` / `salon123` (shop id `23a8effc-7e65-4869-9202-b1447430cf45`)
-- Users: register via `POST /api/auth/register` (requires `phone_number`, `password`, `full_name`, `gender`, `country`, `city`).
+- **Salon**: `0935964158` / `salon123` (id `23a8effc-7e65-4869-9202-b1447430cf45`, country `سوريا`, city `الحسكة`)
+- Users: register via `POST /api/auth/register` with `{phone_number, password, full_name, gender, country, city}`.
+
+## Testing Status
+- **Phase 3**: 18/18 backend pytest cases passed (iteration_4.json).
+- **Phase 4 + 5 + area search**: 25/25 backend pytest cases passed (iteration_5.json).
+- All issues raised by testing agent were fixed + verified live (unknown scope → 400, invalid leave date → 400, duplicate sponsored request → 409).
 
 ## Next Action Items (P1)
-1. **Phase 4 — Ranking & Sponsored Ads**: implement geo-tiered ranking (city → country → region) + subscription-driven sponsored badge on listings.
-2. **Phase 5 — Advanced Dashboard**: services manager (per-service pricing in local currency), leave calendar, revenue analytics.
-3. **Nearby search w/ village**: enhance `/api/search/barbers` and `/api/barbers/nearby` to match `village` text query as a fallback when GPS radius is empty.
-4. **Order state machine**: enforce linear transitions (currently any-to-any allowed); block customer cancel on `shipped` ✅ already done.
+1. **Frontend polish for Phase 4/5**: add "Sponsored" callout on HomePage hero if user country has active ads; on-dashboard chart labels.
+2. **Ranking score recompute**: currently `ranking_score` is only updated during booking status changes; consider a nightly job that also incorporates product sales & reviews velocity.
+3. **Services in local currency (Phase 5 completion)**: `ServicesManagement` component already exists — verify it reads salon currency and displays correctly. Needs screenshot review.
+4. **Loyalty MVP hardening** (optional): gate points redemption on bookings + surface `order_points` in booking checkout.
 
 ## Backlog (P2)
-- Phase 6 — Zain Cash / Syriatel Cash / MTN Cash / Asia Hawala receipt-upload flow.
-- Stripe crypto bundle.
-- Push notifications (VAPID already scaffolded).
-- Admin panel for sponsored ads approval.
+- Phase 6 — Regional payments (Zain Cash, Syriatel, MTN, Asia Hawala).
+- Push notifications (VAPID scaffolded).
+- Ranking tier auto-award: `Top Weekly` badge computed nightly (free competitive signal before paid ads).
 
 ## Known Issues
-- None blocking. 18/18 Phase 3 backend tests pass. Loyalty endpoint bug fixed and verified (order → +points surfaces correctly).
+- None blocking. All backend endpoints pass. Pre-existing Python shadow-imports in `server.py` (`date`, `time`, `status` reuse as variable names) are style warnings, not bugs.

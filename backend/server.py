@@ -483,7 +483,8 @@ async def enrich_barbershop_for_frontend(shop: Dict) -> Dict:
         "city": shop.get("city", ""),
         "district": shop.get("district"),
         "address": profile_ext.get("address", shop.get("address", "")) if profile_ext else shop.get("address", ""),
-        "neighborhood": profile_ext.get("neighborhood", "") if profile_ext else "",
+        "neighborhood": profile_ext.get("neighborhood", shop.get("neighborhood", "")) if profile_ext else shop.get("neighborhood", ""),
+        "village": profile_ext.get("village", shop.get("village", "")) if profile_ext else shop.get("village", ""),
         "latitude": shop.get("latitude"),
         "longitude": shop.get("longitude"),
         "rating": shop.get("ranking_score", 0.0),
@@ -644,7 +645,7 @@ def _compute_tier(points: int) -> Dict:
 @api_router.get("/users/me/loyalty")
 async def get_loyalty_status(entity: Dict = Depends(require_auth)):
     """Returns the authenticated user's loyalty points, tier, and next-tier progress."""
-    if entity.get("role") != "user":
+    if entity.get("entity_type") != "user":
         return {"points": 0, "tier": "none", "bookings_completed": 0, "is_user": False}
 
     user_id = entity["id"]
@@ -660,8 +661,11 @@ async def get_loyalty_status(entity: Dict = Depends(require_auth)):
         total_spent = doc.get("total", 0) or 0
         break
 
-    # Points = 10 per completed booking + min(total_spent, 50*completed)
-    base_points = 10 * completed + int(min(total_spent, 50 * max(completed, 1)))
+    # Points from bookings: 10 per booking + min(total_spent, 50*completed)
+    booking_points = 10 * completed + int(min(total_spent, 50 * max(completed, 1)))
+    # Points awarded by product orders (stored on the user doc)
+    order_points = int(entity.get("loyalty_points") or 0)
+    base_points = booking_points + order_points
     current_tier = _compute_tier(base_points)
 
     # Next tier progress
@@ -674,6 +678,8 @@ async def get_loyalty_status(entity: Dict = Depends(require_auth)):
     return {
         "is_user": True,
         "points": base_points,
+        "booking_points": booking_points,
+        "order_points": order_points,
         "bookings_completed": completed,
         "total_spent_usd": round(total_spent, 2),
         "tier": current_tier["name"],
@@ -1387,6 +1393,10 @@ async def cancel_order(order_id: str, entity: Dict = Depends(require_auth)):
 
     if order.get("status") in ("delivered", "cancelled"):
         raise HTTPException(status_code=400, detail="Cannot cancel this order")
+
+    # Customers cannot cancel after the order has been shipped - they should contact support / shop
+    if et == "user" and order.get("status") == "shipped":
+        raise HTTPException(status_code=400, detail="Order already shipped, contact the shop")
 
     now = datetime.now(timezone.utc).isoformat()
     history = order.get("status_history", [])

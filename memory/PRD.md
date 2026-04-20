@@ -1,109 +1,107 @@
 # BARBER HUB - Product Requirements Document
 
 ## Project Overview
-BARBER HUB is a global booking platform connecting barbers, salons, and customers. The platform features a gender-separated interface (Men/Women) with distinct themes.
+BARBER HUB is a **global marketplace super-app** connecting barbers, salons, and customers. The platform features a gender-separated interface (Men/Women) with a VIP Warm Luxury theme (chocolate brown + gold for men, rose + pearl for women). Arabic/English with RTL support. Country-agnostic (no hardcoded locality strings).
 
 ## Architecture
-- **Frontend**: React 19 + Tailwind CSS + Shadcn UI
-- **Backend**: FastAPI (Python)
-- **Database**: MongoDB
-- **Styling**: Dual themes (Dark/Gold for Men, Light/Rose Gold for Women)
+- **Frontend**: React 19 + Tailwind CSS + Shadcn UI + framer-motion + lucide-react
+- **Backend**: FastAPI (Python 3.11) with JWT auth + bcrypt
+- **Database**: MongoDB (uuid ids, no ObjectId in responses)
+- **Theme**: `--bh-gold`, `--bh-chocolate`, `--bh-pearl`, `theme-men` / `theme-women`
+- **Routing**: `/api/*` for backend, `REACT_APP_BACKEND_URL` for front->back calls
 
 ## User Personas
-1. **Customer (زبون)**: Books appointments, rates barbers
-2. **Barber (حلاق)**: Male barber with profile
-3. **Salon (صالون نسائي)**: Female salon with profile
-4. **Admin (مدير)**: Platform administrator
+1. **Customer (زبون)** — Books appointments, buys products, rates barbers, collects loyalty.
+2. **Barber (حلاق)** — Male salon; manages services, portfolio, products, orders.
+3. **Salon (صالون نسائي)** — Female salon variant of Barber.
+4. **Admin (مدير)** — Platform administrator (verification, subscriptions).
+
+## Roadmap — Super App Vision 2026
+1. **Phase 1 — UI VIP Warm Luxury** ✅ (Payment, Favorites, Booking, Home)
+2. **Phase 2 — Professional Portfolio** ✅ (Hero slider + 4-image gallery + Lightbox)
+3. **Phase 3 — Social Commerce (Mini-Store + Orders)** ✅ *(this release)*
+4. **Phase 4 — Ranking & Sponsored Ads** ⏳ P1
+5. **Phase 5 — Advanced Dashboard (services / leave / revenue)** ⏳ P1
+6. **Phase 6 — Regional Payments (Zain Cash, Syriatel, Asia Hawala)** ⏳ P2
+7. **Phase 7 — Loyalty & Engagement** (loyalty MVP already live) ⏳ P1
 
 ## Core Features Implemented
 
-### Backend API Endpoints
+### Phase 3 (2026-02) - Social Commerce
+- **Product model extended**: `shipping_options` (pickup | local_delivery | courier), `local_delivery_fee`, `stock_quantity`.
+- **Hard cap: 10 products/shop** — backend returns 400 `MAX_PRODUCTS_REACHED`, dashboard disables the Add button.
+- **Orders system**
+  - `POST /api/orders` — create order (guest or authenticated); validates shipping method belongs to product's allowed set; computes subtotal/shipping_fee/total.
+  - `GET /api/orders/my` — customer-scoped orders.
+  - `GET /api/orders/shop` — shop-scoped received orders (with optional `status` filter).
+  - `GET /api/orders/{id}` — owner or shop only.
+  - `PUT /api/orders/{id}/status` — shop updates (pending → confirmed → preparing → shipped → delivered → cancelled); appends `status_history`.
+  - `PUT /api/orders/{id}/cancel` — customer or shop; customers blocked after shipped.
+- **Frontend**
+  - `components/OrderDialog.jsx` — checkout modal with shipping method picker, qty stepper, totals.
+  - `components/ShopOrdersManagement.jsx` — barber dashboard orders card with filters (active / all / by-status) and one-click phone/WhatsApp.
+  - `pages/MyOrders.jsx` — customer orders timeline with cancel action.
+  - `pages/ProductShowcase.jsx` — now triggers OrderDialog instead of WhatsApp-only link.
+  - `pages/BarberDashboard.jsx` — shipping options checkboxes + local-delivery fee field; 10-product counter `(N/10)`.
+- **Order awards loyalty points**: `int(total)` is added to `users.loyalty_points` on authenticated orders; surfaced via `order_points` in `/api/users/me/loyalty`.
 
-#### Authentication
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/login` - Login (user/barber/admin)
-- `POST /api/auth/register-barbershop` - Barbershop registration with QR code
-- `GET /api/users/me` - Current user profile
+### Phase 3 (2026-02) - Hyper-Local Mapping
+- **Profile fields added**: `latitude`, `longitude`, `district`, `neighborhood`, `village` — persisted to both `barbershops` and `barber_profiles`.
+- **`components/LocationPicker.jsx`** — GPS "use my location" button, editable coordinates, district / neighborhood / village manual input + detailed address; hint explicitly covers unmapped villages.
+- **Enrichment**: `enrich_barbershop_for_frontend` now exposes `village` + `neighborhood` + `district` for lossless round-trip.
 
-#### Barber Profiles (Compatibility Layer)
-- `GET /api/barbers/{id}` - Enriched barber profile (services, gallery, reviews aggregated)
-- `GET /api/barbers/profile/me` - Current barber's full profile
-- `POST /api/barbers/profile` - Create/update barber extended profile
-- `PUT /api/barbers/profile` - Update barber profile
-- `GET /api/barbers/top/{gender}` - Top rated barbers by gender
-- `GET /api/barbers/nearby` - Nearby barbers (location-based)
-- `GET /api/barbers` - List all barbers
+### Phase 2 (2026-01) - Professional Portfolio
+- Hero Slider + Lightbox gallery; max 4 images/shop; `PortfolioManagement.jsx` integrated into dashboard.
 
-#### Barbershops (Original Endpoints)
-- `GET /api/barbershops` - List barbershops with filtering
-- `GET /api/barbershops/{id}` - Get barbershop details
-- `PUT /api/barbershops/me` - Update barbershop
-- `GET /api/barbershops/{id}/available-slots` - Available booking slots
+### Phase 1 (2026-01) - UI + Globalization
+- VIP Warm Luxury theme across Home/Payment/Favorites/MyBookings/Booking.
+- Auto-fill form data when user is authenticated; dynamic phone code based on geolocation (`lib/phoneFormat.js`).
+- All "Syria"/localized strings removed — app is country-agnostic.
+- 14 currencies via `CurrencyContext` + `GeoLocationContext`.
 
-#### Services
-- `POST /api/barbershops/me/services` - Add service
-- `GET /api/barbershops/{id}/services` - List services
-- `DELETE /api/barbershops/me/services/{id}` - Delete service
+### Loyalty Points (2026-02 bug-fix)
+- Fixed `entity.get('role')` → `entity.get('entity_type')` (was always returning `is_user:false`).
+- `/api/users/me/loyalty` now returns `booking_points`, `order_points`, `points = booking + order`, tier, progress.
 
-#### Gallery
-- `POST /api/barbershops/me/gallery` - Add gallery image (max 3)
-- `GET /api/barbershops/{id}/gallery` - Get gallery
-- `DELETE /api/barbershops/me/gallery/{id}` - Delete image
+## Backend API Reference (selected)
 
-#### Bookings
-- `POST /api/bookings` - Create booking (supports both old/new field names)
-- `GET /api/bookings/my` - My bookings
-- `GET /api/bookings/barber/{id}/schedule` - Barber's booked times
-- `GET /api/bookings/{id}` - Get booking details
-- `PUT /api/bookings/{id}/status` - Update status (confirm/complete/cancel)
-- `PUT /api/bookings/{id}/cancel` - Cancel booking
-- `DELETE /api/bookings/{id}` - Cancel booking (frontend compat)
-- `PUT /api/bookings/{id}/confirm` - Confirm booking
-- `PUT /api/bookings/{id}/complete` - Complete booking
+### Orders (NEW)
+- `POST /api/orders` — body `{product_id, shop_id, quantity, shipping_method, customer_name?, customer_phone, shipping_address?, shipping_city?, shipping_country?, notes?}`
+- `GET /api/orders/my`
+- `GET /api/orders/shop?status=pending|...`
+- `GET /api/orders/{id}`
+- `PUT /api/orders/{id}/status` — body `{status, tracking_note?}`
+- `PUT /api/orders/{id}/cancel`
 
-#### Reviews
-- `POST /api/reviews` - Create review (frontend compat)
-- `GET /api/reviews/barber/{id}` - Reviews by barber
-- `POST /api/bookings/{id}/review` - Review a booking
-- `GET /api/barbershops/{id}/reviews` - Shop reviews
+### Products (EXTENDED)
+- `POST /api/products` — now takes `shipping_options[]`, `local_delivery_fee`, enforces 10-per-shop limit.
+- `GET /api/products/shop/{shop_id}?category=`
+- `GET /api/products/featured`
+- `GET /api/products/my`
+- `PUT /api/products/{id}` / `DELETE /api/products/{id}`
 
-#### Admin
-- `GET /api/admin/stats` - Dashboard statistics
-- `GET /api/admin/users` - All users (customers + barbershops)
-- `GET /api/admin/subscriptions` - Pending subscriptions
-- `PUT /api/admin/subscriptions/{id}/approve` - Approve subscription
-- `GET /api/admin/reports` - Pending reports
-- `PUT /api/admin/reports/{id}/resolve` - Resolve report
-- `GET /api/admin/pending-barbershops` - Pending verification
-- `PUT /api/admin/barbershops/{id}/verify` - Verify barbershop
+### Loyalty / Users
+- `GET /api/users/me/loyalty` — returns `{is_user, points, booking_points, order_points, bookings_completed, tier, next_tier, progress_to_next_pct, ...}`.
 
-#### Other
-- `POST /api/subscriptions` - Create subscription request
-- `POST /api/reports` - Create report
-- `POST /api/referrals/generate` - Generate referral code
-- `GET /api/referrals/my` - My referral stats
-- `GET /api/notifications/my` - My notifications
-- `GET /api/locations/countries` - Countries list (18 countries)
-- `GET /api/locations/cities/{code}` - Cities by country
-
-### Frontend Pages
-- `GenderSelection.jsx` - 50/50 split entry page (Men/Women)
-- `AuthPage.jsx` - Login/Register with phone
-- `HomePage.jsx` - Main listing page with search & filter
-- `BarberProfile.jsx` - Detailed barber view with QR code
-- `BookingPage.jsx` - 3-step booking flow
-- `TopBarbers.jsx` - Leaderboard
-- `MapPage.jsx` - Map view (pending Google Maps API key)
-- `MyBookings.jsx` - Customer bookings with review capability
-- `BarberDashboard.jsx` - Barber management panel
-- `AdminDashboard.jsx` - Admin panel with subscription management
-- `PaymentPage.jsx` - Manual payment instructions (WhatsApp: +963 935 964 158)
-- `ProfileSetup.jsx` - Barber profile creation with services, gallery, hours
+### Barber Profile (EXTENDED)
+- `POST /api/barbers/profile` — now accepts `latitude`, `longitude`, `district`, `neighborhood`, `village`; syncs to barbershops collection for search.
 
 ## Test Credentials
-- Admin: phone=`admin`, password=`admin123`
+- **Admin**: `admin` / `admin123`
+- **Salon**: `0935964158` / `salon123` (shop id `23a8effc-7e65-4869-9202-b1447430cf45`)
+- Users: register via `POST /api/auth/register` (requires `phone_number`, `password`, `full_name`, `gender`, `country`, `city`).
 
-## Pending (Awaiting API Keys)
-- Google Maps API integration
-- WhatsApp Business API integration
-- Push notifications
+## Next Action Items (P1)
+1. **Phase 4 — Ranking & Sponsored Ads**: implement geo-tiered ranking (city → country → region) + subscription-driven sponsored badge on listings.
+2. **Phase 5 — Advanced Dashboard**: services manager (per-service pricing in local currency), leave calendar, revenue analytics.
+3. **Nearby search w/ village**: enhance `/api/search/barbers` and `/api/barbers/nearby` to match `village` text query as a fallback when GPS radius is empty.
+4. **Order state machine**: enforce linear transitions (currently any-to-any allowed); block customer cancel on `shipped` ✅ already done.
+
+## Backlog (P2)
+- Phase 6 — Zain Cash / Syriatel Cash / MTN Cash / Asia Hawala receipt-upload flow.
+- Stripe crypto bundle.
+- Push notifications (VAPID already scaffolded).
+- Admin panel for sponsored ads approval.
+
+## Known Issues
+- None blocking. 18/18 Phase 3 backend tests pass. Loyalty endpoint bug fixed and verified (order → +points surfaces correctly).

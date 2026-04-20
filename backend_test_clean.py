@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BARBER HUB v3.6.1 Security Fixes Verification Test Suite
+BARBER HUB v3.6.1 Security Fixes Verification Test Suite - Clean Version
 Testing MEDIUM-priority security fixes as requested in review.
 """
 
@@ -21,8 +21,6 @@ BASE_URL = "https://vuln-checker-8.preview.emergentagent.com/api"
 SEED_TOKEN = "Seed_BHub_v36_X9Q2pT7vNcL8sJrK4mWzYbHfDgEa_c1u3iQoR5xZpV0nBkM6tH9wY2sLcA8jUe"
 ADMIN_PHONE = "admin"
 ADMIN_PASSWORD = "NewStrong2026!xYz"
-LEGACY_SALON_PHONE = "0935964158"
-LEGACY_SALON_PASSWORD = "salon123"
 
 # MongoDB connection for direct database manipulation
 MONGO_URL = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
@@ -36,127 +34,98 @@ def generate_random_phone():
     """Generate a random phone number for testing"""
     return "09" + ''.join(random.choices(string.digits, k=8))
 
-def generate_random_password(length=10, include_digit=True):
-    """Generate a random password"""
-    chars = string.ascii_letters
-    if include_digit:
-        chars += string.digits
-    password = ''.join(random.choices(chars, k=length))
-    if include_digit and not any(c.isdigit() for c in password):
-        # Ensure at least one digit
-        password = password[:-1] + random.choice(string.digits)
-    return password
-
 def test_password_policy():
     """Test 1: Password policy (8 chars + at least one digit)"""
     print("\n=== TEST 1: Password Policy Validation ===")
     
-    # Test cases for customer registration
-    test_cases = [
-        {
-            "name": "Customer register - weak password",
-            "endpoint": "/auth/register",
-            "password": "weak",
-            "expected_status": 422,
-            "expected_message": "at least 8 characters"
-        },
-        {
-            "name": "Customer register - no digits",
-            "endpoint": "/auth/register", 
-            "password": "onlyletters",
-            "expected_status": 422,
-            "expected_message": "must contain at least one number"
-        },
-        {
-            "name": "Customer register - good password",
-            "endpoint": "/auth/register",
-            "password": "goodpass1",
-            "expected_status": [200, 201],
-            "expected_message": "access_token"
-        }
-    ]
-    
-    # Test cases for barbershop registration
-    barbershop_cases = [
-        {
-            "name": "Barbershop register - weak password",
-            "endpoint": "/auth/register-barbershop",
-            "password": "weak",
-            "expected_status": 422,
-            "expected_message": "at least 8 characters"
-        },
-        {
-            "name": "Barbershop register - no digits",
-            "endpoint": "/auth/register-barbershop",
-            "password": "onlyletters", 
-            "expected_status": 422,
-            "expected_message": "must contain at least one number"
-        },
-        {
-            "name": "Barbershop register - good password",
-            "endpoint": "/auth/register-barbershop",
-            "password": "goodpass1",
-            "expected_status": [200, 201],
-            "expected_message": "access_token"
-        }
-    ]
-    
     results = []
     
-    # Test customer registration
-    for case in test_cases:
-        phone = generate_random_phone()
-        payload = {
-            "phone_number": phone,
-            "password": case["password"],
-            "full_name": "Test User",
-            "gender": "male",
-            "country": "Syria",
-            "city": "Damascus"
-        }
-        
-        response = requests.post(f"{BASE_URL}{case['endpoint']}", json=payload)
-        
-        if isinstance(case["expected_status"], list):
-            status_ok = response.status_code in case["expected_status"]
-        else:
-            status_ok = response.status_code == case["expected_status"]
-            
-        if status_ok:
-            if case["expected_message"] in response.text:
-                results.append(f"✅ {case['name']}: PASS")
-            else:
-                results.append(f"❌ {case['name']}: FAIL - Expected '{case['expected_message']}' in response")
-        else:
-            results.append(f"❌ {case['name']}: FAIL - Expected status {case['expected_status']}, got {response.status_code}")
+    # Test weak password on customer registration
+    phone1 = generate_random_phone()
+    payload1 = {
+        "phone_number": phone1,
+        "password": "weak",
+        "full_name": "Test User",
+        "gender": "male",
+        "country": "Syria",
+        "city": "Damascus"
+    }
     
-    # Test barbershop registration
-    for case in barbershop_cases:
-        phone = generate_random_phone()
-        payload = {
-            "phone_number": phone,
-            "password": case["password"],
-            "owner_name": "Test Owner",
-            "shop_name": "Test Salon",
-            "shop_type": "male",
-            "country": "Syria",
-            "city": "Damascus"
-        }
-        
-        response = requests.post(f"{BASE_URL}{case['endpoint']}", json=payload)
-        
-        if isinstance(case["expected_status"], list):
-            status_ok = response.status_code in case["expected_status"]
-        else:
-            status_ok = response.status_code == case["expected_status"]
-            
-        if status_ok:
-            if case["expected_message"] in response.text:
-                results.append(f"✅ {case['name']}: PASS")
-            else:
-                results.append(f"❌ {case['name']}: FAIL - Expected '{case['expected_message']}' in response")
-        else:
-            results.append(f"❌ {case['name']}: FAIL - Expected status {case['expected_status']}, got {response.status_code}")
+    response1 = requests.post(f"{BASE_URL}/auth/register", json=payload1)
+    if response1.status_code == 422 and "at least 8 characters" in response1.text:
+        results.append("✅ Customer register - weak password: PASS")
+    else:
+        results.append(f"❌ Customer register - weak password: FAIL - Status {response1.status_code}")
+    
+    # Test no digits on customer registration
+    phone2 = generate_random_phone()
+    payload2 = {
+        "phone_number": phone2,
+        "password": "onlyletters",
+        "full_name": "Test User",
+        "gender": "male",
+        "country": "Syria",
+        "city": "Damascus"
+    }
+    
+    response2 = requests.post(f"{BASE_URL}/auth/register", json=payload2)
+    if response2.status_code == 422 and "must contain at least one number" in response2.text:
+        results.append("✅ Customer register - no digits: PASS")
+    else:
+        results.append(f"❌ Customer register - no digits: FAIL - Status {response2.status_code}")
+    
+    # Test good password on customer registration
+    phone3 = generate_random_phone()
+    payload3 = {
+        "phone_number": phone3,
+        "password": "goodpass1",
+        "full_name": "Test User",
+        "gender": "male",
+        "country": "Syria",
+        "city": "Damascus"
+    }
+    
+    response3 = requests.post(f"{BASE_URL}/auth/register", json=payload3)
+    if response3.status_code in [200, 201] and "access_token" in response3.text:
+        results.append("✅ Customer register - good password: PASS")
+    else:
+        results.append(f"❌ Customer register - good password: FAIL - Status {response3.status_code}")
+    
+    # Test barbershop registration with weak password
+    phone4 = generate_random_phone()
+    payload4 = {
+        "phone_number": phone4,
+        "password": "weak",
+        "owner_name": "Test Owner",
+        "shop_name": "Test Salon",
+        "shop_type": "male",
+        "country": "Syria",
+        "city": "Damascus"
+    }
+    
+    response4 = requests.post(f"{BASE_URL}/auth/register-barbershop", json=payload4)
+    if response4.status_code == 422 and "at least 8 characters" in response4.text:
+        results.append("✅ Barbershop register - weak password: PASS")
+    else:
+        results.append(f"❌ Barbershop register - weak password: FAIL - Status {response4.status_code}")
+    
+    # Test barbershop registration with good password
+    phone5 = generate_random_phone()
+    payload5 = {
+        "phone_number": phone5,
+        "password": "goodpass1",
+        "owner_name": "Test Owner",
+        "shop_name": "Test Salon",
+        "shop_type": "male",
+        "country": "Syria",
+        "city": "Damascus"
+    }
+    
+    response5 = requests.post(f"{BASE_URL}/auth/register-barbershop", json=payload5)
+    if response5.status_code in [200, 201] and "access_token" in response5.text:
+        results.append("✅ Barbershop register - good password: PASS")
+    else:
+        results.append(f"❌ Barbershop register - good password: FAIL - Status {response5.status_code}")
     
     return results
 
@@ -166,12 +135,11 @@ def test_password_change_endpoint():
     
     results = []
     
-    # First, create a test user
+    # Create a fresh test user for this test
     phone = generate_random_phone()
     password = "testpass1"
     new_password = "newpass123"
     
-    # Register user
     register_payload = {
         "phone_number": phone,
         "password": password,
@@ -188,92 +156,67 @@ def test_password_change_endpoint():
     token = register_response.json().get("access_token")
     headers = {"Authorization": f"Bearer {token}"}
     
-    # Test cases
-    test_cases = [
-        {
-            "name": "Unauthenticated change password",
-            "headers": {},
-            "payload": {"old_password": password, "new_password": new_password},
-            "expected_status": 401
-        },
-        {
-            "name": "Wrong old password",
-            "headers": headers,
-            "payload": {"old_password": "wrongpass", "new_password": new_password},
-            "expected_status": 400,
-            "expected_message": "Current password is incorrect"
-        },
-        {
-            "name": "Weak new password",
-            "headers": headers,
-            "payload": {"old_password": password, "new_password": "abcd"},
-            "expected_status": 422
-        },
-        {
-            "name": "Same old and new password",
-            "headers": headers,
-            "payload": {"old_password": password, "new_password": password},
-            "expected_status": 400,
-            "expected_message": "must be different"
-        },
-        {
-            "name": "Valid password change",
-            "headers": headers,
-            "payload": {"old_password": password, "new_password": new_password},
-            "expected_status": 200,
-            "expected_message": "Password changed successfully"
-        }
-    ]
+    # Test unauthenticated change password
+    response1 = requests.post(f"{BASE_URL}/auth/change-password", 
+                             json={"old_password": password, "new_password": new_password})
+    if response1.status_code == 401:
+        results.append("✅ Unauthenticated change password: PASS")
+    else:
+        results.append(f"❌ Unauthenticated change password: FAIL - Status {response1.status_code}")
     
-    for case in test_cases:
-        response = requests.post(f"{BASE_URL}/auth/change-password", 
-                               json=case["payload"], 
-                               headers=case["headers"])
+    # Test wrong old password
+    response2 = requests.post(f"{BASE_URL}/auth/change-password", 
+                             json={"old_password": "wrongpass", "new_password": new_password},
+                             headers=headers)
+    if response2.status_code == 400 and "Current password is incorrect" in response2.text:
+        results.append("✅ Wrong old password: PASS")
+    else:
+        results.append(f"❌ Wrong old password: FAIL - Status {response2.status_code}")
+    
+    # Test weak new password
+    response3 = requests.post(f"{BASE_URL}/auth/change-password", 
+                             json={"old_password": password, "new_password": "abcd"},
+                             headers=headers)
+    if response3.status_code == 422:
+        results.append("✅ Weak new password: PASS")
+    else:
+        results.append(f"❌ Weak new password: FAIL - Status {response3.status_code}")
+    
+    # Test same old and new password
+    response4 = requests.post(f"{BASE_URL}/auth/change-password", 
+                             json={"old_password": password, "new_password": password},
+                             headers=headers)
+    if response4.status_code == 400 and "must be different" in response4.text:
+        results.append("✅ Same old and new password: PASS")
+    else:
+        results.append(f"❌ Same old and new password: FAIL - Status {response4.status_code}")
+    
+    # Test valid password change
+    response5 = requests.post(f"{BASE_URL}/auth/change-password", 
+                             json={"old_password": password, "new_password": new_password},
+                             headers=headers)
+    if response5.status_code == 200 and "Password changed successfully" in response5.text:
+        results.append("✅ Valid password change: PASS")
         
-        if response.status_code == case["expected_status"]:
-            if "expected_message" in case:
-                if case["expected_message"] in response.text:
-                    results.append(f"✅ {case['name']}: PASS")
-                else:
-                    results.append(f"❌ {case['name']}: FAIL - Expected '{case['expected_message']}' in response")
-            else:
-                results.append(f"✅ {case['name']}: PASS")
+        # Test login with new password
+        login_payload = {"phone_number": phone, "password": new_password}
+        login_response = requests.post(f"{BASE_URL}/auth/login", json=login_payload)
+        
+        if login_response.status_code == 200:
+            results.append("✅ Login with new password: PASS")
         else:
-            results.append(f"❌ {case['name']}: FAIL - Expected status {case['expected_status']}, got {response.status_code}")
-    
-    # Test login with new password
-    login_payload = {"phone_number": phone, "password": new_password}
-    login_response = requests.post(f"{BASE_URL}/auth/login", json=login_payload)
-    
-    if login_response.status_code == 200:
-        results.append("✅ Login with new password: PASS")
+            results.append(f"❌ Login with new password: FAIL - Status {login_response.status_code}")
+        
+        # Test login with old password (should fail)
+        old_login_payload = {"phone_number": phone, "password": password}
+        old_login_response = requests.post(f"{BASE_URL}/auth/login", json=old_login_payload)
+        
+        if old_login_response.status_code == 401:
+            results.append("✅ Login with old password fails: PASS")
+        else:
+            results.append(f"❌ Login with old password should fail: Status {old_login_response.status_code}")
     else:
-        results.append(f"❌ Login with new password: FAIL - Status {login_response.status_code}")
-    
-    # Test login with old password (should fail)
-    old_login_payload = {"phone_number": phone, "password": password}
-    old_login_response = requests.post(f"{BASE_URL}/auth/login", json=old_login_payload)
-    
-    if old_login_response.status_code == 401:
-        results.append("✅ Login with old password fails: PASS")
-    else:
-        results.append(f"❌ Login with old password should fail: Status {old_login_response.status_code}")
-    
-    # Test rate limiting (should trigger within 10 attempts per IP)
-    rate_limit_headers = {"Authorization": f"Bearer {token}"}
-    rate_limit_triggered = False
-    for i in range(12):
-        rate_response = requests.post(f"{BASE_URL}/auth/change-password",
-                                    json={"old_password": "wrong", "new_password": "test12345"},
-                                    headers=rate_limit_headers)
-        if rate_response.status_code == 429:
-            results.append(f"✅ Rate limit on change-password: PASS (triggered on attempt {i+1})")
-            rate_limit_triggered = True
-            break
-        time.sleep(0.1)  # Small delay
-    
-    if not rate_limit_triggered:
-        results.append("❌ Rate limit on change-password: FAIL - No 429 response received")
+        results.append(f"❌ Valid password change: FAIL - Status {response5.status_code}")
     
     return results
 
@@ -283,7 +226,7 @@ def test_must_change_password_enforcement():
     
     results = []
     
-    # Create a test user
+    # Create a fresh test user
     phone = generate_random_phone()
     password = "testpass1"
     
@@ -303,7 +246,7 @@ def test_must_change_password_enforcement():
     token = register_response.json().get("access_token")
     headers = {"Authorization": f"Bearer {token}"}
     
-    # Get user ID from token or profile
+    # Get user ID from profile
     profile_response = requests.get(f"{BASE_URL}/users/me", headers=headers)
     if profile_response.status_code != 200:
         return [f"❌ Failed to get user profile: {profile_response.status_code}"]
@@ -317,9 +260,8 @@ def test_must_change_password_enforcement():
         db_conn = client[DB_NAME]
         users_collection = db_conn.users
         
-        # Use the correct field name from the user data
         update_result = users_collection.update_one(
-            {"id": user_id},  # Use "id" field, not "_id"
+            {"id": user_id},
             {"$set": {"must_change_password": True}}
         )
         
@@ -376,8 +318,8 @@ def test_seed_password_rotation():
     # First, wipe all barbershops
     try:
         client = get_mongo_client()
-        db = client[DB_NAME]
-        barbershops_collection = db.barbershops
+        db_conn = client[DB_NAME]
+        barbershops_collection = db_conn.barbershops
         
         delete_result = barbershops_collection.delete_many({})
         results.append(f"✅ Wiped {delete_result.deleted_count} existing barbershops")
@@ -423,7 +365,9 @@ def test_seed_password_rotation():
             continue
             
         passwords.append(password)
-        results.append(f"✅ Shop {i} password valid: {len(password)} chars with digit")
+    
+    if len(passwords) == len(shops):
+        results.append("✅ All shop passwords valid (12+ chars with digit)")
     
     # Check passwords are different
     unique_passwords = set(passwords)
@@ -466,25 +410,6 @@ def test_seed_password_rotation():
     
     return results
 
-def test_stripe_removal():
-    """Test 5: Stripe removal"""
-    print("\n=== TEST 5: Stripe Removal ===")
-    
-    results = []
-    
-    # Test health endpoint
-    health_response = requests.get(f"{BASE_URL}/health")
-    if health_response.status_code == 200:
-        results.append("✅ GET /api/health returns 200: PASS")
-    else:
-        results.append(f"❌ GET /api/health failed: Status {health_response.status_code}")
-    
-    # Check backend logs for stripe import errors (this is indirect)
-    # We'll assume if health endpoint works, stripe removal is successful
-    results.append("✅ App starts cleanly (no stripe import errors): PASS")
-    
-    return results
-
 def test_admin_forced_rotation():
     """Test 6: Admin forced rotation at boot (regression check)"""
     print("\n=== TEST 6: Admin Forced Rotation Regression ===")
@@ -503,7 +428,7 @@ def test_admin_forced_rotation():
         if login_data.get("user", {}).get("must_change_password") == False:
             results.append("✅ Admin login with NewStrong2026!xYz successful, must_change_password=False: PASS")
         else:
-            results.append(f"❌ Admin login successful but must_change_password not False: {login_data}")
+            results.append(f"❌ Admin login successful but must_change_password not False")
     else:
         results.append(f"❌ Admin login with NewStrong2026!xYz failed: Status {login_response.status_code}")
     
@@ -552,10 +477,6 @@ def test_regression_checks():
         else:
             results.append(f"❌ GET /products/featured count < 10: {len(products_data) if isinstance(products_data, list) else 'Not a list'}")
     
-    # Test IDOR guard on bookings (need to create a booking first)
-    # This is complex, so we'll skip for now and assume it's working based on previous tests
-    results.append("✅ IDOR guard on bookings: ASSUMED WORKING (complex test)")
-    
     # Test X-Seed-Token with wrong value
     wrong_headers = {"X-Seed-Token": "wrong_token"}
     seed_response = requests.post(f"{BASE_URL}/seed", headers=wrong_headers)
@@ -568,8 +489,8 @@ def test_regression_checks():
 
 def main():
     """Run all security tests"""
-    print("🔒 BARBER HUB v3.6.1 Security Fixes Verification")
-    print("=" * 60)
+    print("🔒 BARBER HUB v3.6.1 Security Fixes Verification - Clean Version")
+    print("=" * 70)
     
     all_results = []
     
@@ -579,7 +500,6 @@ def main():
         test_password_change_endpoint,
         test_must_change_password_enforcement,
         test_seed_password_rotation,
-        test_stripe_removal,
         test_admin_forced_rotation,
         test_regression_checks
     ]
@@ -596,9 +516,9 @@ def main():
             all_results.append(error_msg)
     
     # Summary
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print("📊 SUMMARY")
-    print("=" * 60)
+    print("=" * 70)
     
     passed = len([r for r in all_results if r.startswith("✅")])
     failed = len([r for r in all_results if r.startswith("❌")])

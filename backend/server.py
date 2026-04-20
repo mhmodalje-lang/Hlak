@@ -76,8 +76,19 @@ if not JWT_SECRET or JWT_SECRET == 'barber-hub-secret-key-2026':
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 24 * 7))
 
-# Password policy
-MIN_PASSWORD_LENGTH = 6  # minimal for UX; frontend enforces stronger UX
+# Password policy (strengthened in v3.6.1)
+MIN_PASSWORD_LENGTH = 8  # production-grade minimum
+
+
+def validate_password_strength(password: str) -> str:
+    """Enforce: length >= 8 AND at least one digit. Raises ValueError on failure.
+    Returns the password unchanged on success.
+    """
+    if not password or len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+    if not any(c.isdigit() for c in password):
+        raise ValueError("Password must contain at least one number")
+    return password
 
 # Create the main app
 app = FastAPI(title="BARBER HUB API", version="3.6.1")
@@ -115,9 +126,7 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def _validate_password(cls, v: str) -> str:
-        if not v or len(v) < MIN_PASSWORD_LENGTH:
-            raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
-        return v
+        return validate_password_strength(v)
 
     @field_validator("phone_number")
     @classmethod
@@ -175,9 +184,7 @@ class BarbershopCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def _validate_password(cls, v: str) -> str:
-        if not v or len(v) < MIN_PASSWORD_LENGTH:
-            raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
-        return v
+        return validate_password_strength(v)
 
 class BarbershopUpdate(BaseModel):
     owner_name: Optional[str] = None
@@ -497,10 +504,30 @@ async def get_current_entity(credentials: HTTPAuthorizationCredentials = Depends
         entity['entity_type'] = entity_type
     return entity
 
-async def require_auth(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict:
+async def require_auth(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> Dict:
     entity = await get_current_entity(credentials)
     if not entity:
         raise HTTPException(status_code=401, detail="Authentication required")
+
+    # Enforce must_change_password: if set, block access to all endpoints except
+    # the change-password, logout, and self-profile routes. This prevents privileged
+    # accounts (especially admins) from using their account with the default password.
+    if entity.get("must_change_password"):
+        path = (request.url.path or "").rstrip("/")
+        allowed_paths = (
+            "/api/auth/change-password",
+            "/api/auth/logout",
+            "/api/users/me",
+        )
+        if path not in allowed_paths:
+            raise HTTPException(
+                status_code=403,
+                detail="You must change your password before continuing.",
+            )
+
     return entity
 
 async def require_barbershop(entity: Dict = Depends(require_auth)) -> Dict:
@@ -1027,6 +1054,67 @@ async def login(credentials: UserLogin, request: Request):
 @api_router.get("/users/me")
 async def get_current_user(entity: Dict = Depends(require_auth)):
     return entity
+
+
+# --- Password change (works for user / barbershop / admin) ---
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, v: str) -> str:
+        return validate_password_strength(v)
+
+
+@api_router.post("/auth/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Change the password for the authenticated user / barbershop / admin.
+    Can be called even when must_change_password=True (bootstrap rotation flow).
+    Requires the *current* password to prevent session-hijacking abuse.
+    """
+    # Resolve entity without going through require_auth (so must_change_password
+    # forced-rotation accounts can still rotate their password).
+    base_entity = await get_current_entity(credentials)
+    if not base_entity:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    # Per-IP rate limit to discourage brute-forcing old password
+    ip = _client_ip(request)
+    if not _rate_limit_check(f"chgpass:ip:{ip}", 10):
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+
+    etype = base_entity.get("entity_type")
+    entity_id = base_entity.get("id")
+    coll = {"user": db.users, "barbershop": db.barbershops, "admin": db.admins}.get(etype)
+    if coll is None:
+        raise HTTPException(status_code=400, detail="Invalid account type")
+
+    # Fetch the full doc (with hashed password) to verify old_password
+    doc = await coll.find_one({"id": entity_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not verify_password(payload.old_password, doc.get("password", "")):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if payload.old_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="New password must be different from the old one")
+
+    new_hash = hash_password(payload.new_password)
+    await coll.update_one(
+        {"id": entity_id},
+        {"$set": {
+            "password": new_hash,
+            "must_change_password": False,
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    return {"message": "Password changed successfully"}
 
 # ============== LOYALTY POINTS SYSTEM (2026) ==============
 # Formula: 10 points per completed booking + 1 point per currency unit spent (capped at 50 per booking)
@@ -3636,7 +3724,11 @@ async def seed_database(request: Request):
         target_rating = shop_data.pop("target_rating")
         target_reviews = shop_data.pop("target_reviews")
         services_data = shop_data.pop("services")
-        raw_password = shop_data.pop("password")
+        # SECURITY v3.6.1: Ignore the hardcoded "salon123" from seed data and generate a
+        # strong random password per shop. The plaintext password is returned ONCE in
+        # the response so the operator can hand it to the shop owner, then discarded.
+        shop_data.pop("password", None)
+        raw_password = f"{secrets.token_urlsafe(10)}!{secrets.choice('0123456789')}"  # 15+ chars with a digit
         
         qr_code_data = f"{APP_URL}/shop/{shop_id}"
         qr_code = generate_qr_code(qr_code_data)
@@ -3966,9 +4058,14 @@ async def seed_database(request: Request):
         "shops": created_shops,
         "fake_bookings": 2,
         "test_credentials": {
-            "admin": {"phone": "admin", "password": "admin123"},
-            "salon_owner_1": {"phone": "0935964158", "password": "salon123", "name": "صالون الأناقة الملكية"},
-            "all_salon_password": "salon123"
+            "admin": {
+                "phone": "admin",
+                "note": "Check backend startup logs for the auto-generated admin password (ALLOW_DEFAULT_ADMIN flow)."
+            },
+            "salon_passwords_note": (
+                "Each salon received a unique strong random password shown inline under shops[i].password. "
+                "Please record them now — they are NOT stored anywhere else and cannot be retrieved again."
+            ),
         }
     }
 
@@ -4869,8 +4966,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # ============== CORS ==============
-# In production, set CORS_ORIGINS to a comma-separated list of trusted origins.
-# Example: CORS_ORIGINS="https://barberhub.com,https://www.barberhub.com"
+# 🚨 PRODUCTION DEPLOYMENT NOTE (v3.6.1):
+#   Before going live on a public domain (e.g. barberhub.com), replace CORS_ORIGINS="*"
+#   in /app/backend/.env with a comma-separated list of TRUSTED origins only. Example:
+#       CORS_ORIGINS="https://barberhub.com,https://www.barberhub.com,https://app.barberhub.com"
+#   Wildcard is acceptable for the Emergent Preview environment because the backend is
+#   stateless (JWT in Authorization header, no cookies) — but it disables
+#   allow_credentials by spec and should NOT ship to production as-is.
 _cors_raw = os.environ.get('CORS_ORIGINS', '*').strip()
 if _cors_raw == '*' or not _cors_raw:
     cors_origins = ["*"]
@@ -4945,10 +5047,16 @@ async def startup_db():
         pass
 
     # ---------- Admin user bootstrap ----------
-    # SECURITY: The old code auto-created admin/admin123 every startup, which is unsafe.
-    # Now we create the admin ONLY if ADMIN_BOOTSTRAP_PASSWORD env var is set and no admin exists yet.
-    # Operators must rotate the password after first login.
-    admin_exists = await db.admins.find_one({}, {"_id": 0, "id": 1})
+    # SECURITY v3.6.1: Never auto-create an admin with a well-known password.
+    # Bootstrap order:
+    #   1. If ADMIN_BOOTSTRAP_PASSWORD env var is set → use it.
+    #   2. Else if ALLOW_DEFAULT_ADMIN=true (dev/preview) → generate a RANDOM strong password
+    #      and log it ONCE to the console so the operator can copy it. NEVER "admin123".
+    #   3. Else → skip; operator must provision admin via a migration script.
+    # Existing admins are left untouched, BUT if an existing admin still has the
+    # legacy "admin123" password, force must_change_password=True so the new guard
+    # in require_auth() blocks all privileged calls until it is rotated.
+    admin_exists = await db.admins.find_one({}, {"_id": 0})
     if not admin_exists:
         bootstrap_pw = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD")
         bootstrap_phone = os.environ.get("ADMIN_BOOTSTRAP_PHONE", "admin")
@@ -4964,23 +5072,59 @@ async def startup_db():
             }
             await db.admins.insert_one(admin_doc)
             logger.info(f"Admin user bootstrapped with phone '{bootstrap_phone}'. User must change password on first login.")
-        else:
-            # Dev convenience: if no admin at all and no env, create default but log a loud warning
-            if os.environ.get("ALLOW_DEFAULT_ADMIN", "true").lower() in ("1", "true", "yes"):
-                admin_doc = {
-                    "id": str(uuid.uuid4()),
-                    "phone_number": "admin",
-                    "password": hash_password("admin123"),
-                    "full_name": "مدير النظام",
-                    "role": "admin",
+        elif os.environ.get("ALLOW_DEFAULT_ADMIN", "true").lower() in ("1", "true", "yes"):
+            # Generate a strong random password (NO hardcoded default)
+            generated_pw = f"Admin-{secrets.token_urlsafe(14)}-2026"
+            admin_doc = {
+                "id": str(uuid.uuid4()),
+                "phone_number": "admin",
+                "password": hash_password(generated_pw),
+                "full_name": "مدير النظام",
+                "role": "admin",
+                "must_change_password": True,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.admins.insert_one(admin_doc)
+            logger.warning(
+                "⚠️  BOOTSTRAP ADMIN CREATED. Phone='admin' | Password=%s | "
+                "This password is shown ONCE in the logs. Record it now, log in, "
+                "and IMMEDIATELY change it via POST /api/auth/change-password.",
+                generated_pw,
+            )
+    else:
+        # Legacy protection: if admin still has the old "admin123" password, ROTATE it to a
+        # strong random value (satisfies user approval: option a + b). The new password is
+        # logged ONCE; must_change_password stays True so even the rotated password has to
+        # be changed on first login.
+        if verify_password("admin123", admin_exists.get("password", "")):
+            rotated_pw = f"Admin-{secrets.token_urlsafe(14)}-2026"
+            await db.admins.update_one(
+                {"id": admin_exists["id"]},
+                {"$set": {
+                    "password": hash_password(rotated_pw),
                     "must_change_password": True,
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }
-                await db.admins.insert_one(admin_doc)
-                logger.warning(
-                    "⚠️  DEFAULT ADMIN CREATED (admin/admin123). Set ADMIN_BOOTSTRAP_PASSWORD env var "
-                    "and ALLOW_DEFAULT_ADMIN=false in production!"
+                    "password_changed_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }}
+            )
+            # Also persist to a protected memory file so the operator can retrieve it.
+            try:
+                from pathlib import Path as _P
+                mem = _P("/app/memory/admin_bootstrap_password.txt")
+                mem.write_text(
+                    "Auto-rotated admin password (v3.6.1).\n"
+                    f"Phone: {admin_exists.get('phone_number', 'admin')}\n"
+                    f"Password: {rotated_pw}\n"
+                    "Status: must_change_password=True — rotate via POST /api/auth/change-password before anything else.\n"
                 )
+            except Exception:
+                pass
+            logger.warning(
+                "⚠️  Legacy admin password 'admin123' detected and ROTATED. "
+                "New password written to /app/memory/admin_bootstrap_password.txt. "
+                "must_change_password flag is ON — admin must rotate again via "
+                "POST /api/auth/change-password before using any protected endpoint."
+            )
 
     # ---------- Ranking recompute: initial + nightly schedule ----------
     import asyncio

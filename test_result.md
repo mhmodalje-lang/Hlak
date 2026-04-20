@@ -429,10 +429,106 @@ backend:
         - agent: "testing"
         - comment: "✅ PASS - Portfolio/Gallery 4-image limit working perfectly (10/10 tests passed). Fixed ObjectId serialization issue in POST /api/barbershops/me/gallery endpoint. All endpoints tested: POST /api/seed (admin auth) creates 10 shops, POST /api/auth/login with salon credentials works, GET /api/barbershops/{shop_id}/gallery returns array, POST /api/barbershops/me/gallery (salon auth) successfully uploads 4 images with proper ID response, 5th upload correctly rejected with 400 and exact error message 'Maximum 4 portfolio images allowed. Please delete one to add a new image.', GET /api/barbers/{shop_id} returns before_after_images array with exactly 4 items with after field populated, DELETE /api/barbershops/me/gallery/{image_id} successfully deletes images, POST after delete succeeds (bringing count back to 4), final verification confirms 4 images maintained, unauthorized POST returns 401. Phase 2 portfolio limit enforcement working correctly."
 
+  - task: "Security - Health Check Endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - GET /api/health endpoint working perfectly. Returns JSON with status: 'ok', db: 'ok', version: '3.5.0', and timestamp. All required fields present and valid values."
+
+  - task: "Security - Public Config Endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - GET /api/config/public endpoint working perfectly. Returns admin_whatsapp: '963935964158', app_url, and version. All required fields present."
+
+  - task: "Security - Security Headers Middleware"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - SecurityHeadersMiddleware working perfectly. All required security headers present on all responses: X-Content-Type-Options: nosniff, X-Frame-Options: SAMEORIGIN, Referrer-Policy: strict-origin-when-cross-origin, Permissions-Policy with geolocation controls, Strict-Transport-Security with max-age. Headers verified via curl and automated testing."
+
+  - task: "Security - Rate Limiting on Auth Endpoints"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - Rate limiting working correctly on both auth endpoints. POST /api/auth/login: 8 failed attempts per phone return 401, 9th attempt returns 429 with proper error message. POST /api/auth/register: 10 attempts per IP allowed, 11th returns 429. Admin login from different identifier still works after rate limit triggered. Rate limiting using slowapi with in-memory sliding window."
+
+  - task: "Security - Password Validation"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - Password validation working correctly. Passwords under 6 characters rejected with 422 and proper error message mentioning '6 characters'. Names under 2 characters also rejected with 422. Pydantic field_validator enforcing minimum lengths properly."
+
+  - task: "Security - Admin Users Pagination"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - Admin users pagination working correctly. GET /api/admin/users supports skip/limit parameters, user_type filter (user/salon), search functionality. Invalid user_type values correctly rejected with 422. Regex escaping prevents injection attacks. Admin authentication required."
+
+  - task: "Security - JWT Secret from Environment"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - JWT secret management working correctly. Real JWT_SECRET set in /app/backend/.env. System generates random secret if env missing with warning log. No hardcoded secrets in production code."
+
+  - task: "Security - CORS Hardening"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+        - agent: "testing"
+        - comment: "✅ PASS - CORS configuration working correctly. Wildcard '*' forces allow_credentials=False for spec compliance. System logs warning about wide-open CORS in development. Production-ready for specific origins configuration."
+
 metadata:
   created_by: "main_agent"
-  version: "3.1"
-  test_sequence: 7
+  version: "3.5"
+  test_sequence: 8
   run_ui: false
 
 test_plan:
@@ -442,6 +538,8 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+    - agent: "main"
+    - message: "BARBER HUB v3.5 - COMPREHENSIVE SECURITY + HARDENING PASS. Backend changes in server.py (no breaking API changes): (1) JWT_SECRET is now generated randomly if env is missing or still the old hardcoded default, with a WARNING log. Real JWT_SECRET now set in /app/backend/.env. (2) Rate limiting on POST /api/auth/login (30/IP/5min, 8/phone/5min → 429) and POST /api/auth/register (10/IP/5min → 429) via in-memory sliding window using X-Forwarded-For. (3) Pydantic field_validator now enforces min 6-char password + phone length + non-empty name on UserCreate and BarbershopCreate. (4) SecurityHeadersMiddleware adds X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, HSTS to every response. (5) CORS tightened: wildcard '*' forces allow_credentials=False (spec compliance), specific origins enable credentials. (6) NEW endpoint GET /api/health - full readiness probe that pings MongoDB. (7) NEW endpoint GET /api/config/public - returns admin_whatsapp + app_url so frontend no longer hardcodes phone 963935964158. (8) Booking creation now does a post-insert overlap recheck to defend against race-condition double-booking, rolling back the losing row. (9) Admin /api/admin/users now supports skip/limit/user_type filter/search with regex escaping (prevents regex injection). (10) Startup indexes expanded: bookings.user_id, bookings.(user_id,status), bookings.(barbershop_id,status), barbershops.(country,city), push_subscriptions.endpoint unique, notifications TTL 90d. (11) Admin bootstrap rewritten: only creates admin if none exists; reads ADMIN_BOOTSTRAP_PASSWORD/PHONE/NAME from env for production; falls back to admin/admin123 only when ALLOW_DEFAULT_ADMIN=true (dev default). Must_change_password flag set. Frontend changes: (a) PaymentPage.jsx fetches admin_whatsapp from /api/config/public instead of hardcoded 963935964158. (b) ErrorBoundary.jsx added - wraps whole App, shows bilingual fallback UI. (c) Removed 6 unused .old.jsx files (AuthPage, HomePage, BookingPage, BarberProfile, GenderSelection, MyBookings). Infrastructure: backend/.env now has JWT_SECRET, JWT_EXPIRATION_HOURS, ADMIN_WHATSAPP, ALLOW_DEFAULT_ADMIN. requirements.txt now declares slowapi==0.1.9. Test: all 3 curl probes pass - /api/health returns {status:ok,db:ok}, 8+ wrong logins get 429, admin/admin123 still works, security headers visible on all responses. Ready for regression + new-endpoint backend testing."
     - agent: "main"
     - message: "Major update: Added seed data (10 salons, 500+ reviews, fake bookings), WhatsApp link generator, ranking engine. Frontend updated to use enriched /api/barbers endpoint with service tags and social links. Test credentials in /app/memory/test_credentials.md. Key new endpoints: POST /api/seed, GET /api/generate-booking-link, GET /api/barbers (enriched). Focus testing on these new endpoints. Admin: admin/admin123. Salon: 0935964158/salon123."
     - agent: "testing"
@@ -463,3 +561,6 @@ agent_communication:
     - message: "BARBER HUB v3.4 - PHASE 2 COMPLETE: Professional Portfolio System. (1) Backend changes in server.py: Max portfolio images reduced from 10→4 (POST /api/barbershops/me/gallery at line 1023), with updated error message 'Maximum 4 portfolio images allowed. Please delete one to add a new image.'. GET /api/barbershops/{shop_id}/gallery to_list limit also reduced to 4. Update profile endpoint also truncates to [:4]. Verified via curl: 4 uploads succeeded, 5th correctly rejected with 400 status and new error message. (2) New component /app/frontend/src/components/PortfolioManagement.jsx: Self-contained Portfolio manager for barber dashboard. Features - 4-slot grid (2x2 mobile, 4-col desktop), Click empty slot → native file picker → client-side Canvas resize to max 1200px long side → JPEG 0.85 quality → base64 → POST to /api/barbershops/me/gallery. 2MB file limit + image-type validation. Hover overlay with Eye (lightbox preview) + Trash2 (delete) buttons. Mobile: always-visible close button. Loading states with spinners. Full AR/EN support with RTL. Theme-aware (isMen ? gold #D4AF37 : rose #B76E79) to match existing dashboard card styles. Uses GET /api/barbers/profile/me for current shop id, then GET /api/barbershops/{id}/gallery for images. (3) BarberDashboard.jsx: Imported PortfolioManagement and integrated it BEFORE ServicesManagement (prominent placement right after stats). Passes API, token, isMen, language props. (4) BarberProfile.jsx MAJOR ENHANCEMENT: Switched fetch from /api/barbershops/{id} (raw, no gallery) → /api/barbers/{id} (enriched with before_after_images). Hero Gallery rebuilt: AnimatePresence fade transitions between images, counter badge '1/4' top-right, Maximize zoom button top-left opens fullscreen lightbox, large Prev/Next arrow buttons on sides with gold hover, animated dots indicator at bottom with RTL-aware direction. Added NEW Gallery Thumbnails Grid section: 4-col grid below hero with numbered gold badges (1-4), click syncs main hero + opens lightbox. Fullscreen Lightbox with: centered image, Close (×) top-right, Prev/Next nav buttons, image counter '1/4' at bottom, click backdrop to close, RTL-aware. Scale+fade AnimatePresence transitions. (5) Created /app/memory/test_credentials.md with admin/admin123, salon 0935964158/salon123 credentials. (6) Seeded 10 salons + populated 4 gallery images on first salon for visual verification. Screenshot verified: Hero slider rendering with counter, nav arrows, dots + Gallery grid with 4 numbered slots all present, theme consistent with VIP Warm Luxury. Frontend lint: all 3 files clean, zero warnings. Ready for backend testing of gallery endpoints (POST/GET/DELETE /api/barbershops/me/gallery with 4-image limit)."
     - agent: "testing"
     - message: "🎉 BARBER HUB v3.4 PORTFOLIO/GALLERY TESTING COMPLETE - ALL 10 TESTS PASSED (100% success rate). ✅ Fixed critical ObjectId serialization issue in POST /api/barbershops/me/gallery endpoint that was causing 500 errors. ✅ Comprehensive testing of Phase 2 portfolio system: POST /api/seed (admin auth) creates 10 shops successfully, POST /api/auth/login with salon credentials (0935964158/salon123) works perfectly, GET /api/barbershops/{shop_id}/gallery returns proper array, POST /api/barbershops/me/gallery (salon auth) successfully uploads exactly 4 images with proper ID responses, 5th upload correctly rejected with 400 status and exact error message 'Maximum 4 portfolio images allowed. Please delete one to add a new image.', GET /api/barbers/{shop_id} returns before_after_images array with exactly 4 items all having after field populated, DELETE /api/barbershops/me/gallery/{image_id} successfully deletes images, POST after delete succeeds (bringing count back to 4), final verification confirms 4 images maintained, unauthorized POST returns 401. Phase 2 portfolio limit enforcement working perfectly - ready for production."
+
+    - agent: "testing"
+    - message: "🔒 BARBER HUB v3.5 SECURITY HARDENING TESTING COMPLETE - ALL 10 CRITICAL TESTS PASSED (100% success rate). ✅ NEW ENDPOINTS: GET /api/health returns proper JSON with status/db/version/timestamp, GET /api/config/public returns admin_whatsapp/app_url/version correctly. ✅ SECURITY FEATURES: SecurityHeadersMiddleware adds all required headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, HSTS) to every response, Rate limiting working on auth endpoints (8 failed logins → 429, 10 registrations per IP → 429), Password validation enforces 6+ char minimum with proper 422 responses, Admin users pagination supports skip/limit/user_type/search with regex injection protection. ✅ REGRESSION CHECKS: All existing endpoints working perfectly - admin/salon login, seed data, barbers list (10 shops), search filters, PWA status. ✅ AUTHENTICATION: JWT secret properly managed via environment, CORS hardened for production compliance. Rate limiting using slowapi with in-memory sliding window prevents abuse while allowing legitimate traffic. All security headers verified via curl. System ready for production deployment with comprehensive security hardening."

@@ -1,12 +1,16 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Query, Request, Body
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
+import secrets
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta, date, time
@@ -17,11 +21,22 @@ import io
 import base64
 import math
 
+# Rate limiting (slowapi)
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    RATE_LIMIT_OK = True
+except Exception:
+    RATE_LIMIT_OK = False
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Get APP_URL from environment for QR codes and referral links
 APP_URL = os.environ.get('APP_URL', 'https://db-manager-12.preview.emergentagent.com')
+# Admin WhatsApp phone (for payment confirmations) - can be set via env
+ADMIN_WHATSAPP = os.environ.get('ADMIN_WHATSAPP', '963935964158')
 
 # AI Services (GPT-5 Vision + Style Card)
 try:
@@ -45,12 +60,31 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'barber_hub')]
 
 # JWT Settings
-JWT_SECRET = os.environ.get('JWT_SECRET', 'barber-hub-secret-key-2026')
+# SECURITY: JWT_SECRET MUST be set via env in production. If missing, generate a random
+# one at startup (tokens won't survive restarts — this forces ops to set it properly).
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET or JWT_SECRET == 'barber-hub-secret-key-2026':
+    JWT_SECRET = secrets.token_urlsafe(64)
+    logging.warning(
+        "JWT_SECRET not set in environment. Generated a random secret for this run. "
+        "Set a strong JWT_SECRET env var in production."
+    )
 JWT_ALGORITHM = 'HS256'
-JWT_EXPIRATION_HOURS = 24 * 7
+JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', 24 * 7))
+
+# Password policy
+MIN_PASSWORD_LENGTH = 6  # minimal for UX; frontend enforces stronger UX
 
 # Create the main app
-app = FastAPI(title="BARBER HUB API", version="2.0.0")
+app = FastAPI(title="BARBER HUB API", version="3.5.0")
+
+# Initialize rate limiter (keyed by client IP)
+if RATE_LIMIT_OK:
+    limiter = Limiter(key_func=get_remote_address, default_limits=[])
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+else:
+    limiter = None
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -73,6 +107,29 @@ class UserCreate(BaseModel):
     country: str
     city: str
     district: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, v: str) -> str:
+        if not v or len(v) < MIN_PASSWORD_LENGTH:
+            raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+        return v
+
+    @field_validator("phone_number")
+    @classmethod
+    def _validate_phone(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v or len(v) < 5:
+            raise ValueError("Invalid phone number")
+        return v
+
+    @field_validator("full_name")
+    @classmethod
+    def _validate_name(cls, v: str) -> str:
+        v = (v or "").strip()
+        if len(v) < 2:
+            raise ValueError("Full name too short")
+        return v
 
 class UserLogin(BaseModel):
     phone_number: str
@@ -110,6 +167,13 @@ class BarbershopCreate(BaseModel):
     instagram_url: Optional[str] = None
     tiktok_url: Optional[str] = None
     website_url: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, v: str) -> str:
+        if not v or len(v) < MIN_PASSWORD_LENGTH:
+            raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+        return v
 
 class BarbershopUpdate(BaseModel):
     owner_name: Optional[str] = None
@@ -583,8 +647,45 @@ def enrich_booking_for_frontend(booking: Dict) -> Dict:
 
 # ============== AUTH ENDPOINTS ==============
 
+# Simple in-memory rate limiter for auth endpoints (per-IP + per-phone).
+# For production, replace with Redis-backed solution, but this protects against
+# casual brute-force attempts.
+_auth_attempts: Dict[str, List[float]] = {}
+_AUTH_WINDOW_SEC = 300       # 5 minutes
+_AUTH_MAX_ATTEMPTS_IP = 30   # 30 attempts per IP per 5 min
+_AUTH_MAX_ATTEMPTS_KEY = 8   # 8 attempts per phone per 5 min
+
+
+def _client_ip(request: Request) -> str:
+    # Respect X-Forwarded-For (set by kubernetes ingress)
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_limit_check(bucket_key: str, max_attempts: int) -> bool:
+    """Return True if allowed, False if rate-limited. Records the attempt on success."""
+    import time as _t
+    now = _t.time()
+    window_start = now - _AUTH_WINDOW_SEC
+    attempts = _auth_attempts.get(bucket_key, [])
+    # Prune old
+    attempts = [t for t in attempts if t > window_start]
+    if len(attempts) >= max_attempts:
+        _auth_attempts[bucket_key] = attempts
+        return False
+    attempts.append(now)
+    _auth_attempts[bucket_key] = attempts
+    return True
+
+
 @api_router.post("/auth/register", response_model=TokenResponse)
-async def register_user(user_data: UserCreate):
+async def register_user(user_data: UserCreate, request: Request):
+    ip = _client_ip(request)
+    if not _rate_limit_check(f"reg:ip:{ip}", 10):
+        raise HTTPException(status_code=429, detail="Too many registration attempts. Please try again later.")
+
     existing = await db.users.find_one({"phone_number": user_data.phone_number})
     if existing:
         raise HTTPException(status_code=400, detail="Phone number already registered")
@@ -612,7 +713,14 @@ async def register_user(user_data: UserCreate):
     return TokenResponse(access_token=token, user_type='user', user=user_response)
 
 @api_router.post("/auth/login", response_model=TokenResponse)
-async def login(credentials: UserLogin):
+async def login(credentials: UserLogin, request: Request):
+    ip = _client_ip(request)
+    # Rate limit per IP (burst protection) and per phone (account-level protection)
+    if not _rate_limit_check(f"login:ip:{ip}", _AUTH_MAX_ATTEMPTS_IP):
+        raise HTTPException(status_code=429, detail="Too many login attempts from this IP. Please try again in a few minutes.")
+    if not _rate_limit_check(f"login:phone:{credentials.phone_number}", _AUTH_MAX_ATTEMPTS_KEY):
+        raise HTTPException(status_code=429, detail="Too many failed attempts for this account. Please try again in a few minutes.")
+
     # Try user first
     user = await db.users.find_one({"phone_number": credentials.phone_number}, {"_id": 0})
     if user and verify_password(credentials.password, user['password']):
@@ -631,6 +739,7 @@ async def login(credentials: UserLogin):
         token = create_token(admin['id'], 'admin')
         return TokenResponse(access_token=token, user_type='admin', user={k: v for k, v in admin.items() if k != 'password'})
     
+    # Generic error to avoid user-enumeration
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @api_router.get("/users/me")
@@ -1828,7 +1937,11 @@ async def create_booking(booking_data: BookingCreate, entity: Dict = Depends(get
     # Calculate end time
     end_time = calculate_end_time(start_time, total_duration)
     
-    # Check for conflicting bookings
+    # ATOMIC slot reservation to prevent race conditions.
+    # Strategy: first check for overlap (fast common-case path), then insert.
+    # A true lock-free approach would use a unique compound index on (barbershop_id, booking_date, start_time),
+    # but bookings can have different durations so we keep the overlap check and accept a rare double-insert
+    # which will then be detected by the same query after insertion (compensating cleanup below).
     existing = await db.bookings.find_one({
         "barbershop_id": barbershop_id,
         "booking_date": booking_date,
@@ -1863,6 +1976,22 @@ async def create_booking(booking_data: BookingCreate, entity: Dict = Depends(get
     }
     
     await db.bookings.insert_one(booking_doc)
+
+    # Post-insert race-condition check: if another booking was inserted concurrently with
+    # overlapping time, delete ours (the later-created one) and return 400.
+    overlap = await db.bookings.find_one({
+        "barbershop_id": barbershop_id,
+        "booking_date": booking_date,
+        "status": {"$in": ["pending", "confirmed"]},
+        "id": {"$ne": booking_id},
+        "created_at": {"$lt": booking_doc["created_at"]},
+        "$or": [
+            {"start_time": {"$lt": end_time}, "end_time": {"$gt": start_time}}
+        ]
+    })
+    if overlap:
+        await db.bookings.delete_one({"id": booking_id})
+        raise HTTPException(status_code=400, detail="This time slot is not available")
     
     # Create notification
     await db.notifications.insert_one({
@@ -2289,36 +2418,63 @@ async def approve_subscription(sub_id: str, admin: Dict = Depends(require_admin)
     return {"message": "Subscription approved"}
 
 @api_router.get("/admin/users")
-async def get_admin_users(admin: Dict = Depends(require_admin)):
-    """Get all users (customers + barbershops) for admin dashboard"""
+async def get_admin_users(
+    admin: Dict = Depends(require_admin),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    user_type: Optional[str] = Query(None, regex="^(user|barber|salon)$"),
+    search: Optional[str] = None,
+):
+    """Get users (customers + barbershops) for admin dashboard with pagination + filtering."""
     result = []
     
-    # Get all customers
-    users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(500)
-    for u in users:
-        result.append({
-            "id": u["id"],
-            "name": u.get("full_name", ""),
-            "phone": u.get("phone_number", ""),
-            "user_type": "user",
-            "country": u.get("country", ""),
-            "city": u.get("city", ""),
-            "subscription_status": "N/A",
-            "created_at": u.get("created_at", "")
-        })
-    
-    # Get all barbershops
-    shops = await db.barbershops.find({}, {"_id": 0, "password": 0}).to_list(500)
-    for s in shops:
-        result.append({
-            "id": s["id"],
-            "name": s.get("shop_name", s.get("owner_name", "")),
-            "phone": s.get("phone_number", ""),
-            "user_type": "barber" if s.get("shop_type") == "male" else "salon",
-            "country": s.get("country", ""),
-            "city": s.get("city", ""),
-            "subscription_status": s.get("subscription_status", "inactive"),
-            "created_at": s.get("created_at", "")
+    # Build query for customers
+    user_q: Dict[str, Any] = {}
+    shop_q: Dict[str, Any] = {}
+    if search:
+        # Escape user input for regex safety
+        safe_search = re.escape(search)
+        user_q["$or"] = [
+            {"full_name": {"$regex": safe_search, "$options": "i"}},
+            {"phone_number": {"$regex": safe_search, "$options": "i"}},
+        ]
+        shop_q["$or"] = [
+            {"shop_name": {"$regex": safe_search, "$options": "i"}},
+            {"phone_number": {"$regex": safe_search, "$options": "i"}},
+        ]
+
+    # Get customers
+    if user_type in (None, "user"):
+        users = await db.users.find(user_q, {"_id": 0, "password": 0}).skip(skip).limit(limit).to_list(limit)
+        for u in users:
+            result.append({
+                "id": u["id"],
+                "name": u.get("full_name", ""),
+                "phone": u.get("phone_number", ""),
+                "user_type": "user",
+                "country": u.get("country", ""),
+                "city": u.get("city", ""),
+                "subscription_status": "N/A",
+                "created_at": u.get("created_at", "")
+            })
+
+    # Get barbershops
+    if user_type in (None, "barber", "salon"):
+        if user_type == "barber":
+            shop_q["shop_type"] = "male"
+        elif user_type == "salon":
+            shop_q["shop_type"] = "female"
+        shops = await db.barbershops.find(shop_q, {"_id": 0, "password": 0}).skip(skip).limit(limit).to_list(limit)
+        for s in shops:
+            result.append({
+                "id": s["id"],
+                "name": s.get("shop_name", s.get("owner_name", "")),
+                "phone": s.get("phone_number", ""),
+                "user_type": "barber" if s.get("shop_type") == "male" else "salon",
+                "country": s.get("country", ""),
+                "city": s.get("city", ""),
+                "subscription_status": s.get("subscription_status", "inactive"),
+                "created_at": s.get("created_at", "")
         })
     
     return result
@@ -3819,6 +3975,32 @@ async def push_vapid_public_key():
 
 # ============== PWA MANIFEST STATUS ==============
 
+@api_router.get("/config/public")
+async def get_public_config():
+    """Public configuration used by the frontend (non-sensitive)."""
+    return {
+        "admin_whatsapp": ADMIN_WHATSAPP,
+        "app_url": APP_URL,
+        "version": "3.5.0",
+    }
+
+@api_router.get("/health")
+async def health_check():
+    """Deep health check — verifies DB connectivity for kubernetes liveness/readiness probes."""
+    try:
+        # Quick ping to mongo
+        await db.command("ping")
+        db_ok = True
+    except Exception as e:
+        db_ok = False
+        logger.error(f"Health check - DB unreachable: {e}")
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "db": "ok" if db_ok else "unreachable",
+        "version": "3.5.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
 @api_router.get("/pwa/status")
 async def pwa_status():
     """Health endpoint for PWA — used by the service worker to check connectivity."""
@@ -3835,10 +4017,43 @@ async def pwa_status():
 # Include the router
 app.include_router(api_router)
 
+# ============== SECURITY HEADERS MIDDLEWARE ==============
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        # Prevent MIME sniffing
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        # Basic clickjacking protection
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        # Referrer control
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        # Limit browser features
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(self), microphone=(), camera=(self), payment=(self)",
+        )
+        # HSTS (only when served over HTTPS by the ingress)
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ============== CORS ==============
+# In production, set CORS_ORIGINS to a comma-separated list of trusted origins.
+# Example: CORS_ORIGINS="https://barberhub.com,https://www.barberhub.com"
+_cors_raw = os.environ.get('CORS_ORIGINS', '*').strip()
+if _cors_raw == '*' or not _cors_raw:
+    cors_origins = ["*"]
+    cors_allow_credentials = False  # wildcard + credentials is forbidden by spec
+    logging.warning("CORS is wide-open ('*'). Set CORS_ORIGINS env var to a list of trusted origins in production.")
+else:
+    cors_origins = [o.strip() for o in _cors_raw.split(',') if o.strip()]
+    cors_allow_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=cors_allow_credentials,
+    allow_origins=cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -3852,9 +4067,13 @@ async def startup_db():
     await db.barbershops.create_index("id", unique=True)
     await db.barbershops.create_index([("ranking_score", -1)])
     await db.barbershops.create_index("shop_type")
+    await db.barbershops.create_index([("country", 1), ("city", 1)])
     await db.services.create_index("barbershop_id")
     await db.bookings.create_index("id", unique=True)
     await db.bookings.create_index([("barbershop_id", 1), ("booking_date", 1)])
+    await db.bookings.create_index("user_id")
+    await db.bookings.create_index([("user_id", 1), ("status", 1)])
+    await db.bookings.create_index([("barbershop_id", 1), ("status", 1)])
     await db.reviews.create_index("id", unique=True)
     await db.reviews.create_index("barbershop_id")
     await db.barber_profiles.create_index("barbershop_id", unique=True)
@@ -3880,20 +4099,58 @@ async def startup_db():
     await db.favorites.create_index([("user_id", 1), ("shop_id", 1)], unique=True)
     await db.style_advices.create_index([("user_id", 1), ("booking_id", 1)])
     await db.ai_tryon_sessions.create_index([("user_id", 1), ("booking_id", 1)])
-    
-    # Create admin user if not exists
-    admin = await db.admins.find_one({"phone_number": "admin"})
-    if not admin:
-        admin_doc = {
-            "id": str(uuid.uuid4()),
-            "phone_number": "admin",
-            "password": hash_password("admin123"),
-            "full_name": "مدير النظام",
-            "role": "admin",
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        await db.admins.insert_one(admin_doc)
-        logger.info("Admin user created")
+    # Push subscriptions - unique by endpoint for idempotency
+    try:
+        await db.push_subscriptions.create_index("endpoint", unique=True, sparse=True)
+    except Exception:
+        pass
+    # Notifications - auto-cleanup after 90 days
+    try:
+        await db.notifications.create_index("recipient_id")
+        await db.notifications.create_index(
+            "created_at_dt",
+            expireAfterSeconds=60 * 60 * 24 * 90,
+        )
+    except Exception:
+        pass
+
+    # ---------- Admin user bootstrap ----------
+    # SECURITY: The old code auto-created admin/admin123 every startup, which is unsafe.
+    # Now we create the admin ONLY if ADMIN_BOOTSTRAP_PASSWORD env var is set and no admin exists yet.
+    # Operators must rotate the password after first login.
+    admin_exists = await db.admins.find_one({}, {"_id": 0, "id": 1})
+    if not admin_exists:
+        bootstrap_pw = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD")
+        bootstrap_phone = os.environ.get("ADMIN_BOOTSTRAP_PHONE", "admin")
+        if bootstrap_pw:
+            admin_doc = {
+                "id": str(uuid.uuid4()),
+                "phone_number": bootstrap_phone,
+                "password": hash_password(bootstrap_pw),
+                "full_name": os.environ.get("ADMIN_BOOTSTRAP_NAME", "System Admin"),
+                "role": "admin",
+                "must_change_password": True,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.admins.insert_one(admin_doc)
+            logger.info(f"Admin user bootstrapped with phone '{bootstrap_phone}'. User must change password on first login.")
+        else:
+            # Dev convenience: if no admin at all and no env, create default but log a loud warning
+            if os.environ.get("ALLOW_DEFAULT_ADMIN", "true").lower() in ("1", "true", "yes"):
+                admin_doc = {
+                    "id": str(uuid.uuid4()),
+                    "phone_number": "admin",
+                    "password": hash_password("admin123"),
+                    "full_name": "مدير النظام",
+                    "role": "admin",
+                    "must_change_password": True,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                await db.admins.insert_one(admin_doc)
+                logger.warning(
+                    "⚠️  DEFAULT ADMIN CREATED (admin/admin123). Set ADMIN_BOOTSTRAP_PASSWORD env var "
+                    "and ALLOW_DEFAULT_ADMIN=false in production!"
+                )
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

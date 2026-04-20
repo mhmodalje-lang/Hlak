@@ -27,6 +27,7 @@ import AIAdvisor from "@/pages/AIAdvisor";
 import FavoritesPage from "@/pages/FavoritesPage";
 import MyOrders from "@/pages/MyOrders";
 import InstallPrompt from "@/components/InstallPrompt";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 // Context
 const AppContext = createContext();
@@ -114,51 +115,53 @@ function App() {
   };
 
   return (
-    <LocalizationProvider>
-      <GeoLocationProvider>
-        <CurrencyProvider>
-          <AppContext.Provider value={contextValue}>
-            <div className={`App bh-surface min-h-screen ${gender ? themeClass : ''}`} dir={isRTL(language) ? 'rtl' : 'ltr'}>
-              <BrowserRouter>
-                <Routes>
-                  {/* Gender Selection - Entry Point */}
-                  <Route path="/" element={!gender ? <GenderSelection /> : <Navigate to="/home" />} />
-                  
-                  {/* Auth */}
-                  <Route path="/auth" element={<AuthPage />} />
-                  
-                  {/* Main Pages */}
-                  <Route path="/home" element={gender ? <HomePage /> : <Navigate to="/" />} />
-                  <Route path="/barber/:id" element={<BarberProfile />} />
-                  <Route path="/book/:barberId" element={<BookingPage />} />
-                  <Route path="/products/:shopId" element={<ProductShowcase />} />
-                  <Route path="/products" element={<ProductShowcase />} />
-                  <Route path="/top-barbers" element={<TopBarbers />} />
-                  <Route path="/map" element={<MapPage />} />
-                  <Route path="/my-bookings" element={<MyBookings />} />
-                  <Route path="/my-orders" element={<MyOrders />} />
-                  <Route path="/payment" element={<PaymentPage />} />
-                  <Route path="/ai-advisor" element={<AIAdvisor />} />
-                  <Route path="/favorites" element={<FavoritesPage />} />
-                  
-                  {/* Barber/Salon Dashboard */}
-                  <Route path="/dashboard" element={<BarberDashboard />} />
-                  <Route path="/profile-setup" element={<ProfileSetup />} />
-                  
-                  {/* Admin */}
-                  <Route path="/admin" element={<AdminDashboard />} />
-                  
-                  {/* Catch all */}
-                  <Route path="*" element={<Navigate to="/" />} />
-                </Routes>
-              </BrowserRouter>
-              <Toaster position="top-center" richColors />
-              <InstallPrompt />
-            </div>
-          </AppContext.Provider>
-        </CurrencyProvider>
-      </GeoLocationProvider>
-    </LocalizationProvider>
+    <ErrorBoundary>
+      <LocalizationProvider>
+        <GeoLocationProvider>
+          <CurrencyProvider>
+            <AppContext.Provider value={contextValue}>
+              <div className={`App bh-surface min-h-screen ${gender ? themeClass : ''}`} dir={isRTL(language) ? 'rtl' : 'ltr'}>
+                <BrowserRouter>
+                  <Routes>
+                    {/* Gender Selection - Entry Point */}
+                    <Route path="/" element={!gender ? <GenderSelection /> : <Navigate to="/home" />} />
+                    
+                    {/* Auth */}
+                    <Route path="/auth" element={<AuthPage />} />
+                    
+                    {/* Main Pages */}
+                    <Route path="/home" element={gender ? <HomePage /> : <Navigate to="/" />} />
+                    <Route path="/barber/:id" element={<BarberProfile />} />
+                    <Route path="/book/:barberId" element={<BookingPage />} />
+                    <Route path="/products/:shopId" element={<ProductShowcase />} />
+                    <Route path="/products" element={<ProductShowcase />} />
+                    <Route path="/top-barbers" element={<TopBarbers />} />
+                    <Route path="/map" element={<MapPage />} />
+                    <Route path="/my-bookings" element={<MyBookings />} />
+                    <Route path="/my-orders" element={<MyOrders />} />
+                    <Route path="/payment" element={<PaymentPage />} />
+                    <Route path="/ai-advisor" element={<AIAdvisor />} />
+                    <Route path="/favorites" element={<FavoritesPage />} />
+                    
+                    {/* Barber/Salon Dashboard */}
+                    <Route path="/dashboard" element={<BarberDashboard />} />
+                    <Route path="/profile-setup" element={<ProfileSetup />} />
+                    
+                    {/* Admin */}
+                    <Route path="/admin" element={<AdminDashboard />} />
+                    
+                    {/* Catch all */}
+                    <Route path="*" element={<Navigate to="/" />} />
+                  </Routes>
+                </BrowserRouter>
+                <Toaster position="top-center" richColors />
+                <InstallPrompt />
+              </div>
+            </AppContext.Provider>
+          </CurrencyProvider>
+        </GeoLocationProvider>
+      </LocalizationProvider>
+    </ErrorBoundary>
   );
 }
 

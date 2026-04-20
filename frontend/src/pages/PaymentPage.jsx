@@ -6,9 +6,9 @@
  *
  * Also shows subscription packages for barbers (Basic / Barber / Store / VIP).
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useApp } from '@/App';
+import { useApp, API } from '@/App';
 import { useLocalization } from '@/contexts/LocalizationContext';
 import { useGeoLocation } from '@/contexts/GeoLocationContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
@@ -40,6 +40,21 @@ const PaymentPage = () => {
 
   const [selectedPackage, setSelectedPackage] = useState('barber');
   const [selectedMethod, setSelectedMethod] = useState(null);
+  const [adminWhatsApp, setAdminWhatsApp] = useState('963935964158');
+
+  // Fetch admin WhatsApp from backend (configurable via env) so it is not hardcoded.
+  useEffect(() => {
+    let active = true;
+    fetch(`${API}/config/public`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (active && data && data.admin_whatsapp) {
+          setAdminWhatsApp(String(data.admin_whatsapp).replace(/\D/g, ''));
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const t = isRTL ? {
     back: 'رجوع',
@@ -167,7 +182,7 @@ const PaymentPage = () => {
       ? 'مرحباً، أريد تفعيل اشتراك BARBER HUB'
       : 'Hello, I would like to activate a BARBER HUB subscription';
     const msg = encodeURIComponent(`${greeting}\n${pkgLine}\n${methodLine}\n${t.location}: ${country}, ${city}`);
-    window.open(`https://wa.me/963935964158?text=${msg}`, '_blank');
+    window.open(`https://wa.me/${adminWhatsApp}?text=${msg}`, '_blank');
   };
 
   const copyText = (text) => {

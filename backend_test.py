@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import urllib.parse
 
 # Backend URL from frontend/.env
-BASE_URL = "https://db-manager-12.preview.emergentagent.com/api"
+BASE_URL = "https://vuln-checker-8.preview.emergentagent.com/api"
 
 # Test credentials from review request
 ADMIN_CREDENTIALS = {"phone_number": "admin", "password": "admin123"}

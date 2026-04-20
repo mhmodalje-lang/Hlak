@@ -7,7 +7,7 @@ import requests
 import json
 import uuid
 
-BASE_URL = "https://db-manager-12.preview.emergentagent.com/api"
+BASE_URL = "https://vuln-checker-8.preview.emergentagent.com/api"
 
 def test_review_and_subscription():
     # Register a new user

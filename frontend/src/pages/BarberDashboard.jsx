@@ -15,6 +15,7 @@ import ShopOrdersManagement from '@/components/ShopOrdersManagement';
 import SponsoredAdsManagement from '@/components/SponsoredAdsManagement';
 import RevenueStats from '@/components/RevenueStats';
 import LeaveManagement from '@/components/LeaveManagement';
+import TierStatusCard from '@/components/TierStatusCard';
 import { 
   ArrowRight, ArrowLeft, Calendar, Clock, Star, 
   Check, X, Loader2, Settings, QrCode, Users,
@@ -442,6 +443,8 @@ const BarberDashboard = () => {
         </div>
 
         {/* Bookings Tabs */}
+        <TierStatusCard API={API} token={token} isMen={isMen} language={language} />
+        <div className="mt-6" />
         <PortfolioManagement API={API} token={token} isMen={isMen} language={language} />
         <RevenueStats API={API} token={token} isMen={isMen} language={language} />
         <ShopOrdersManagement API={API} token={token} isMen={isMen} language={language} />

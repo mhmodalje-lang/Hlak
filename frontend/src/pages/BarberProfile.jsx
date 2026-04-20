@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, X as CloseIcon, Maximize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X as CloseIcon, Maximize2, ShoppingBag, ShoppingCart, Sparkles, Package as PackageIcon } from 'lucide-react';
+import OrderDialog from '@/components/OrderDialog';
 
 // Import custom icons
 import {
@@ -23,12 +24,14 @@ import {
 const BarberProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { API, token, isAuthenticated } = useApp();
+  const { API, token, isAuthenticated, user, gender } = useApp();
   const { language } = useLocalization();
   const { formatPrice, currency } = useCurrency();
   
   const [barber, setBarber] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [orderProduct, setOrderProduct] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -47,7 +50,14 @@ const BarberProfile = () => {
     viewAll: 'عرض الكل',
     prevImage: 'السابقة',
     nextImage: 'التالية',
-    closeLightbox: 'إغلاق'
+    closeLightbox: 'إغلاق',
+    products: 'متجر الصالون',
+    productsSubtitle: 'منتجات حصرية مختارة بعناية',
+    orderNow: 'اشترِ الآن',
+    outOfStock: 'غير متوفر',
+    featured: 'مميز',
+    noProducts: 'لا توجد منتجات متاحة حالياً',
+    viewAllProducts: 'عرض كل المنتجات'
   } : {
     back: 'Back', services: 'Services', reviews: 'Reviews',
     noReviews: 'No reviews yet', bookNow: 'Book Now', about: 'About',
@@ -59,7 +69,14 @@ const BarberProfile = () => {
     viewAll: 'View All',
     prevImage: 'Previous',
     nextImage: 'Next',
-    closeLightbox: 'Close'
+    closeLightbox: 'Close',
+    products: 'Salon Store',
+    productsSubtitle: 'Exclusive products handpicked by the salon',
+    orderNow: 'Buy Now',
+    outOfStock: 'Out of Stock',
+    featured: 'Featured',
+    noProducts: 'No products available',
+    viewAllProducts: 'View All Products'
   };
 
   // Fetch barber details
@@ -83,6 +100,19 @@ const BarberProfile = () => {
       }
     };
     fetchBarber();
+  }, [id, API]);
+
+  // Fetch products for this shop (up to 10 per backend limit)
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await axios.get(`${API}/products/shop/${id}`);
+        setProducts(Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        console.error('Failed to load products', err);
+      }
+    };
+    if (id) fetchProducts();
   }, [id, API]);
 
   // Check if favorite
@@ -471,6 +501,127 @@ const BarberProfile = () => {
               </motion.div>
             )}
 
+            {/* Products Showcase (VIP) */}
+            {products && products.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                className="bh-glass-vip rounded-3xl p-6 bh-corner-accents"
+                data-testid="profile-products-section"
+              >
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[var(--bh-gold)] to-amber-600 flex items-center justify-center shadow-lg shadow-[var(--bh-gold)]/30">
+                      <ShoppingBag className="w-5 h-5 text-[var(--bh-obsidian)]" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-display font-bold bh-gold-text flex items-center gap-2">
+                        {t.products}
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--bh-gold)]/15 text-[var(--bh-gold)] border border-[var(--bh-gold)]/30 font-bold">
+                          {products.length}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-[var(--bh-text-muted)] mt-0.5">{t.productsSubtitle}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/products/shop/${id}`)}
+                    className="hidden md:flex items-center gap-1 text-sm text-[var(--bh-gold)] hover:text-white transition-colors font-bold"
+                    data-testid="view-all-products-btn"
+                  >
+                    {t.viewAllProducts}
+                    {isRTL ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+                  {products.slice(0, 10).map((product, idx) => (
+                    <motion.div
+                      key={product.id}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.05 * idx }}
+                      className="group relative rounded-2xl overflow-hidden border border-[var(--bh-glass-border)] bg-[var(--bh-glass-bg)] hover:border-[var(--bh-gold)]/60 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-[var(--bh-gold)]/10"
+                      data-testid={`profile-product-${product.id}`}
+                    >
+                      {/* Image */}
+                      <div className="relative aspect-square overflow-hidden bg-[var(--bh-obsidian)]">
+                        {product.image_url ? (
+                          <img
+                            src={product.image_url}
+                            alt={language === 'ar' ? product.name_ar : product.name}
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[var(--bh-gold)]/40">
+                            <PackageIcon className="w-12 h-12" />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+
+                        {/* Badges */}
+                        <div className="absolute top-2 start-2 flex flex-col gap-1">
+                          {product.featured && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 bg-[var(--bh-gold)] text-[var(--bh-obsidian)] shadow-lg">
+                              <Sparkles className="w-2.5 h-2.5" /> {t.featured}
+                            </span>
+                          )}
+                        </div>
+                        {!product.in_stock && (
+                          <div className="absolute inset-0 bg-black/70 flex items-center justify-center backdrop-blur-sm">
+                            <span className="px-3 py-1 rounded-full bg-red-500/90 text-white text-xs font-bold">
+                              {t.outOfStock}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Details */}
+                      <div className="p-3 md:p-4">
+                        <h4 className="font-bold text-white text-sm md:text-base line-clamp-1 mb-1">
+                          {language === 'ar' ? (product.name_ar || product.name) : product.name}
+                        </h4>
+                        <p className="text-xs text-[var(--bh-text-muted)] line-clamp-2 mb-3 min-h-[2rem]">
+                          {language === 'ar' ? (product.description_ar || product.description) : product.description}
+                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-lg font-display font-bold bh-gold-text whitespace-nowrap">
+                            {formatPrice(product.price)}
+                          </span>
+                          {product.in_stock && (
+                            <button
+                              onClick={() => {
+                                if (!isAuthenticated) { navigate('/auth'); return; }
+                                setOrderProduct({ ...product, shop_id: product.shop_id || id });
+                              }}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[var(--bh-gold)] hover:bg-white text-[var(--bh-obsidian)] text-xs font-bold transition-all active:scale-95 shadow-md"
+                              data-testid={`profile-buy-${product.id}`}
+                            >
+                              <ShoppingCart className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">{t.orderNow}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                {/* View all (mobile) */}
+                <div className="mt-4 md:hidden text-center">
+                  <button
+                    onClick={() => navigate(`/products/shop/${id}`)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--bh-glass-bg-hi)] hover:bg-[var(--bh-gold)]/20 text-[var(--bh-gold)] text-sm font-bold transition-all"
+                  >
+                    {t.viewAllProducts}
+                    {isRTL ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
             {/* Reviews */}
             {reviews.length > 0 && (
               <motion.div
@@ -564,6 +715,19 @@ const BarberProfile = () => {
           </div>
         </div>
       </div>
+
+      {/* Order Dialog */}
+      <OrderDialog
+        open={!!orderProduct}
+        onOpenChange={(o) => !o && setOrderProduct(null)}
+        product={orderProduct}
+        shop={barber}
+        API={API}
+        token={token}
+        user={user}
+        language={language}
+        isMen={gender === 'male'}
+      />
     </div>
   );
 };

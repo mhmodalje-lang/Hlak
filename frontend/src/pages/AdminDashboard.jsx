@@ -10,6 +10,8 @@ import {
   Loader2, Crown, Ban, CreditCard, LayoutDashboard, Shield,
   Megaphone, TrendingUp
 } from 'lucide-react';
+import AdminRankingPanel from '@/components/AdminRankingPanel';
+import AdminReviewModeration from '@/components/AdminReviewModeration';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -234,6 +236,11 @@ const AdminDashboard = () => {
         </div>
 
         {/* Sponsored Ads Approval */}
+        <AdminRankingPanel API={API} token={token} language={language} />
+
+        {/* Review Moderation */}
+        <AdminReviewModeration API={API} token={token} language={language} />
+
         <div className="bg-gray-900 rounded-3xl p-6 border border-gray-800 mb-8" data-testid="admin-sponsored-section">
           <h3 className="font-bold text-xl mb-6 flex items-center gap-2 text-amber-400">
             <Megaphone size={20}/> {language === 'ar' ? 'طلبات الإعلانات الممولة' : 'Sponsored Ad Requests'}

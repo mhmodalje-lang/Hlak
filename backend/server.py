@@ -665,15 +665,77 @@ TIER_THRESHOLDS = {
 TIER_ORDER = ["global_elite", "country_top", "governorate_top", "city_top"]
 
 
+# ---------- Country-name normalization (English ↔ Arabic) ----------
+# Geolocation returns English country names ("Syria"); our seed/shop data stores
+# Arabic names ("سوريا"). This map lets the API resolve both.
+COUNTRY_ALIASES: Dict[str, List[str]] = {
+    "سوريا":    ["syria", "syrian arab republic", "syr", "sy"],
+    "العراق":   ["iraq", "republic of iraq", "irq", "iq"],
+    "الأردن":   ["jordan", "hashemite kingdom of jordan", "jor", "jo"],
+    "لبنان":    ["lebanon", "lebanese republic", "lbn", "lb"],
+    "السعودية": ["saudi arabia", "kingdom of saudi arabia", "ksa", "sau", "sa"],
+    "الإمارات": ["united arab emirates", "uae", "emirates", "are", "ae"],
+    "الكويت":   ["kuwait", "state of kuwait", "kwt", "kw"],
+    "قطر":     ["qatar", "state of qatar", "qat", "qa"],
+    "البحرين":  ["bahrain", "kingdom of bahrain", "bhr", "bh"],
+    "عمان":    ["oman", "sultanate of oman", "omn", "om"],
+    "مصر":     ["egypt", "arab republic of egypt", "egy", "eg"],
+    "فلسطين":   ["palestine", "state of palestine", "pse", "ps"],
+    "اليمن":    ["yemen", "republic of yemen", "yem", "ye"],
+    "ليبيا":    ["libya", "state of libya", "lby", "ly"],
+    "تونس":    ["tunisia", "tunisian republic", "tun", "tn"],
+    "الجزائر":  ["algeria", "people's democratic republic of algeria", "dza", "dz"],
+    "المغرب":   ["morocco", "kingdom of morocco", "mar", "ma"],
+    "السودان":  ["sudan", "republic of the sudan", "sdn", "sd"],
+    "تركيا":    ["turkey", "türkiye", "turkiye", "tur", "tr"],
+    "ألمانيا":  ["germany", "federal republic of germany", "deu", "de"],
+    "فرنسا":   ["france", "french republic", "fra", "fr"],
+    "بريطانيا": ["united kingdom", "uk", "great britain", "britain", "gbr", "gb"],
+    "الولايات المتحدة": ["united states", "usa", "us", "america", "united states of america"],
+    "كندا":    ["canada", "can", "ca"],
+    "أستراليا":  ["australia", "aus", "au"],
+    "إيران":   ["iran", "islamic republic of iran", "irn", "ir"],
+}
+
+# Build reverse lookup (english/code/etc → canonical Arabic name)
+_COUNTRY_REVERSE: Dict[str, str] = {}
+for _ar, _aliases in COUNTRY_ALIASES.items():
+    _COUNTRY_REVERSE[_ar.lower().strip()] = _ar
+    for _alias in _aliases:
+        _COUNTRY_REVERSE[_alias.lower().strip()] = _ar
+
+
+def normalize_country(raw: Optional[str]) -> Optional[str]:
+    """
+    Resolve a country name from any language/code to the canonical Arabic form
+    used in the shops collection. Returns None if input is empty or 'Unknown'.
+    Unknown inputs return the raw (trimmed) so that explicit unusual countries still work.
+    """
+    if not raw:
+        return None
+    q = str(raw).strip()
+    if not q or q.lower() == "unknown":
+        return None
+    # Direct match on canonical (Arabic) name
+    if q in COUNTRY_ALIASES:
+        return q
+    # Alias match (case-insensitive)
+    resolved = _COUNTRY_REVERSE.get(q.lower())
+    if resolved:
+        return resolved
+    # Unknown country — return as-is so the caller can still try to filter on it
+    return q
+
+
 async def compute_shop_metrics(shop_id: str) -> Dict:
     """Aggregate all metrics needed to rank + tier a single shop."""
     now = datetime.now(timezone.utc)
     since_30d = (now - timedelta(days=30)).isoformat()
     since_90d = (now - timedelta(days=90)).isoformat()
 
-    # Reviews (count + average + 30-day velocity)
+    # Reviews (count + average + 30-day velocity) - only approved
     reviews_cursor = db.reviews.find(
-        {"barbershop_id": shop_id},
+        {"barbershop_id": shop_id, "$or": [{"status": "approved"}, {"status": {"$exists": False}}]},
         {"_id": 0, "rating": 1, "created_at": 1}
     )
     reviews = await reviews_cursor.to_list(None)
@@ -1379,6 +1441,10 @@ async def get_ranking_tiers(
     Each list contains ONLY shops that qualified for that tier.
     Frontend typically displays: city_top (most personalised) → governorate_top → country_top → global_elite.
     """
+    # Normalize country name (e.g. "Syria" → "سوريا") so frontend geo-location values
+    # with English country names still match our Arabic shop data.
+    country = normalize_country(country)
+
     base_query: Dict[str, Any] = {}
     if gender:
         base_query["shop_type"] = gender
@@ -1480,6 +1546,125 @@ async def admin_ranking_stats(admin: Dict = Depends(require_admin)):
         "last_computed_at": last_computed,
     }
 
+
+@api_router.get("/barbershops/me/tier-status")
+async def get_my_tier_status(entity: Dict = Depends(get_current_user)):
+    """
+    For the authenticated barbershop: return current tier, current metrics,
+    and the requirements/gap to reach each higher tier.
+    Used by the Dashboard "Why am I not in X tier?" explainer page.
+    """
+    if not entity or entity.get("entity_type") != "barbershop":
+        raise HTTPException(status_code=403, detail="Only barbershops can access this")
+
+    shop_id = entity["id"]
+    shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "password": 0})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    # Fresh metrics (don't rely on cached ones — owner might check right after a change)
+    metrics = await compute_shop_metrics(shop_id)
+    current_tier = classify_shop_tier(metrics, shop)
+    current_score = calculate_ranking_score(metrics, shop)
+
+    current_state = {
+        "rating": metrics["avg_rating"],
+        "total_reviews": metrics["total_reviews"],
+        "completed_90d": metrics["completed_90d"],
+        "reviews_30d": metrics["reviews_30d"],
+        "bookings_30d": metrics["completed_30d"],
+        "products_30d": metrics["products_30d"],
+        "gallery_count": metrics["gallery_count"],
+        "is_verified": bool(shop.get("is_verified")),
+        "subscription_active": shop.get("subscription_status") == "active",
+    }
+
+    # Build per-tier status with granular pass/fail for each requirement
+    tiers_status = []
+    for tier_key in TIER_ORDER:
+        th = TIER_THRESHOLDS[tier_key]
+
+        rating_pass = current_state["rating"] >= th["min_rating"]
+        reviews_pass = current_state["total_reviews"] >= th["min_reviews"]
+        completed_pass = current_state["completed_90d"] >= th["min_completed_90d"]
+        verified_pass = (not th["require_verified"]) or current_state["is_verified"]
+        subscribed_pass = (not th["require_subscription"]) or current_state["subscription_active"]
+        gallery_pass = current_state["gallery_count"] >= th["min_gallery"]
+
+        requirements = [
+            {
+                "key": "rating", "label_ar": "متوسط التقييم", "label_en": "Average Rating",
+                "current": current_state["rating"], "required": th["min_rating"],
+                "passed": rating_pass, "unit": "★",
+            },
+            {
+                "key": "total_reviews", "label_ar": "عدد المراجعات", "label_en": "Total Reviews",
+                "current": current_state["total_reviews"], "required": th["min_reviews"],
+                "passed": reviews_pass, "unit": "",
+            },
+            {
+                "key": "completed_90d", "label_ar": "حجوزات مكتملة (٩٠ يوم)", "label_en": "Completed Bookings (90d)",
+                "current": current_state["completed_90d"], "required": th["min_completed_90d"],
+                "passed": completed_pass, "unit": "",
+            },
+        ]
+        if th["require_verified"]:
+            requirements.append({
+                "key": "verified", "label_ar": "حساب موثّق", "label_en": "Verified Account",
+                "current": 1 if current_state["is_verified"] else 0, "required": 1,
+                "passed": verified_pass, "unit": "",
+            })
+        if th["require_subscription"]:
+            requirements.append({
+                "key": "subscription", "label_ar": "اشتراك نشط", "label_en": "Active Subscription",
+                "current": 1 if current_state["subscription_active"] else 0, "required": 1,
+                "passed": subscribed_pass, "unit": "",
+            })
+        if th["min_gallery"] > 0:
+            requirements.append({
+                "key": "gallery", "label_ar": "صور المعرض", "label_en": "Gallery Images",
+                "current": current_state["gallery_count"], "required": th["min_gallery"],
+                "passed": gallery_pass, "unit": "",
+            })
+
+        all_pass = all(r["passed"] for r in requirements)
+        tiers_status.append({
+            "tier": tier_key,
+            "label_ar": th["label_ar"],
+            "label_en": th["label_en"],
+            "icon": th["icon"],
+            "qualified": all_pass,
+            "requirements": requirements,
+            "progress": round(sum(1 for r in requirements if r["passed"]) / len(requirements), 2) if requirements else 0.0,
+        })
+
+    # Next tier to aim for
+    next_tier: Optional[Dict] = None
+    order_reversed = list(reversed(TIER_ORDER))  # city_top first (easiest)
+    current_idx = order_reversed.index(current_tier) if current_tier in order_reversed else -1
+    for idx, tier_key in enumerate(order_reversed):
+        if idx > current_idx:
+            # find matching status entry
+            for ts in tiers_status:
+                if ts["tier"] == tier_key:
+                    next_tier = ts
+                    break
+            break
+
+    return {
+        "shop_id": shop_id,
+        "shop_name": shop.get("shop_name"),
+        "current_tier": current_tier,
+        "current_tier_label_ar": TIER_THRESHOLDS.get(current_tier, {}).get("label_ar", "عادي"),
+        "current_tier_label_en": TIER_THRESHOLDS.get(current_tier, {}).get("label_en", "Normal"),
+        "current_tier_icon": TIER_THRESHOLDS.get(current_tier, {}).get("icon", "⭐"),
+        "current_score": current_score,
+        "current_state": current_state,
+        "tiers_status": tiers_status,
+        "next_tier": next_tier,
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
 # ============== PHASE 4: SPONSORED ADS ==============
 
 @api_router.post("/sponsored/request")
@@ -1545,6 +1730,8 @@ async def get_active_sponsored(
     limit: int = 10,
 ):
     """Public: list currently-running sponsored shops for homepage etc."""
+    # Normalize country → canonical Arabic form
+    country = normalize_country(country)
     now_iso = datetime.now(timezone.utc).isoformat()
     q: Dict[str, Any] = {"status": "active", "end_date": {"$gte": now_iso}}
     if scope:
@@ -2461,13 +2648,17 @@ async def create_review_compat(review_data: ReviewCreate, entity: Dict = Depends
         "barbershop_id": barbershop_id,
         "rating": min(5, max(1, review_data.rating)),
         "comment": review_data.comment,
+        "status": "pending",  # MODERATION: requires admin approval before visibility
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.reviews.insert_one(review_doc)
     
-    # Update barbershop ranking
-    all_reviews = await db.reviews.find({"barbershop_id": barbershop_id}, {"_id": 0}).to_list(1000)
+    # Update barbershop ranking (approved reviews only)
+    all_reviews = await db.reviews.find(
+        {"barbershop_id": barbershop_id, "$or": [{"status": "approved"}, {"status": {"$exists": False}}]},
+        {"_id": 0}
+    ).to_list(1000)
     if all_reviews:
         avg_rating = sum(r['rating'] for r in all_reviews) / len(all_reviews)
         
@@ -2496,13 +2687,18 @@ async def create_review_compat(review_data: ReviewCreate, entity: Dict = Depends
         "barbershop_id": review_doc["barbershop_id"],
         "rating": review_doc["rating"],
         "comment": review_doc["comment"],
-        "created_at": review_doc["created_at"]
+        "status": review_doc["status"],
+        "created_at": review_doc["created_at"],
+        "pending_moderation": True
     }
 
 @api_router.get("/reviews/barber/{barber_id}")
 async def get_barber_reviews(barber_id: str, limit: int = 50):
-    """Get reviews for a barber - frontend compatibility"""
-    reviews = await db.reviews.find({"barbershop_id": barber_id}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    """Get reviews for a barber - frontend compatibility (approved only)"""
+    reviews = await db.reviews.find(
+        {"barbershop_id": barber_id, "$or": [{"status": "approved"}, {"status": {"$exists": False}}]},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
     
     # Transform to match frontend expectations
     result = []
@@ -2538,13 +2734,20 @@ async def create_review(booking_id: str, review_data: ReviewCreate, entity: Dict
         "barbershop_id": booking['barbershop_id'],
         "rating": min(5, max(1, review_data.rating)),
         "comment": review_data.comment,
+        "status": "pending",  # MODERATION
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.reviews.insert_one(review_doc)
     
-    # Update barbershop ranking
-    all_reviews = await db.reviews.find({"barbershop_id": booking['barbershop_id']}, {"_id": 0}).to_list(1000)
+    # Update barbershop ranking (approved only)
+    all_reviews = await db.reviews.find(
+        {"barbershop_id": booking['barbershop_id'], "$or": [{"status": "approved"}, {"status": {"$exists": False}}]},
+        {"_id": 0}
+    ).to_list(1000)
+    if not all_reviews:
+        review_doc.pop("_id", None)
+        return review_doc
     avg_rating = sum(r['rating'] for r in all_reviews) / len(all_reviews)
     
     ranking_tier = "normal"
@@ -2566,8 +2769,103 @@ async def create_review(booking_id: str, review_data: ReviewCreate, entity: Dict
 
 @api_router.get("/barbershops/{shop_id}/reviews")
 async def get_shop_reviews(shop_id: str, limit: int = 50):
-    reviews = await db.reviews.find({"barbershop_id": shop_id}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    reviews = await db.reviews.find(
+        {"barbershop_id": shop_id, "$or": [{"status": "approved"}, {"status": {"$exists": False}}]},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
     return reviews
+
+# ============== ADMIN REVIEW MODERATION ==============
+
+@api_router.get("/admin/reviews/pending")
+async def admin_get_pending_reviews(limit: int = 100, admin: Dict = Depends(require_admin)):
+    """List reviews awaiting moderation (status == 'pending')."""
+    reviews = await db.reviews.find(
+        {"status": "pending"},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    # Enrich with shop name
+    for r in reviews:
+        shop = await db.barbershops.find_one({"id": r.get("barbershop_id")}, {"_id": 0, "shop_name": 1, "city": 1})
+        if shop:
+            r["shop_name"] = shop.get("shop_name", "")
+            r["shop_city"] = shop.get("city", "")
+    return {"reviews": reviews, "count": len(reviews)}
+
+@api_router.get("/admin/reviews")
+async def admin_list_reviews(status: Optional[str] = None, limit: int = 200, admin: Dict = Depends(require_admin)):
+    """List reviews filtered by status (pending/approved/rejected). Default = all."""
+    query: Dict[str, Any] = {}
+    if status in ("pending", "approved", "rejected"):
+        query["status"] = status
+    reviews = await db.reviews.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    for r in reviews:
+        shop = await db.barbershops.find_one({"id": r.get("barbershop_id")}, {"_id": 0, "shop_name": 1})
+        if shop:
+            r["shop_name"] = shop.get("shop_name", "")
+    return {"reviews": reviews, "count": len(reviews)}
+
+async def _recompute_shop_rating(shop_id: str):
+    """Recompute shop aggregate rating from approved reviews only."""
+    approved = await db.reviews.find(
+        {"barbershop_id": shop_id, "$or": [{"status": "approved"}, {"status": {"$exists": False}}]},
+        {"_id": 0, "rating": 1}
+    ).to_list(5000)
+    if approved:
+        avg = sum(r.get("rating", 0) for r in approved) / len(approved)
+        await db.barbershops.update_one(
+            {"id": shop_id},
+            {"$set": {
+                "rating": round(avg, 2),
+                "total_reviews": len(approved)
+            }}
+        )
+    else:
+        await db.barbershops.update_one(
+            {"id": shop_id},
+            {"$set": {"rating": 0.0, "total_reviews": 0}}
+        )
+
+@api_router.put("/admin/reviews/{review_id}/approve")
+async def admin_approve_review(review_id: str, admin: Dict = Depends(require_admin)):
+    review = await db.reviews.find_one({"id": review_id}, {"_id": 0})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    await db.reviews.update_one(
+        {"id": review_id},
+        {"$set": {
+            "status": "approved",
+            "moderated_by": admin.get("id"),
+            "moderated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    await _recompute_shop_rating(review.get("barbershop_id"))
+    return {"status": "approved", "id": review_id}
+
+@api_router.put("/admin/reviews/{review_id}/reject")
+async def admin_reject_review(review_id: str, admin: Dict = Depends(require_admin)):
+    review = await db.reviews.find_one({"id": review_id}, {"_id": 0})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    await db.reviews.update_one(
+        {"id": review_id},
+        {"$set": {
+            "status": "rejected",
+            "moderated_by": admin.get("id"),
+            "moderated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    await _recompute_shop_rating(review.get("barbershop_id"))
+    return {"status": "rejected", "id": review_id}
+
+@api_router.delete("/admin/reviews/{review_id}")
+async def admin_delete_review(review_id: str, admin: Dict = Depends(require_admin)):
+    review = await db.reviews.find_one({"id": review_id}, {"_id": 0})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    await db.reviews.delete_one({"id": review_id})
+    await _recompute_shop_rating(review.get("barbershop_id"))
+    return {"status": "deleted", "id": review_id}
 
 # ============== REPORT ENDPOINTS ==============
 

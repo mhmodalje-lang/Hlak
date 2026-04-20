@@ -21,6 +21,7 @@ import { motion } from 'framer-motion';
 // Import custom icons
 import { User, ShieldCheck as Lock, PhonePremium as Phone, Location, ArrowLeft, Crown, Shears } from '@/components/icons';
 import { Globe as GlobeIcon } from 'lucide-react';
+import PasswordStrengthMeter, { isPasswordValid } from '@/components/PasswordStrengthMeter';
 
 const AuthPage = () => {
   const navigate = useNavigate();
@@ -115,8 +116,19 @@ const AuthPage = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const res = await axios.post(`${API}/auth/login`, loginData);
-      login(res.data.token, res.data.user);
+      // v3.7 FIX: backend expects {phone_number, password} — map email_or_phone -> phone_number.
+      const payload = {
+        phone_number: (loginData.email_or_phone || loginData.phone_number || '').trim(),
+        password: loginData.password,
+      };
+      const res = await axios.post(`${API}/auth/login`, payload);
+      login(res.data.access_token || res.data.token, res.data.user);
+      // If the account requires password change, bounce user to the change screen.
+      if (res.data?.user?.must_change_password) {
+        toast.info(language === 'ar' ? 'يرجى تغيير كلمة المرور أولاً' : 'Please change your password first');
+        navigate('/change-password');
+        return;
+      }
       toast.success(language === 'ar' ? '✨ مرحباً بعودتك!' : '✨ Welcome back!');
       navigate('/home');
     } catch (err) {
@@ -131,9 +143,12 @@ const AuthPage = () => {
     setIsLoading(true);
     try {
       const data = authType === 'user' ? registerData : shopRegisterData;
-      const endpoint = authType === 'user' ? `${API}/auth/register` : `${API}/barbershops/register`;
+      // v3.7 FIX: backend endpoint is /auth/register-barbershop (not /barbershops/register)
+      const endpoint = authType === 'user'
+        ? `${API}/auth/register`
+        : `${API}/auth/register-barbershop`;
       const res = await axios.post(endpoint, data);
-      login(res.data.token, res.data.user);
+      login(res.data.access_token || res.data.token, res.data.user);
       toast.success(language === 'ar' ? '🎉 تم إنشاء حسابك!' : '🎉 Account created!');
       navigate('/home');
     } catch (err) {
@@ -144,7 +159,7 @@ const AuthPage = () => {
   };
 
   return (
-    <div className="bh-surface min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="bh-surface min-h-[100dvh] flex items-center justify-center p-4 relative overflow-hidden">
       {/* Ambient Orbs - Warm Brown & Gold */}
       <div className="bh-orb bh-orb-gold w-96 h-96 top-0 right-0 opacity-15" />
       <div className="bh-orb w-80 h-80 bottom-0 left-0 opacity-10" 
@@ -407,7 +422,16 @@ const AuthPage = () => {
                     }}
                     required
                     className="bh-input"
+                    autoComplete="new-password"
+                    aria-describedby="password-strength"
                   />
+                  {/* v3.7 Live password strength guidance */}
+                  <div id="password-strength">
+                    <PasswordStrengthMeter
+                      password={authType === 'user' ? registerData.password : shopRegisterData.password}
+                      language={language}
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -461,7 +485,10 @@ const AuthPage = () => {
                 <Button
                   type="submit"
                   className="bh-btn bh-btn-primary w-full"
-                  disabled={isLoading}
+                  disabled={
+                    isLoading ||
+                    !isPasswordValid(authType === 'user' ? registerData.password : shopRegisterData.password)
+                  }
                   data-testid="register-submit"
                 >
                   {isLoading ? '...' : t.registerBtn}

@@ -4,6 +4,83 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ========== v3.7 Mobile-First Layout Stability ========== */
+/* Prevents the "shrunken desktop on phone" feel + kills content jumps */
+
+html, body, #root {
+    height: 100%;
+    overflow-x: hidden;                /* kill horizontal scroll bounce */
+    overscroll-behavior-y: none;       /* prevent pull-to-refresh jiggle */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;    /* no auto-zoom when rotating */
+    text-size-adjust: 100%;
+}
+
+body {
+    min-height: 100dvh;                /* dynamic vh — no jump when URL bar shows/hides */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    touch-action: manipulation;        /* faster taps, no double-tap zoom */
+}
+
+/* Stop iOS from enlarging inputs to 17pt — keeps layout predictable */
+input, select, textarea, button {
+    font-size: 16px;
+    touch-action: manipulation;
+}
+
+/* Scrollbars never take width (content-box shift fix on desktop) */
+@supports (scrollbar-gutter: stable) {
+    html { scrollbar-gutter: stable; }
+}
+
+/* Reduce motion respects user OS setting (accessibility + less jank on low-end phones) */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Premium depth tokens (added once, reused via classes) */
+:root {
+    --bh-shadow-sm: 0 2px 6px rgba(0,0,0,0.35);
+    --bh-shadow-md: 0 8px 22px rgba(0,0,0,0.45);
+    --bh-shadow-lg: 0 20px 48px rgba(0,0,0,0.55);
+    --bh-glow-gold: 0 0 24px rgba(212,175,55,0.35);
+    --bh-glow-gold-strong: 0 0 40px rgba(212,175,55,0.55);
+}
+
+.bh-depth-sm { box-shadow: var(--bh-shadow-sm); }
+.bh-depth-md { box-shadow: var(--bh-shadow-md); }
+.bh-depth-lg { box-shadow: var(--bh-shadow-lg); }
+.bh-glow-gold { box-shadow: var(--bh-glow-gold); }
+.bh-glow-gold-strong { box-shadow: var(--bh-glow-gold-strong); }
+
+/* Cards with depth ring + glow for that native-app feel */
+.bh-card-premium {
+    background: linear-gradient(180deg, rgba(25,20,15,0.92), rgba(15,12,10,0.96));
+    border: 1px solid rgba(212,175,55,0.22);
+    border-radius: 20px;
+    box-shadow: var(--bh-shadow-md), inset 0 1px 0 rgba(255,255,255,0.06);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+/* Touch targets (Apple HIG = 44×44, Google = 48×48) */
+.bh-touch { min-height: 44px; min-width: 44px; }
+
+/* Prevent layout shift when images load — gives intrinsic ratio */
+img, video { max-width: 100%; height: auto; display: block; }
+
+/* Stable modal/dialog anchoring (no jumping on open) */
+[data-state="open"] { animation-fill-mode: both; }
+
+
 :root {
     /* Men's Theme - Dark & Gold */
     --men-bg: #0A0A0A;

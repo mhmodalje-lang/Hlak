@@ -12,6 +12,7 @@ import { CurrencyProvider } from "@/contexts/CurrencyContext";
 // Pages
 import GenderSelection from "@/pages/GenderSelection";
 import AuthPage from "@/pages/AuthPage";
+import ChangePasswordPage from "@/pages/ChangePasswordPage";
 import HomePage from "@/pages/HomePage";
 import BarberProfile from "@/pages/BarberProfile";
 import BookingPage from "@/pages/BookingPage";
@@ -128,6 +129,7 @@ function App() {
                     
                     {/* Auth */}
                     <Route path="/auth" element={<AuthPage />} />
+                    <Route path="/change-password" element={<ChangePasswordPage />} />
                     
                     {/* Main Pages */}
                     <Route path="/home" element={gender ? <HomePage /> : <Navigate to="/" />} />

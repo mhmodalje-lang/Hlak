@@ -91,7 +91,7 @@ def validate_password_strength(password: str) -> str:
     return password
 
 # Create the main app
-app = FastAPI(title="BARBER HUB API", version="3.6.1")
+app = FastAPI(title="BARBER HUB API", version="3.7.0")
 
 # Initialize rate limiter (keyed by client IP)
 if RATE_LIMIT_OK:
@@ -539,6 +539,75 @@ async def require_admin(entity: Dict = Depends(require_auth)) -> Dict:
     if entity.get('entity_type') != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
     return entity
+
+
+# ============== Admin Roles & Permissions (v3.7) ==============
+# Master Owner (hard-coded, immutable): has ALL permissions, cannot be deleted, cannot have
+# their role/permissions changed by anyone — not even by another master. Identified by
+# email address. Auto-elevated on startup.
+MASTER_OWNER_EMAIL = os.environ.get("MASTER_OWNER_EMAIL", "mohamadalrejab@gmail.com").strip().lower()
+
+# Permission catalog — granular, so sub-admins get exactly what they need.
+ADMIN_PERMISSIONS = {
+    "manage_admins":        "Add, edit, and remove sub-admins (master only by default)",
+    "view_stats":           "View dashboard statistics and analytics",
+    "manage_bookings":      "View and modify bookings across all shops",
+    "manage_barbershops":   "Verify, suspend, and edit barbershops",
+    "manage_users":         "View, search, and moderate customer accounts",
+    "manage_products":      "Oversee product showcase and moderate items",
+    "manage_reviews":       "Approve, reject, or delete customer reviews",
+    "manage_reports":       "Handle user-submitted reports",
+    "manage_subscriptions": "Approve/reject shop subscriptions and payments",
+    "manage_ads":           "Review and approve sponsored ads",
+    "manage_rankings":      "Trigger ranking recomputes and inspect tier data",
+    "support":              "Access support tools and send notifications",
+}
+ALL_PERMISSIONS = list(ADMIN_PERMISSIONS.keys())
+
+
+def admin_is_master(entity: Dict) -> bool:
+    """True if the authenticated admin is the Master Owner."""
+    if entity.get("entity_type") != "admin":
+        return False
+    if entity.get("role") == "master_admin":
+        return True
+    email = (entity.get("email") or "").strip().lower()
+    return bool(email) and email == MASTER_OWNER_EMAIL
+
+
+def admin_has_permission(entity: Dict, permission: str) -> bool:
+    """True if the authenticated admin has the given permission.
+    Master owners implicitly have every permission.
+    Legacy admins (no permissions field) default to ALL permissions for backward-compat."""
+    if entity.get("entity_type") != "admin":
+        return False
+    if admin_is_master(entity):
+        return True
+    perms = entity.get("permissions")
+    if perms is None:  # legacy admin — grant all for compatibility
+        return True
+    return permission in perms
+
+
+def require_permission(permission: str):
+    """FastAPI dependency factory: gate an admin-only endpoint behind a specific permission."""
+    async def _dep(entity: Dict = Depends(require_admin)) -> Dict:
+        if not admin_has_permission(entity, permission):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission denied: '{permission}' required"
+            )
+        return entity
+    return _dep
+
+
+def require_master_admin(entity: Dict = Depends(require_admin)) -> Dict:
+    """Hard gate: must be the Master Owner. Used for sensitive operations like
+    adding/removing sub-admins or changing their permissions."""
+    if not admin_is_master(entity):
+        raise HTTPException(status_code=403, detail="Master admin access required")
+    return entity
+
 
 def generate_qr_code(url: str) -> str:
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -3267,6 +3336,234 @@ async def get_admin_stats(admin: Dict = Depends(require_admin)):
         "active_subscribers": active_subs
     }
 
+
+# ============== Sub-Admins CRUD (v3.7) ==============
+# Only the Master Owner can manage sub-admins. Granular permissions give each
+# sub-admin exactly the scope they need (bookings ops, reviews moderation, etc.).
+
+class SubAdminCreate(BaseModel):
+    phone_number: str
+    email: Optional[str] = None
+    full_name: str
+    password: str
+    permissions: List[str] = []
+    note: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def _vp(cls, v: str) -> str:
+        return validate_password_strength(v)
+
+    @field_validator("permissions")
+    @classmethod
+    def _vperms(cls, v: List[str]) -> List[str]:
+        cleaned = []
+        for p in (v or []):
+            if p not in ADMIN_PERMISSIONS:
+                raise ValueError(f"Unknown permission: {p}")
+            if p not in cleaned:
+                cleaned.append(p)
+        return cleaned
+
+
+class SubAdminUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    permissions: Optional[List[str]] = None
+    note: Optional[str] = None
+    active: Optional[bool] = None
+
+    @field_validator("permissions")
+    @classmethod
+    def _vperms(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return None
+        cleaned = []
+        for p in v:
+            if p not in ADMIN_PERMISSIONS:
+                raise ValueError(f"Unknown permission: {p}")
+            if p not in cleaned:
+                cleaned.append(p)
+        return cleaned
+
+
+def _sanitize_admin_doc(doc: Dict) -> Dict:
+    """Strip password + Mongo _id before returning an admin document to the client."""
+    if not doc:
+        return {}
+    out = {k: v for k, v in doc.items() if k not in ("password", "_id")}
+    out["is_master"] = (
+        (doc.get("email") or "").strip().lower() == MASTER_OWNER_EMAIL
+        or doc.get("role") == "master_admin"
+    )
+    return out
+
+
+@api_router.get("/admin/permissions/catalog")
+async def get_permissions_catalog(admin: Dict = Depends(require_admin)):
+    """Return the catalog of available permissions (for the UI to render checkboxes)."""
+    return {
+        "permissions": [
+            {"key": k, "description": v} for k, v in ADMIN_PERMISSIONS.items()
+        ],
+        "master_owner_email": MASTER_OWNER_EMAIL,
+    }
+
+
+@api_router.get("/admin/me")
+async def get_current_admin(admin: Dict = Depends(require_admin)):
+    """Return the current admin's profile + effective permissions (for UI gating)."""
+    is_master = admin_is_master(admin)
+    perms = ALL_PERMISSIONS if (is_master or admin.get("permissions") is None) else admin.get("permissions", [])
+    return {
+        "id": admin.get("id"),
+        "phone_number": admin.get("phone_number"),
+        "email": admin.get("email"),
+        "full_name": admin.get("full_name"),
+        "is_master": is_master,
+        "permissions": perms,
+        "must_change_password": bool(admin.get("must_change_password")),
+    }
+
+
+@api_router.get("/admin/sub-admins")
+async def list_sub_admins(master: Dict = Depends(require_master_admin)):
+    """List all admin accounts (master + sub-admins). Master only."""
+    docs = await db.admins.find({}, {"password": 0}).sort("created_at", 1).to_list(500)
+    return [_sanitize_admin_doc(d) for d in docs]
+
+
+@api_router.post("/admin/sub-admins")
+async def create_sub_admin(payload: SubAdminCreate, master: Dict = Depends(require_master_admin)):
+    """Create a new sub-admin. Master only."""
+    phone = (payload.phone_number or "").strip()
+    email = (payload.email or "").strip().lower() or None
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number is required")
+
+    # Block creating a duplicate of the master owner
+    if email and email == MASTER_OWNER_EMAIL:
+        raise HTTPException(
+            status_code=400,
+            detail="This email is reserved for the Master Owner and cannot be used for a sub-admin."
+        )
+
+    # Phone + email uniqueness across admins
+    if await db.admins.find_one({"phone_number": phone}):
+        raise HTTPException(status_code=400, detail="Phone number already registered as admin")
+    if email and await db.admins.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email already registered as admin")
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "phone_number": phone,
+        "email": email,
+        "password": hash_password(payload.password),
+        "full_name": payload.full_name.strip(),
+        "role": "sub_admin",
+        "permissions": payload.permissions or [],
+        "note": (payload.note or "").strip() or None,
+        "active": True,
+        "must_change_password": True,  # force rotation on first login
+        "created_by": master.get("id"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.admins.insert_one(doc)
+    return {"message": "Sub-admin created", "admin": _sanitize_admin_doc(doc)}
+
+
+@api_router.put("/admin/sub-admins/{admin_id}")
+async def update_sub_admin(
+    admin_id: str,
+    payload: SubAdminUpdate,
+    master: Dict = Depends(require_master_admin)
+):
+    """Update a sub-admin's full_name / email / permissions / active status. Master only.
+    The Master Owner's record is protected: their permissions and active flag cannot be modified.
+    """
+    existing = await db.admins.find_one({"id": admin_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Admin not found")
+
+    existing_email = (existing.get("email") or "").strip().lower()
+    if existing_email == MASTER_OWNER_EMAIL or existing.get("role") == "master_admin":
+        raise HTTPException(
+            status_code=403,
+            detail="The Master Owner account cannot be modified."
+        )
+
+    update_data: Dict[str, Any] = {}
+    if payload.full_name is not None:
+        update_data["full_name"] = payload.full_name.strip()
+    if payload.email is not None:
+        new_email = payload.email.strip().lower() or None
+        if new_email == MASTER_OWNER_EMAIL:
+            raise HTTPException(status_code=400, detail="This email is reserved for the Master Owner.")
+        if new_email and await db.admins.find_one({"email": new_email, "id": {"$ne": admin_id}}):
+            raise HTTPException(status_code=400, detail="Email already used by another admin")
+        update_data["email"] = new_email
+    if payload.permissions is not None:
+        update_data["permissions"] = payload.permissions
+    if payload.note is not None:
+        update_data["note"] = payload.note.strip() or None
+    if payload.active is not None:
+        update_data["active"] = bool(payload.active)
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No changes provided")
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await db.admins.update_one({"id": admin_id}, {"$set": update_data})
+    updated = await db.admins.find_one({"id": admin_id}, {"password": 0})
+    return {"message": "Sub-admin updated", "admin": _sanitize_admin_doc(updated)}
+
+
+@api_router.delete("/admin/sub-admins/{admin_id}")
+async def delete_sub_admin(admin_id: str, master: Dict = Depends(require_master_admin)):
+    """Delete a sub-admin. Master only. The Master Owner cannot be deleted."""
+    existing = await db.admins.find_one({"id": admin_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Admin not found")
+
+    existing_email = (existing.get("email") or "").strip().lower()
+    if existing_email == MASTER_OWNER_EMAIL or existing.get("role") == "master_admin":
+        raise HTTPException(status_code=403, detail="The Master Owner cannot be deleted.")
+
+    if existing.get("id") == master.get("id"):
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+
+    await db.admins.delete_one({"id": admin_id})
+    return {"message": "Sub-admin deleted", "id": admin_id}
+
+
+@api_router.post("/admin/sub-admins/{admin_id}/reset-password")
+async def reset_sub_admin_password(admin_id: str, master: Dict = Depends(require_master_admin)):
+    """Rotate a sub-admin's password to a new strong random value and return it ONCE.
+    Sets must_change_password=True so they must rotate on next login.
+    """
+    existing = await db.admins.find_one({"id": admin_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Admin not found")
+
+    if (existing.get("email") or "").strip().lower() == MASTER_OWNER_EMAIL:
+        raise HTTPException(status_code=403, detail="The Master Owner password cannot be reset by this endpoint.")
+
+    new_pw = f"Sub-{secrets.token_urlsafe(10)}-2026"
+    await db.admins.update_one(
+        {"id": admin_id},
+        {"$set": {
+            "password": hash_password(new_pw),
+            "must_change_password": True,
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    return {
+        "message": "Password rotated successfully",
+        "temporary_password": new_pw,
+        "note": "Share with the sub-admin. They must change it on first login."
+    }
+
 # ============== LOCATION ENDPOINTS ==============
 
 @api_router.get("/locations/countries")
@@ -5125,6 +5422,40 @@ async def startup_db():
                 "must_change_password flag is ON — admin must rotate again via "
                 "POST /api/auth/change-password before using any protected endpoint."
             )
+
+    # ---------- Master Owner auto-elevation (v3.7) ----------
+    # Ensure the designated Master Owner (MASTER_OWNER_EMAIL) is always:
+    #   - role=master_admin
+    #   - permissions=ALL
+    #   - active=True, is_verified=True
+    # If no admin record has this email yet, we do NOT auto-create one (they must register
+    # normally first or be created by an existing admin). But if one DOES exist, we elevate it.
+    try:
+        master_doc = await db.admins.find_one({"email": MASTER_OWNER_EMAIL})
+        if master_doc:
+            needs_update = (
+                master_doc.get("role") != "master_admin"
+                or master_doc.get("permissions") != ALL_PERMISSIONS
+                or master_doc.get("active") is False
+            )
+            if needs_update:
+                await db.admins.update_one(
+                    {"id": master_doc["id"]},
+                    {"$set": {
+                        "role": "master_admin",
+                        "permissions": ALL_PERMISSIONS,
+                        "active": True,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }}
+                )
+                logger.info(f"Master Owner ({MASTER_OWNER_EMAIL}) auto-elevated to role=master_admin with full permissions.")
+        else:
+            logger.info(
+                f"Master Owner email ({MASTER_OWNER_EMAIL}) not yet registered. "
+                "When that account is created (or an existing admin adds this email), it will be auto-elevated on next boot."
+            )
+    except Exception as e:
+        logger.error(f"Master Owner elevation failed: {e}")
 
     # ---------- Ranking recompute: initial + nightly schedule ----------
     import asyncio

@@ -163,7 +163,10 @@ const AuthPage = () => {
       toast.success(language === 'ar' ? '🎉 تم إنشاء حسابك!' : '🎉 Account created!');
       // v3.7 — after salon registration, go directly to the dashboard
       // so the owner can upload their logo, gallery, and products straight away.
-      navigate(authType === 'shop' ? '/dashboard' : '/home');
+      // v3.7.5 BUGFIX: authType is 'user' or 'barbershop' (never 'shop').
+      //                 The previous check was broken, causing new salons to land on /home
+      //                 instead of their dashboard.
+      navigate(authType === 'barbershop' ? '/dashboard' : '/home');
     } catch (err) {
       toast.error(err.response?.data?.detail || (language === 'ar' ? 'خطأ في التسجيل' : 'Registration failed'));
     } finally {

@@ -1313,15 +1313,63 @@ async def register_barbershop(shop_data: BarbershopCreate, request: Request):
         "ranking_tier": "normal",
         "is_verified": False,
         "total_reviews": 0,
+        # v3.8 — Approval workflow. New shops are PENDING until the site owner approves.
+        # Unapproved shops are hidden from ALL public endpoints (listings, featured, map,
+        # search, sitemap). Their owners can still log in and configure their dashboard.
+        "approval_status": "pending",
+        "approval_note": None,
+        "approved_at": None,
+        "approved_by": None,
+        "rejected_at": None,
+        "rejection_reason": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.barbershops.insert_one(shop_doc)
-    
+
+    # Notify all admins (push + audit log) that a new salon is awaiting approval.
+    try:
+        notif = {
+            "id": str(uuid.uuid4()),
+            "recipient_type": "admin",
+            "kind": "shop_pending_approval",
+            "title": "📝 صالون جديد بانتظار الموافقة / New salon awaiting approval",
+            "body": f"{shop_data.shop_name} - {shop_data.city}, {shop_data.country}",
+            "data": {"shop_id": shop_id, "shop_name": shop_data.shop_name},
+            "read": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at_dt": datetime.now(timezone.utc),
+        }
+        await db.admin_notifications.insert_one(notif)
+    except Exception as e:
+        logger.debug(f"admin_notifications insert failed: {e}")
+
+    # Fire web-push to all admins who subscribed.
+    try:
+        if SEC_EXTRAS_OK and sec_extras.WEBPUSH_OK:
+            admins = await db.admins.find({}, {"_id": 0, "id": 1}).to_list(50)
+            admin_ids = [a["id"] for a in admins]
+            subs = await db.push_subscriptions.find({"user_id": {"$in": admin_ids}}, {"_id": 0}).to_list(100)
+            for s in subs:
+                try:
+                    sec_extras.send_web_push(
+                        {"endpoint": s.get("endpoint"), "keys": s.get("keys", {})},
+                        {
+                            "title": "📝 BARBER HUB - طلب موافقة جديد",
+                            "body": f"{shop_data.shop_name} - {shop_data.city}",
+                            "icon": "/icons/icon-192.png",
+                            "url": "/admin?tab=approvals",
+                        },
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     token = create_token(shop_id, 'barbershop')
     shop_response = {k: v for k, v in shop_doc.items() if k not in ('password', '_id')}
-    
+
     return TokenResponse(access_token=token, user_type='barbershop', user=shop_response)
 
 # ============== BARBERSHOP ENDPOINTS (ORIGINAL) ==============
@@ -1338,7 +1386,17 @@ async def list_barbershops(
     sort_by: str = "ranking_score",
     limit: int = 50
 ):
-    query = {}
+    # v3.8 — Public listings are ALWAYS filtered to approved salons only.
+    # Pending / rejected / pending_deletion shops are invisible to guests & users.
+    query = {
+        "$or": [
+            {"approval_status": "approved"},
+            # Backward compat — shops created before v3.8 have no approval_status field;
+            # treat those as approved IF they were already verified by an admin.
+            {"approval_status": {"$exists": False}, "is_verified": True},
+        ],
+        "status": {"$ne": "pending_deletion"},
+    }
     if type:
         query["shop_type"] = type
     if country:
@@ -1347,12 +1405,12 @@ async def list_barbershops(
         query["city"] = city
     if district:
         query["district"] = district
-    
+
     sort_field = "ranking_score" if sort_by == "ranking_score" else "created_at"
     sort_order = -1
-    
+
     shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).sort(sort_field, sort_order).limit(limit).to_list(limit)
-    
+
     if lat is not None and lng is not None:
         def calc_distance(shop):
             if not shop.get('latitude') or not shop.get('longitude'):
@@ -1360,17 +1418,36 @@ async def list_barbershops(
             dlat = abs(shop['latitude'] - lat)
             dlng = abs(shop['longitude'] - lng)
             return (dlat**2 + dlng**2)**0.5 * 111
-        
+
         shops = [s for s in shops if calc_distance(s) <= radius]
         shops.sort(key=calc_distance)
-    
+
     return shops
 
 @api_router.get("/barbershops/{shop_id}")
-async def get_barbershop(shop_id: str):
+async def get_barbershop(shop_id: str, request: Request):
     shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "password": 0})
     if not shop:
         raise HTTPException(status_code=404, detail="Barbershop not found")
+    # v3.8 — Hide pending / rejected shops from the public profile page,
+    # UNLESS the viewer IS the shop owner OR an admin.
+    approval = shop.get("approval_status", "approved" if shop.get("is_verified") else "pending")
+    if approval != "approved":
+        # Attempt to identify the viewer via the optional Authorization header.
+        viewer_allowed = False
+        try:
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.lower().startswith("bearer "):
+                tok = auth_header.split(" ", 1)[1]
+                payload = jwt.decode(tok, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                eid = payload.get("entity_id")
+                etype = payload.get("entity_type")
+                if etype == "admin" or (etype == "barbershop" and eid == shop_id):
+                    viewer_allowed = True
+        except Exception:
+            pass
+        if not viewer_allowed:
+            raise HTTPException(status_code=404, detail="Barbershop not found")
     return shop
 
 @api_router.put("/barbershops/me")
@@ -1542,8 +1619,16 @@ async def update_barber_profile(profile_data: BarberProfileCreate, entity: Dict 
 
 @api_router.get("/barbers/top/{gender}")
 async def get_top_barbers(gender: str, limit: int = 20):
-    """Get top rated barbers by gender (legacy - global scope)"""
-    query = {"shop_type": gender}
+    """Get top rated barbers by gender (legacy - global scope).
+    v3.8 — filters unapproved/deleted shops out of public rankings."""
+    query = {
+        "shop_type": gender,
+        "$or": [
+            {"approval_status": "approved"},
+            {"approval_status": {"$exists": False}, "is_verified": True},
+        ],
+        "status": {"$ne": "pending_deletion"},
+    }
     shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).sort("ranking_score", -1).limit(limit).to_list(limit)
     
     result = []
@@ -1580,7 +1665,13 @@ async def get_ranked_top(
     if scope not in ("global", "city", "country", "region"):
         raise HTTPException(status_code=400, detail="scope must be one of global|city|country|region")
 
-    query: Dict[str, Any] = {}
+    query: Dict[str, Any] = {
+        "$or": [
+            {"approval_status": "approved"},
+            {"approval_status": {"$exists": False}, "is_verified": True},
+        ],
+        "status": {"$ne": "pending_deletion"},
+    }
     if gender in ("male", "female"):
         query["shop_type"] = gender
     if scope == "city":
@@ -3174,18 +3265,175 @@ async def create_subscription(sub_data: SubscriptionCreate, shop: Dict = Depends
 
 @api_router.get("/admin/pending-barbershops")
 async def get_pending_barbershops(admin: Dict = Depends(require_admin)):
-    shops = await db.barbershops.find({"is_verified": False}, {"_id": 0, "password": 0}).to_list(100)
+    """v3.8 — list salons awaiting owner approval (new approval_status field).
+    Falls back to the legacy is_verified=False criterion for pre-v3.8 shops."""
+    shops = await db.barbershops.find(
+        {
+            "$or": [
+                {"approval_status": "pending"},
+                {"approval_status": {"$exists": False}, "is_verified": False},
+            ]
+        },
+        {"_id": 0, "password": 0},
+    ).sort("created_at", -1).to_list(200)
     return shops
+
+@api_router.get("/admin/all-barbershops")
+async def get_all_barbershops_admin(
+    admin: Dict = Depends(require_admin),
+    approval_status: Optional[str] = None,
+    shop_type: Optional[str] = None,
+    country: Optional[str] = None,
+    city: Optional[str] = None,
+    limit: int = 200,
+    skip: int = 0,
+):
+    """v3.8 — admin: list EVERY salon (pending, approved, rejected). Supports filters."""
+    query: Dict[str, Any] = {}
+    if approval_status:
+        query["approval_status"] = approval_status
+    if shop_type:
+        query["shop_type"] = shop_type
+    if country:
+        query["country"] = country
+    if city:
+        query["city"] = city
+    total = await db.barbershops.count_documents(query)
+    items = await (
+        db.barbershops.find(query, {"_id": 0, "password": 0})
+        .sort("created_at", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
+    return {"total": total, "items": items}
+
+@api_router.put("/admin/barbershops/{shop_id}/approve")
+async def approve_barbershop(shop_id: str, request: Request, admin: Dict = Depends(require_admin)):
+    """v3.8 — approve a pending salon. Makes it visible publicly + notifies the owner."""
+    shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "password": 0})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Barbershop not found")
+    await db.barbershops.update_one(
+        {"id": shop_id},
+        {"$set": {
+            "approval_status": "approved",
+            "is_verified": True,
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "approved_by": admin.get("id"),
+            "rejection_reason": None,
+            "rejected_at": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    # Notify the owner
+    try:
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "recipient_id": shop_id,
+            "recipient_type": "barbershop",
+            "kind": "shop_approved",
+            "title": "✅ تم قبول صالونك / Your salon is approved",
+            "body": "صالونك الآن ظاهر للعامة. ابدأ باستقبال الحجوزات!",
+            "read": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at_dt": datetime.now(timezone.utc),
+        })
+    except Exception:
+        pass
+    # Push notification
+    try:
+        if SEC_EXTRAS_OK and sec_extras.WEBPUSH_OK:
+            subs = await db.push_subscriptions.find({"user_id": shop_id}, {"_id": 0}).to_list(20)
+            for s in subs:
+                sec_extras.send_web_push(
+                    {"endpoint": s.get("endpoint"), "keys": s.get("keys", {})},
+                    {"title": "✅ تمت الموافقة", "body": "صالونك الآن ظاهر للجميع!", "url": "/dashboard"}
+                )
+    except Exception:
+        pass
+    await _log_audit("admin.shop_approved", admin.get("id"), "admin", request=request,
+                     target_id=shop_id, target_type="barbershop")
+    return {"message": "Barbershop approved", "shop_id": shop_id}
+
+class RejectShopRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
+
+@api_router.put("/admin/barbershops/{shop_id}/reject")
+async def reject_barbershop(shop_id: str, payload: RejectShopRequest, request: Request, admin: Dict = Depends(require_admin)):
+    """v3.8 — reject a pending salon with a reason. Owner is notified."""
+    shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "password": 0})
+    if not shop:
+        raise HTTPException(status_code=404, detail="Barbershop not found")
+    await db.barbershops.update_one(
+        {"id": shop_id},
+        {"$set": {
+            "approval_status": "rejected",
+            "is_verified": False,
+            "rejected_at": datetime.now(timezone.utc).isoformat(),
+            "rejection_reason": payload.reason.strip(),
+            "approved_at": None,
+            "approved_by": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    try:
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "recipient_id": shop_id,
+            "recipient_type": "barbershop",
+            "kind": "shop_rejected",
+            "title": "⚠️ تم رفض طلب صالونك / Your salon was rejected",
+            "body": f"السبب: {payload.reason}",
+            "read": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at_dt": datetime.now(timezone.utc),
+        })
+    except Exception:
+        pass
+    await _log_audit("admin.shop_rejected", admin.get("id"), "admin", request=request,
+                     target_id=shop_id, target_type="barbershop",
+                     metadata={"reason": payload.reason[:100]})
+    return {"message": "Barbershop rejected", "shop_id": shop_id, "reason": payload.reason}
+
+# ---- Admin notifications (shop pending approval queue) ----
+@api_router.get("/admin/notifications")
+async def admin_notifications_list(
+    admin: Dict = Depends(require_admin),
+    unread_only: bool = False,
+    limit: int = 50,
+):
+    q: Dict[str, Any] = {}
+    if unread_only:
+        q["read"] = False
+    items = await db.admin_notifications.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    unread_count = await db.admin_notifications.count_documents({"read": False})
+    return {"items": items, "unread_count": unread_count}
+
+@api_router.put("/admin/notifications/{notif_id}/read")
+async def admin_notifications_mark_read(notif_id: str, admin: Dict = Depends(require_admin)):
+    await db.admin_notifications.update_one({"id": notif_id}, {"$set": {"read": True}})
+    return {"message": "marked as read"}
 
 @api_router.put("/admin/barbershops/{shop_id}/verify")
 async def verify_barbershop(shop_id: str, admin: Dict = Depends(require_admin)):
-    result = await db.barbershops.update_one(
-        {"id": shop_id},
-        {"$set": {"is_verified": True, "updated_at": datetime.now(timezone.utc).isoformat()}}
-    )
-    if result.modified_count == 0:
+    """Legacy endpoint — just approves the shop (no request metadata for audit)."""
+    shop = await db.barbershops.find_one({"id": shop_id}, {"_id": 0, "password": 0})
+    if not shop:
         raise HTTPException(status_code=404, detail="Barbershop not found")
-    return {"message": "Barbershop verified"}
+    await db.barbershops.update_one(
+        {"id": shop_id},
+        {"$set": {
+            "approval_status": "approved",
+            "is_verified": True,
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "approved_by": admin.get("id"),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    await _log_audit("admin.shop_approved", admin.get("id"), "admin",
+                     target_id=shop_id, target_type="barbershop")
+    return {"message": "Barbershop verified", "shop_id": shop_id}
 
 @api_router.get("/admin/reports")
 async def get_admin_reports(admin: Dict = Depends(require_admin), status: str = "pending"):
@@ -6009,11 +6257,20 @@ async def guest_init(request: Request):
 
 @api_router.get("/sitemap.xml")
 async def sitemap_xml():
-    """Dynamic sitemap for SEO. Emits barbershop profiles + key public pages."""
+    """Dynamic sitemap for SEO.
+    v3.8 — only includes APPROVED shops, plus city-based landing pages (e.g.,
+    /city/SY/Hasakah/male) which rank for searches like "حلاق في الحسكة" /
+    "barber in Baghdad"."""
     from fastapi.responses import Response
+    query = {
+        "$or": [
+            {"approval_status": "approved"},
+            {"approval_status": {"$exists": False}, "is_verified": True},
+        ]
+    }
     shops = await db.barbershops.find(
-        {"active": {"$ne": False}}, {"_id": 0, "id": 1, "updated_at": 1, "created_at": 1}
-    ).to_list(1000)
+        query, {"_id": 0, "id": 1, "updated_at": 1, "created_at": 1, "country": 1, "city": 1, "shop_type": 1}
+    ).to_list(5000)
     base = APP_URL.rstrip("/")
     urls: List[str] = [
         f"<url><loc>{base}/</loc><priority>1.0</priority></url>",
@@ -6026,10 +6283,29 @@ async def sitemap_xml():
         f"<url><loc>{base}/terms</loc><priority>0.5</priority></url>",
         f"<url><loc>{base}/contact</loc><priority>0.5</priority></url>",
     ]
+    # Individual shop profiles
     for s in shops:
         lastmod = (s.get("updated_at") or s.get("created_at") or "")[:10]
         lastmod_tag = f"<lastmod>{lastmod}</lastmod>" if lastmod else ""
         urls.append(f"<url><loc>{base}/barber/{s.get('id')}</loc>{lastmod_tag}<priority>0.7</priority></url>")
+
+    # City landing pages (aggregated). Example: /city/SY/Hasakah/male
+    # Google will rank these for "حلاق في الحسكة" and "barber Hasakah".
+    city_pairs = set()
+    for s in shops:
+        country = (s.get("country") or "").strip()
+        city = (s.get("city") or "").strip()
+        gender = (s.get("shop_type") or "").strip()
+        if country and city:
+            city_pairs.add((country, city, gender or "all"))
+            city_pairs.add((country, city, "all"))
+    for country, city, gender in city_pairs:
+        safe_city = city.replace(" ", "-")
+        if gender == "all":
+            urls.append(f"<url><loc>{base}/city/{country}/{safe_city}</loc><priority>0.8</priority></url>")
+        else:
+            urls.append(f"<url><loc>{base}/city/{country}/{safe_city}/{gender}</loc><priority>0.8</priority></url>")
+
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
@@ -6037,6 +6313,71 @@ async def sitemap_xml():
         + "</urlset>"
     )
     return Response(content=xml, media_type="application/xml")
+
+
+# ============== SEO: CITY LANDING PAGES =============================
+@api_router.get("/seo/city/{country}/{city}")
+async def seo_city_page(country: str, city: str, gender: Optional[str] = None, limit: int = 30):
+    """Returns structured data for a city-specific barber listing page.
+    Used by the frontend to render /city/:country/:city pages with great SEO
+    (LocalBusiness JSON-LD, keyword-rich titles/descriptions).
+    """
+    city_clean = city.replace("-", " ")
+    query: Dict[str, Any] = {
+        "country": country,
+        "city": city_clean,
+        "$or": [
+            {"approval_status": "approved"},
+            {"approval_status": {"$exists": False}, "is_verified": True},
+        ],
+    }
+    if gender in ("male", "female"):
+        query["shop_type"] = gender
+    shops = await db.barbershops.find(query, {"_id": 0, "password": 0}).sort("ranking_score", -1).limit(limit).to_list(limit)
+
+    # JSON-LD LocalBusiness list for Google rich results
+    items_ld = []
+    for s in shops:
+        items_ld.append({
+            "@type": "ListItem",
+            "position": len(items_ld) + 1,
+            "item": {
+                "@type": "HairSalon" if s.get("shop_type") == "female" else "BarberShop",
+                "name": s.get("shop_name"),
+                "image": s.get("shop_logo"),
+                "address": {
+                    "@type": "PostalAddress",
+                    "streetAddress": s.get("address"),
+                    "addressLocality": s.get("city"),
+                    "addressCountry": s.get("country"),
+                },
+                "geo": {
+                    "@type": "GeoCoordinates",
+                    "latitude": s.get("latitude"),
+                    "longitude": s.get("longitude"),
+                } if s.get("latitude") else None,
+                "telephone": s.get("phone_number"),
+                "aggregateRating": {
+                    "@type": "AggregateRating",
+                    "ratingValue": s.get("rating") or 0,
+                    "reviewCount": s.get("total_reviews") or 0,
+                } if s.get("total_reviews") else None,
+                "url": f"{APP_URL.rstrip('/')}/barber/{s.get('id')}",
+            },
+        })
+    jsonld = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "itemListElement": items_ld,
+    }
+    return {
+        "country": country,
+        "city": city_clean,
+        "gender": gender,
+        "count": len(shops),
+        "shops": shops,
+        "jsonld": jsonld,
+    }
 
 
 
@@ -6429,6 +6770,59 @@ async def startup_db():
             )
     except Exception as e:
         logger.error(f"Master Owner elevation failed: {e}")
+
+    # ---------- v3.8 Dedicated Site Owner bootstrap ----------
+    # The site owner explicitly requested a Master admin with:
+    #   phone = +4917684034961 (stored WITHOUT the leading '+' to stay consistent
+    #   with every other phone in the DB that uses the E.164 digits form)
+    #   password = mhm321321/  (must_change_password=True so it MUST be rotated
+    #   immediately on first login)
+    # Idempotent: runs every boot but only inserts if missing; never overwrites a
+    # password the owner has already rotated.
+    try:
+        owner_phone = "4917684034961"
+        owner_initial_pw = "mhm321321/"
+        existing = await db.admins.find_one({"phone_number": owner_phone})
+        if not existing:
+            owner_doc = {
+                "id": str(uuid.uuid4()),
+                "phone_number": owner_phone,
+                "email": os.environ.get("SITE_OWNER_EMAIL", "owner@barberhub.com"),
+                "password": hash_password(owner_initial_pw),
+                "full_name": "Site Owner",
+                "role": "master_admin",
+                "permissions": ALL_PERMISSIONS,
+                "active": True,
+                "is_verified": True,
+                "must_change_password": True,   # forces rotation on first login
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.admins.insert_one(owner_doc)
+            logger.warning(
+                "🔐 Site Owner account CREATED (v3.8). Phone=+%s — initial password is"
+                " the one provided by the owner; must_change_password=True so it will"
+                " be forced to rotate on first login.",
+                owner_phone,
+            )
+        else:
+            # Make sure it is elevated to master_admin with all permissions (idempotent).
+            if (
+                existing.get("role") != "master_admin"
+                or existing.get("permissions") != ALL_PERMISSIONS
+                or existing.get("active") is False
+            ):
+                await db.admins.update_one(
+                    {"id": existing["id"]},
+                    {"$set": {
+                        "role": "master_admin",
+                        "permissions": ALL_PERMISSIONS,
+                        "active": True,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }}
+                )
+                logger.info("🔐 Site Owner account re-elevated to master_admin with all permissions.")
+    except Exception as e:
+        logger.error(f"Site Owner bootstrap failed: {e}")
 
     # ---------- Ranking recompute: initial + nightly schedule ----------
     import asyncio

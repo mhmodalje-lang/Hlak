@@ -1,7 +1,7 @@
 /**
  * BARBER HUB - GeoLocationContext
  * IP-based Geolocation + Dynamic Headers
- * Detects country via ip-api.com (free, no API key needed)
+ * Detects country via ipwho.is (free, no API key, HTTPS - prevents mixed-content)
  */
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
@@ -132,14 +132,44 @@ export const GeoLocationProvider = ({ children }) => {
           }
         }
 
-        // Fetch from ip-api.com (free, no API key needed, 45 requests/minute)
-        const response = await fetch('http://ip-api.com/json/?fields=status,country,countryCode,region,city,lat,lon,timezone');
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch geolocation');
-        }
+        // Fetch from ipwho.is (free, HTTPS, no API key needed, 10K requests/month)
+        // Fallback to ipapi.co if primary fails.
+        let data = null;
+        try {
+          const response = await fetch('https://ipwho.is/?fields=success,country,country_code,region,city,latitude,longitude,timezone');
+          if (response.ok) {
+            const raw = await response.json();
+            if (raw && raw.success !== false) {
+              data = {
+                status: 'success',
+                country: raw.country,
+                countryCode: raw.country_code,
+                region: raw.region,
+                city: raw.city,
+                lat: raw.latitude,
+                lon: raw.longitude,
+                timezone: raw.timezone && raw.timezone.id ? raw.timezone.id : raw.timezone,
+              };
+            }
+          }
+        } catch (_) { /* fall back below */ }
 
-        const data = await response.json();
+        if (!data) {
+          // Secondary provider (HTTPS) — https://ipapi.co
+          const response = await fetch('https://ipapi.co/json/');
+          if (!response.ok) throw new Error('Failed to fetch geolocation');
+          const raw = await response.json();
+          data = {
+            status: 'success',
+            country: raw.country_name || raw.country,
+            countryCode: raw.country_code || raw.country,
+            region: raw.region,
+            city: raw.city,
+            lat: raw.latitude,
+            lon: raw.longitude,
+            timezone: raw.timezone,
+          };
+        }
         
         if (data.status === 'success') {
           const geoInfo = {

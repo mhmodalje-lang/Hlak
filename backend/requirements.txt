@@ -126,3 +126,6 @@ zipp==3.23.0
 arabic-reshaper==3.0.0
 python-bidi==0.6.3
 slowapi==0.1.9
+pyotp==2.9.0
+pywebpush==2.3.0
+icalendar==7.0.3

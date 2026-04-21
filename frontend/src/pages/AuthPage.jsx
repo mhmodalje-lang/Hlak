@@ -318,6 +318,16 @@ const AuthPage = () => {
                     className="bh-input"
                     data-testid="login-password"
                   />
+                  <div className="text-right rtl:text-left">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/forgot-password')}
+                      className="text-xs text-[var(--bh-gold)] hover:text-[var(--bh-gold-deep)] hover:underline transition-colors"
+                      data-testid="forgot-password-link"
+                    >
+                      {language === 'ar' ? 'نسيت كلمة المرور؟' : 'Forgot password?'}
+                    </button>
+                  </div>
                 </div>
 
                 <Button

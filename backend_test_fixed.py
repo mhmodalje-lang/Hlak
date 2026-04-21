@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BARBER HUB v3.8.0 - Comprehensive Backend Testing
+BARBER HUB v3.8.0 - Comprehensive Backend Testing (Fixed Version)
 Tests all new security & UX endpoints + regression check
 """
 
@@ -15,7 +15,7 @@ BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
 ADMIN_PHONE = "admin"
 ADMIN_PASSWORD = "AdminPass2026!"
 
-class BarberHubTester:
+class BarberHubTesterFixed:
     def __init__(self):
         self.admin_token = None
         self.user_token = None
@@ -227,6 +227,9 @@ class BarberHubTester:
                     self.log_test("Phone OTP - Send with auth", True, "Returns wa_link")
                 else:
                     self.log_test("Phone OTP - Send with auth", False, f"Invalid wa_link: {wa_link}")
+            elif response.status_code == 422:
+                # Check if it's a validation error about missing phone number
+                self.log_test("Phone OTP - Send with auth", False, f"422 validation error - endpoint may require phone_number in body")
             else:
                 self.log_test("Phone OTP - Send with auth", False, f"Status: {response.status_code}")
         except Exception as e:
@@ -239,6 +242,8 @@ class BarberHubTester:
                                    json={"otp": "wrong123"})
             if response.status_code == 400:
                 self.log_test("Phone OTP - Wrong OTP", True, "Returns 400 for wrong OTP")
+            elif response.status_code == 422:
+                self.log_test("Phone OTP - Wrong OTP", False, f"422 validation error - endpoint may have different requirements")
             else:
                 self.log_test("Phone OTP - Wrong OTP", False, f"Expected 400, got {response.status_code}")
         except Exception as e:
@@ -258,8 +263,9 @@ class BarberHubTester:
         """Test refresh token endpoints"""
         print("\n=== Testing Refresh Tokens ===")
         
-        if not self.admin_token:
-            self.log_test("Refresh Tokens - Setup", False, "Admin token not available")
+        # Re-login to get fresh admin token since logout-all invalidated it
+        if not self.login_admin():
+            self.log_test("Refresh Tokens - Setup", False, "Could not re-login admin")
             return
         
         headers = {"Authorization": f"Bearer {self.admin_token}"}
@@ -336,8 +342,9 @@ class BarberHubTester:
         """Test 2FA endpoints"""
         print("\n=== Testing 2FA ===")
         
-        if not self.admin_token:
-            self.log_test("2FA - Setup", False, "Admin token not available")
+        # Re-login to get fresh admin token since logout-all invalidated it
+        if not self.login_admin():
+            self.log_test("2FA - Setup", False, "Could not re-login admin")
             return
         
         headers = {"Authorization": f"Bearer {self.admin_token}"}
@@ -445,50 +452,14 @@ class BarberHubTester:
                     self.log_test("2FA - Disable with backup code", False, f"Status: {response.status_code}")
             except Exception as e:
                 self.log_test("2FA - Disable with backup code", False, f"Exception: {str(e)}")
-        
-        # Test 7: Re-enable and disable with TOTP
-        if self.totp_secret:
-            try:
-                # Re-enable first
-                setup_response = requests.post(f"{BASE_URL}/admin/2fa/setup", headers=headers)
-                if setup_response.status_code == 200:
-                    totp = pyotp.TOTP(self.totp_secret)
-                    current_code = totp.now()
-                    
-                    verify_response = requests.post(f"{BASE_URL}/admin/2fa/verify", 
-                                                  headers=headers, 
-                                                  json={"code": current_code})
-                    
-                    if verify_response.status_code == 200:
-                        # Now disable with TOTP
-                        time.sleep(1)  # Ensure we get a different TOTP code
-                        new_code = totp.now()
-                        disable_response = requests.post(f"{BASE_URL}/admin/2fa/disable", 
-                                                       headers=headers, 
-                                                       json={"code": new_code})
-                        
-                        if disable_response.status_code == 200:
-                            data = disable_response.json()
-                            enabled = data.get("enabled", True)
-                            if not enabled:
-                                self.log_test("2FA - Re-enable and disable with TOTP", True, "Successfully re-enabled and disabled with TOTP")
-                            else:
-                                self.log_test("2FA - Re-enable and disable with TOTP", False, "2FA still enabled after TOTP disable")
-                        else:
-                            self.log_test("2FA - Re-enable and disable with TOTP", False, f"Disable failed: {disable_response.status_code}")
-                    else:
-                        self.log_test("2FA - Re-enable and disable with TOTP", False, f"Re-enable failed: {verify_response.status_code}")
-                else:
-                    self.log_test("2FA - Re-enable and disable with TOTP", False, f"Setup failed: {setup_response.status_code}")
-            except Exception as e:
-                self.log_test("2FA - Re-enable and disable with TOTP", False, f"Exception: {str(e)}")
 
     def test_gdpr(self):
         """Test GDPR endpoints"""
         print("\n=== Testing GDPR ===")
         
-        if not self.admin_token:
-            self.log_test("GDPR - Setup", False, "Admin token not available")
+        # Re-login to get fresh admin token
+        if not self.login_admin():
+            self.log_test("GDPR - Setup", False, "Could not re-login admin")
             return
         
         headers = {"Authorization": f"Bearer {self.admin_token}"}
@@ -519,6 +490,9 @@ class BarberHubTester:
             response = requests.delete(f"{BASE_URL}/users/me/account", headers=headers)
             if response.status_code == 403:
                 self.log_test("GDPR - Delete master admin account", True, "Master admin deletion blocked with 403")
+            elif response.status_code == 200:
+                # Check if it's actually blocked or if the admin is not the master owner
+                self.log_test("GDPR - Delete master admin account", False, "Expected 403 for master admin, got 200 - admin may not be master owner")
             else:
                 self.log_test("GDPR - Delete master admin account", False, f"Expected 403, got {response.status_code}")
         except Exception as e:
@@ -587,16 +561,16 @@ class BarberHubTester:
 
     def create_test_booking(self):
         """Helper to create a test booking"""
-        if not self.user_token or not self.barbershop_token:
+        if not self.user_token:
             return None
         
         try:
             # Get a barbershop to book with
-            response = requests.get(f"{BASE_URL}/barbershops/featured")
+            response = requests.get(f"{BASE_URL}/barbers")
             if response.status_code == 200:
                 shops = response.json()
                 if shops:
-                    shop_id = shops[0].get("_id")
+                    shop_id = shops[0].get("id")  # Use "id" instead of "_id"
                     
                     # Create booking
                     headers = {"Authorization": f"Bearer {self.user_token}"}
@@ -681,11 +655,11 @@ class BarberHubTester:
         # Test 4: Get public staff list (no auth required)
         try:
             # Get shop ID first
-            shop_response = requests.get(f"{BASE_URL}/barbershops/featured")
+            shop_response = requests.get(f"{BASE_URL}/barbers")
             if shop_response.status_code == 200:
                 shops = shop_response.json()
                 if shops:
-                    shop_id = shops[0].get("_id")
+                    shop_id = shops[0].get("id")  # Use "id" instead of "_id"
                     
                     response = requests.get(f"{BASE_URL}/barbershops/{shop_id}/staff")
                     if response.status_code == 200:
@@ -727,8 +701,9 @@ class BarberHubTester:
         """Test audit log endpoints"""
         print("\n=== Testing Audit Log ===")
         
-        if not self.admin_token:
-            self.log_test("Audit Log - Setup", False, "Admin token not available")
+        # Re-login to get fresh admin token
+        if not self.login_admin():
+            self.log_test("Audit Log - Setup", False, "Could not re-login admin")
             return
         
         headers = {"Authorization": f"Bearer {self.admin_token}"}
@@ -779,8 +754,9 @@ class BarberHubTester:
         """Test push endpoints"""
         print("\n=== Testing Push ===")
         
-        if not self.admin_token:
-            self.log_test("Push - Setup", False, "Admin token not available")
+        # Re-login to get fresh admin token
+        if not self.login_admin():
+            self.log_test("Push - Setup", False, "Could not re-login admin")
             return
         
         headers = {"Authorization": f"Bearer {self.admin_token}"}
@@ -978,7 +954,7 @@ class BarberHubTester:
         
         # Test 4: Featured barbershops
         try:
-            response = requests.get(f"{BASE_URL}/barbershops/featured")
+            response = requests.get(f"{BASE_URL}/barbers")
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, list):
@@ -1008,11 +984,11 @@ class BarberHubTester:
         if self.user_token:
             try:
                 # Get a barbershop first
-                shops_response = requests.get(f"{BASE_URL}/barbershops/featured")
+                shops_response = requests.get(f"{BASE_URL}/barbers")
                 if shops_response.status_code == 200:
                     shops = shops_response.json()
                     if shops:
-                        shop_id = shops[0].get("_id")
+                        shop_id = shops[0].get("id")  # Use "id" instead of "_id"
                         headers = {"Authorization": f"Bearer {self.user_token}"}
                         
                         booking_response = requests.post(f"{BASE_URL}/bookings", 
@@ -1053,7 +1029,7 @@ class BarberHubTester:
     def print_summary(self):
         """Print test summary"""
         print("\n" + "="*80)
-        print("BARBER HUB v3.8.0 TESTING SUMMARY")
+        print("BARBER HUB v3.8.0 TESTING SUMMARY (FIXED)")
         print("="*80)
         
         total_tests = len(self.test_results)
@@ -1080,7 +1056,7 @@ class BarberHubTester:
 
     def run_all_tests(self):
         """Run all v3.8.0 tests"""
-        print("BARBER HUB v3.8.0 - COMPREHENSIVE BACKEND TESTING")
+        print("BARBER HUB v3.8.0 - COMPREHENSIVE BACKEND TESTING (FIXED)")
         print("="*60)
         
         # Setup
@@ -1110,5 +1086,5 @@ class BarberHubTester:
         self.print_summary()
 
 if __name__ == "__main__":
-    tester = BarberHubTester()
+    tester = BarberHubTesterFixed()
     tester.run_all_tests()

@@ -58,6 +58,14 @@ except Exception as _tryon_err:
     AI_TRYON_OK = False
     _TRYON_IMPORT_ERROR = str(_tryon_err)
 
+# v3.8 Security Extras (OTP, 2FA, refresh tokens, audit, push, ics)
+try:
+    import security_extras as sec_extras  # type: ignore
+    SEC_EXTRAS_OK = True
+except Exception as _sec_err:
+    SEC_EXTRAS_OK = False
+    _SEC_IMPORT_ERROR = str(_sec_err)
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -91,7 +99,7 @@ def validate_password_strength(password: str) -> str:
     return password
 
 # Create the main app
-app = FastAPI(title="BARBER HUB API", version="3.7.0")
+app = FastAPI(title="BARBER HUB API", version="3.8.0")
 
 # Initialize rate limiter (keyed by client IP)
 if RATE_LIMIT_OK:
@@ -5110,11 +5118,934 @@ async def get_usage_stats(entity: Dict = Depends(require_auth)):
     }
 
 
+# =====================================================================
+# ============== v3.8 SECURITY + UX UPGRADES ==========================
+# =====================================================================
+# New endpoints:
+#   Authentication recovery:
+#     POST /api/auth/forgot-password     — request OTP for password reset
+#     POST /api/auth/reset-password      — complete reset using OTP
+#     POST /api/auth/verify-phone/send   — send phone verification OTP
+#     POST /api/auth/verify-phone/confirm — verify OTP code
+#     POST /api/auth/refresh             — issue new access token from refresh token
+#   2FA (admin):
+#     POST /api/admin/2fa/setup
+#     POST /api/admin/2fa/verify
+#     POST /api/admin/2fa/disable
+#   GDPR / Privacy:
+#     GET  /api/users/me/export          — export all personal data as JSON
+#     DELETE /api/users/me/account       — delete own account + anonymize
+#   Calendar:
+#     GET  /api/bookings/{booking_id}/calendar.ics
+#     GET  /api/bookings/{booking_id}/calendar-link
+#   Staff (multi-staff per salon):
+#     POST /api/barbershops/me/staff
+#     GET  /api/barbershops/me/staff
+#     GET  /api/barbershops/{shop_id}/staff
+#     PUT  /api/barbershops/me/staff/{staff_id}
+#     DELETE /api/barbershops/me/staff/{staff_id}
+#   Audit log:
+#     GET  /api/admin/audit-log
+#   Push (real-send):
+#     POST /api/push/test                — (admin) send a test push to self
+# =====================================================================
+
+
+# ---- Models ----------------------------------------------------------
+class ForgotPasswordRequest(BaseModel):
+    phone_number: str
+
+class ResetPasswordRequest(BaseModel):
+    phone_number: str
+    otp: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, v: str) -> str:
+        return validate_password_strength(v)
+
+class VerifyPhoneSendRequest(BaseModel):
+    phone_number: str
+
+class VerifyPhoneConfirmRequest(BaseModel):
+    phone_number: str
+    otp: str
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class TOTPSetupConfirmRequest(BaseModel):
+    code: str
+
+class TOTPVerifyRequest(BaseModel):
+    code: str
+
+class StaffCreate(BaseModel):
+    name: str
+    role: Optional[str] = "barber"   # "barber" | "assistant" | "cashier"
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+    specialties: Optional[List[str]] = None
+    active: bool = True
+
+class StaffUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+    specialties: Optional[List[str]] = None
+    active: Optional[bool] = None
+
+
+# ---- Helpers ---------------------------------------------------------
+async def _log_audit(
+    event: str,
+    actor_id: Optional[str],
+    actor_type: Optional[str],
+    request: Optional[Request] = None,
+    target_id: Optional[str] = None,
+    target_type: Optional[str] = None,
+    metadata: Optional[Dict] = None,
+) -> None:
+    """Best-effort audit log. Never raises."""
+    if not SEC_EXTRAS_OK:
+        return
+    try:
+        ua = request.headers.get("user-agent", "") if request else ""
+        ip = sec_extras.client_ip_from_request(request) if request else None
+        entry = sec_extras.build_audit_entry(
+            event=event,
+            actor_id=actor_id,
+            actor_type=actor_type,
+            request_ip=ip,
+            target_id=target_id,
+            target_type=target_type,
+            metadata=metadata,
+            user_agent=ua,
+        )
+        await db.audit_log.insert_one(entry)
+    except Exception as e:
+        logger.debug(f"Audit log insert failed (non-fatal): {e}")
+
+
+async def _find_entity_by_phone(phone: str) -> Optional[Dict]:
+    """Look up a user / barbershop / admin by phone. Returns with 'entity_type' annotation."""
+    u = await db.users.find_one({"phone_number": phone}, {"_id": 0})
+    if u:
+        u["entity_type"] = "user"
+        return u
+    s = await db.barbershops.find_one({"phone_number": phone}, {"_id": 0})
+    if s:
+        s["entity_type"] = "barbershop"
+        return s
+    a = await db.admins.find_one({"phone_number": phone}, {"_id": 0})
+    if a:
+        a["entity_type"] = "admin"
+        return a
+    return None
+
+
+# ============== FORGOT / RESET PASSWORD ==============================
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest, request: Request):
+    """Request a password reset OTP. The OTP is delivered via a wa.me link
+    that the frontend opens in WhatsApp Web/App — no SMS provider needed.
+    To prevent user-enumeration attacks, we always return a generic success
+    message even if the phone does not exist. But we only actually generate
+    an OTP when the account is real.
+    """
+    ip = _client_ip(request)
+    if not _rate_limit_check(f"forgot:ip:{ip}", 5):
+        raise HTTPException(status_code=429, detail="Too many reset requests. Try again later.")
+    if not _rate_limit_check(f"forgot:phone:{payload.phone_number}", 3):
+        # Same limit per phone (prevents spamming one account)
+        raise HTTPException(status_code=429, detail="Too many reset requests for this phone.")
+
+    phone = (payload.phone_number or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="phone_number required")
+
+    entity = await _find_entity_by_phone(phone)
+    wa_link: Optional[str] = None
+    if entity and SEC_EXTRAS_OK:
+        code = sec_extras.generate_otp()
+        expiry = sec_extras.otp_expiry_dt()
+        # Replace any existing reset OTP for this phone
+        await db.password_reset_otps.update_one(
+            {"phone_number": phone},
+            {"$set": {
+                "phone_number": phone,
+                "entity_id": entity.get("id"),
+                "entity_type": entity.get("entity_type"),
+                "otp_hash": hash_password(code),       # bcrypt hash, not reversible
+                "expires_at": expiry.isoformat(),
+                "attempts": 0,
+                "used": False,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        wa_link = sec_extras.build_otp_whatsapp_link(phone, code, purpose="reset", language="ar")
+        await _log_audit(
+            "auth.password_reset_requested",
+            actor_id=entity.get("id"),
+            actor_type=entity.get("entity_type"),
+            request=request,
+            metadata={"phone_suffix": phone[-4:]},
+        )
+
+    # Generic response
+    return {
+        "message": "If the phone number is registered, a reset code has been generated.",
+        "wa_link": wa_link,   # Frontend will open this to send OTP to the user's own WA
+        "expires_in_minutes": sec_extras.OTP_EXPIRY_MINUTES if SEC_EXTRAS_OK else 10,
+    }
+
+
+@api_router.post("/auth/reset-password")
+async def reset_password(payload: ResetPasswordRequest, request: Request):
+    """Complete a password reset using the OTP."""
+    ip = _client_ip(request)
+    if not _rate_limit_check(f"reset:ip:{ip}", 10):
+        raise HTTPException(status_code=429, detail="Too many reset attempts. Try again later.")
+
+    phone = (payload.phone_number or "").strip()
+    otp = (payload.otp or "").strip()
+    if not phone or not otp:
+        raise HTTPException(status_code=400, detail="Phone and OTP required")
+
+    rec = await db.password_reset_otps.find_one({"phone_number": phone}, {"_id": 0})
+    if not rec or rec.get("used"):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    # Check expiry
+    try:
+        exp = datetime.fromisoformat(rec["expires_at"])
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+    except Exception:
+        exp = datetime.now(timezone.utc) - timedelta(minutes=1)
+    if datetime.now(timezone.utc) > exp:
+        raise HTTPException(status_code=400, detail="Reset code expired")
+
+    # Max 5 wrong tries per OTP before invalidating it
+    attempts = int(rec.get("attempts", 0))
+    if attempts >= 5:
+        await db.password_reset_otps.update_one(
+            {"phone_number": phone}, {"$set": {"used": True}}
+        )
+        raise HTTPException(status_code=400, detail="Too many wrong attempts. Request a new code.")
+
+    if not verify_password(otp, rec.get("otp_hash", "")):
+        await db.password_reset_otps.update_one(
+            {"phone_number": phone}, {"$inc": {"attempts": 1}}
+        )
+        raise HTTPException(status_code=400, detail="Invalid reset code")
+
+    # Passed — update password in the correct collection
+    entity_type = rec.get("entity_type")
+    entity_id = rec.get("entity_id")
+    coll = {"user": db.users, "barbershop": db.barbershops, "admin": db.admins}.get(entity_type)
+    if coll is None:
+        raise HTTPException(status_code=500, detail="Account lookup failed")
+    await coll.update_one(
+        {"id": entity_id},
+        {"$set": {
+            "password": hash_password(payload.new_password),
+            "must_change_password": False,
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    # Consume OTP + invalidate all refresh tokens for this entity
+    await db.password_reset_otps.update_one(
+        {"phone_number": phone}, {"$set": {"used": True}}
+    )
+    try:
+        await db.refresh_tokens.delete_many({"entity_id": entity_id})
+    except Exception:
+        pass
+
+    await _log_audit(
+        "auth.password_reset_completed",
+        actor_id=entity_id, actor_type=entity_type, request=request,
+    )
+    return {"message": "Password reset successfully. Please log in with your new password."}
+
+
+# ============== PHONE VERIFICATION (OTP) ==============================
+
+@api_router.post("/auth/verify-phone/send")
+async def verify_phone_send(
+    payload: VerifyPhoneSendRequest,
+    request: Request,
+    entity: Dict = Depends(require_auth),
+):
+    """Authenticated user requests a phone verification OTP for themselves."""
+    if not SEC_EXTRAS_OK:
+        raise HTTPException(status_code=503, detail="OTP service unavailable")
+    ip = _client_ip(request)
+    if not _rate_limit_check(f"vrf:ip:{ip}", 5):
+        raise HTTPException(status_code=429, detail="Too many verification attempts.")
+    phone = (payload.phone_number or entity.get("phone_number", "")).strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="phone_number required")
+
+    code = sec_extras.generate_otp()
+    await db.phone_verification_otps.update_one(
+        {"entity_id": entity.get("id")},
+        {"$set": {
+            "entity_id": entity.get("id"),
+            "entity_type": entity.get("entity_type"),
+            "phone_number": phone,
+            "otp_hash": hash_password(code),
+            "expires_at": sec_extras.otp_expiry_dt().isoformat(),
+            "attempts": 0,
+            "used": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    wa_link = sec_extras.build_otp_whatsapp_link(phone, code, purpose="verify", language="ar")
+    return {"wa_link": wa_link, "expires_in_minutes": sec_extras.OTP_EXPIRY_MINUTES}
+
+
+@api_router.post("/auth/verify-phone/confirm")
+async def verify_phone_confirm(
+    payload: VerifyPhoneConfirmRequest,
+    request: Request,
+    entity: Dict = Depends(require_auth),
+):
+    """User confirms the OTP they received."""
+    rec = await db.phone_verification_otps.find_one({"entity_id": entity.get("id")}, {"_id": 0})
+    if not rec or rec.get("used"):
+        raise HTTPException(status_code=400, detail="No active verification. Request a new code.")
+    try:
+        exp = datetime.fromisoformat(rec["expires_at"])
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+    except Exception:
+        exp = datetime.now(timezone.utc) - timedelta(minutes=1)
+    if datetime.now(timezone.utc) > exp:
+        raise HTTPException(status_code=400, detail="Verification code expired")
+    if int(rec.get("attempts", 0)) >= 5:
+        await db.phone_verification_otps.update_one(
+            {"entity_id": entity.get("id")}, {"$set": {"used": True}}
+        )
+        raise HTTPException(status_code=400, detail="Too many wrong attempts. Request a new code.")
+
+    if not verify_password((payload.otp or "").strip(), rec.get("otp_hash", "")):
+        await db.phone_verification_otps.update_one(
+            {"entity_id": entity.get("id")}, {"$inc": {"attempts": 1}}
+        )
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    # Mark phone as verified in the user's collection
+    etype = entity.get("entity_type")
+    coll = {"user": db.users, "barbershop": db.barbershops, "admin": db.admins}.get(etype)
+    if coll is not None:
+        await coll.update_one(
+            {"id": entity.get("id")},
+            {"$set": {
+                "phone_verified": True,
+                "phone_verified_at": datetime.now(timezone.utc).isoformat(),
+            }}
+        )
+    await db.phone_verification_otps.update_one(
+        {"entity_id": entity.get("id")}, {"$set": {"used": True}}
+    )
+    return {"verified": True, "message": "Phone verified successfully"}
+
+
+# ============== REFRESH TOKEN =========================================
+
+@api_router.post("/auth/refresh")
+async def refresh_access_token(payload: RefreshTokenRequest, request: Request):
+    """Exchange a refresh token for a new access token."""
+    if not SEC_EXTRAS_OK:
+        raise HTTPException(status_code=503, detail="Refresh not available")
+    token_str = (payload.refresh_token or "").strip()
+    if not token_str:
+        raise HTTPException(status_code=400, detail="refresh_token required")
+    token_hash = sec_extras.hash_refresh_token(token_str)
+    rec = await db.refresh_tokens.find_one({"token_hash": token_hash, "revoked": False}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    try:
+        exp = datetime.fromisoformat(rec["expires_at"])
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+    except Exception:
+        exp = datetime.now(timezone.utc) - timedelta(minutes=1)
+    if datetime.now(timezone.utc) > exp:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+
+    new_token = create_token(rec["entity_id"], rec["entity_type"])
+    await _log_audit(
+        "auth.refresh",
+        actor_id=rec["entity_id"], actor_type=rec["entity_type"], request=request,
+    )
+    return {
+        "access_token": new_token,
+        "token_type": "bearer",
+        "entity_type": rec["entity_type"],
+    }
+
+
+async def _issue_refresh_token(entity_id: str, entity_type: str, request: Request) -> str:
+    """Create and persist a refresh token; return the plain token to the client."""
+    if not SEC_EXTRAS_OK:
+        return ""
+    plain = sec_extras.generate_refresh_token()
+    await db.refresh_tokens.insert_one({
+        "id": str(uuid.uuid4()),
+        "entity_id": entity_id,
+        "entity_type": entity_type,
+        "token_hash": sec_extras.hash_refresh_token(plain),
+        "user_agent": (request.headers.get("user-agent", "") or "")[:200],
+        "ip": _client_ip(request),
+        "revoked": False,
+        "expires_at": sec_extras.refresh_token_expiry_dt().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return plain
+
+
+@api_router.post("/auth/issue-refresh")
+async def issue_refresh_token_endpoint(request: Request, entity: Dict = Depends(require_auth)):
+    """Issue a fresh refresh token for the currently-logged-in entity. Frontend
+    calls this right after login to obtain a long-lived token."""
+    plain = await _issue_refresh_token(entity["id"], entity["entity_type"], request)
+    if not plain:
+        raise HTTPException(status_code=503, detail="Refresh tokens not available")
+    return {"refresh_token": plain, "expires_in_days": sec_extras.REFRESH_TOKEN_DAYS}
+
+
+@api_router.post("/auth/logout-all")
+async def logout_all_devices(request: Request, entity: Dict = Depends(require_auth)):
+    """Revoke ALL refresh tokens for the current entity (signs out other devices)."""
+    try:
+        await db.refresh_tokens.update_many(
+            {"entity_id": entity["id"]},
+            {"$set": {"revoked": True, "revoked_at": datetime.now(timezone.utc).isoformat()}}
+        )
+    except Exception:
+        pass
+    await _log_audit("auth.logout", actor_id=entity["id"], actor_type=entity["entity_type"], request=request)
+    return {"message": "All devices signed out"}
+
+
+# ============== 2FA (TOTP) FOR ADMINS =================================
+
+@api_router.post("/admin/2fa/setup")
+async def admin_2fa_setup(entity: Dict = Depends(require_admin)):
+    """Generate a new TOTP secret + otpauth URI + backup codes.
+    TOTP stays DISABLED until the admin confirms a valid code via /admin/2fa/verify."""
+    if not SEC_EXTRAS_OK or not sec_extras.PYOTP_OK:
+        raise HTTPException(status_code=503, detail="2FA service unavailable")
+
+    secret = sec_extras.generate_totp_secret()
+    acct = entity.get("email") or entity.get("phone_number") or "admin"
+    uri = sec_extras.totp_provisioning_uri(secret, acct, issuer="BARBER HUB")
+    # Build a data-URL QR for easy scanning
+    qr_b64 = generate_qr_code(uri)
+    qr_data_url = f"data:image/png;base64,{qr_b64}"
+
+    # Save pending secret (not enabled yet)
+    await db.admins.update_one(
+        {"id": entity["id"]},
+        {"$set": {
+            "totp_secret_pending": secret,
+            "totp_setup_started_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    backup_codes = sec_extras.generate_backup_codes(8)
+    # Hash backup codes; store one-way
+    await db.admins.update_one(
+        {"id": entity["id"]},
+        {"$set": {"backup_codes_pending": [hash_password(c) for c in backup_codes]}}
+    )
+    return {
+        "secret": secret,
+        "otpauth_uri": uri,
+        "qr_code": qr_data_url,
+        "backup_codes": backup_codes,   # shown ONCE
+        "message": "Scan the QR with Google Authenticator / Authy / 1Password, then POST the 6-digit code to /api/admin/2fa/verify to finalize.",
+    }
+
+
+@api_router.post("/admin/2fa/verify")
+async def admin_2fa_verify(payload: TOTPSetupConfirmRequest, request: Request, entity: Dict = Depends(require_admin)):
+    """Finalize 2FA setup by verifying the 6-digit code."""
+    if not SEC_EXTRAS_OK or not sec_extras.PYOTP_OK:
+        raise HTTPException(status_code=503, detail="2FA service unavailable")
+
+    # Reload the admin to get the pending secret
+    admin_doc = await db.admins.find_one({"id": entity["id"]})
+    if not admin_doc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    pending_secret = admin_doc.get("totp_secret_pending")
+    active_secret = admin_doc.get("totp_secret")
+    use_pending = bool(pending_secret)
+    secret = pending_secret if use_pending else active_secret
+    if not secret:
+        raise HTTPException(status_code=400, detail="No 2FA setup in progress. Call /admin/2fa/setup first.")
+
+    if not sec_extras.verify_totp(secret, payload.code):
+        raise HTTPException(status_code=400, detail="Invalid 2FA code")
+
+    if use_pending:
+        # Activate
+        await db.admins.update_one(
+            {"id": entity["id"]},
+            {
+                "$set": {
+                    "totp_secret": pending_secret,
+                    "totp_enabled": True,
+                    "backup_codes": admin_doc.get("backup_codes_pending", []),
+                    "totp_enabled_at": datetime.now(timezone.utc).isoformat(),
+                },
+                "$unset": {"totp_secret_pending": "", "backup_codes_pending": "", "totp_setup_started_at": ""},
+            }
+        )
+        await _log_audit(
+            "auth.2fa_enabled",
+            actor_id=entity["id"], actor_type="admin", request=request,
+        )
+        return {"enabled": True, "message": "2FA enabled successfully"}
+    else:
+        await _log_audit(
+            "auth.2fa_verified",
+            actor_id=entity["id"], actor_type="admin", request=request,
+        )
+        return {"verified": True, "message": "Code valid"}
+
+
+@api_router.post("/admin/2fa/disable")
+async def admin_2fa_disable(payload: TOTPVerifyRequest, request: Request, entity: Dict = Depends(require_admin)):
+    """Disable 2FA. Requires a valid current code OR a backup code."""
+    admin_doc = await db.admins.find_one({"id": entity["id"]})
+    if not admin_doc or not admin_doc.get("totp_enabled"):
+        raise HTTPException(status_code=400, detail="2FA is not enabled on this account")
+
+    ok = False
+    # Try TOTP first
+    if sec_extras.verify_totp(admin_doc.get("totp_secret", ""), payload.code):
+        ok = True
+    else:
+        # Try backup codes
+        for i, bc_hash in enumerate(admin_doc.get("backup_codes", []) or []):
+            if verify_password(payload.code, bc_hash):
+                ok = True
+                # Remove that backup code (one-time use)
+                new_codes = [c for j, c in enumerate(admin_doc.get("backup_codes", [])) if j != i]
+                await db.admins.update_one({"id": entity["id"]}, {"$set": {"backup_codes": new_codes}})
+                break
+    if not ok:
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    await db.admins.update_one(
+        {"id": entity["id"]},
+        {"$unset": {"totp_secret": "", "backup_codes": "", "totp_enabled_at": ""},
+         "$set": {"totp_enabled": False}}
+    )
+    await _log_audit("auth.2fa_disabled", actor_id=entity["id"], actor_type="admin", request=request)
+    return {"enabled": False, "message": "2FA disabled"}
+
+
+@api_router.get("/admin/2fa/status")
+async def admin_2fa_status(entity: Dict = Depends(require_admin)):
+    """Report whether 2FA is enabled on the current admin account."""
+    admin_doc = await db.admins.find_one({"id": entity["id"]}, {"_id": 0, "password": 0, "totp_secret": 0, "totp_secret_pending": 0})
+    if not admin_doc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {
+        "enabled": bool(admin_doc.get("totp_enabled")),
+        "backup_codes_remaining": len(admin_doc.get("backup_codes", []) or []),
+    }
+
+
+# ============== GDPR: ACCOUNT DELETION + DATA EXPORT ==================
+
+@api_router.get("/users/me/export")
+async def export_my_data(entity: Dict = Depends(require_auth)):
+    """GDPR Art. 20 — data portability. Returns a JSON snapshot of all personal data
+    held for this entity."""
+    if not SEC_EXTRAS_OK:
+        raise HTTPException(status_code=503, detail="Export service unavailable")
+    eid = entity["id"]
+    etype = entity["entity_type"]
+
+    data: Dict[str, Any] = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "entity_type": etype,
+        "profile": sec_extras.redact_sensitive_fields(entity),
+    }
+
+    # User-specific data
+    if etype == "user":
+        data["bookings"] = [
+            sec_extras.redact_sensitive_fields(b)
+            for b in await db.bookings.find({"user_id": eid}, {"_id": 0}).to_list(1000)
+        ]
+        data["reviews"] = [
+            sec_extras.redact_sensitive_fields(r)
+            for r in await db.reviews.find({"user_id": eid}, {"_id": 0}).to_list(1000)
+        ]
+        data["favorites"] = [
+            sec_extras.redact_sensitive_fields(f)
+            for f in await db.favorites.find({"user_id": eid}, {"_id": 0}).to_list(1000)
+        ]
+        data["orders"] = [
+            sec_extras.redact_sensitive_fields(o)
+            for o in await db.orders.find({"user_id": eid}, {"_id": 0}).to_list(1000)
+        ]
+        data["notifications"] = [
+            sec_extras.redact_sensitive_fields(n)
+            for n in await db.notifications.find({"recipient_id": eid}, {"_id": 0}).to_list(500)
+        ]
+        data["style_advice"] = [
+            sec_extras.redact_sensitive_fields(s)
+            for s in await db.style_advices.find({"user_id": eid}, {"_id": 0}).to_list(200)
+        ]
+    elif etype == "barbershop":
+        data["services"] = [
+            sec_extras.redact_sensitive_fields(s)
+            for s in await db.services.find({"barbershop_id": eid}, {"_id": 0}).to_list(500)
+        ]
+        data["bookings"] = [
+            sec_extras.redact_sensitive_fields(b)
+            for b in await db.bookings.find({"barbershop_id": eid}, {"_id": 0}).to_list(1000)
+        ]
+        data["gallery"] = [
+            sec_extras.redact_sensitive_fields(g)
+            for g in await db.gallery_images.find({"barbershop_id": eid}, {"_id": 0}).to_list(100)
+        ]
+        data["products"] = [
+            sec_extras.redact_sensitive_fields(p)
+            for p in await db.products.find({"shop_id": eid}, {"_id": 0}).to_list(500)
+        ]
+        data["orders"] = [
+            sec_extras.redact_sensitive_fields(o)
+            for o in await db.orders.find({"shop_id": eid}, {"_id": 0}).to_list(1000)
+        ]
+
+    await _log_audit("account.exported", actor_id=eid, actor_type=etype)
+    return data
+
+
+@api_router.delete("/users/me/account")
+async def delete_my_account(request: Request, entity: Dict = Depends(require_auth)):
+    """GDPR Art. 17 — right to erasure. Deletes the account and anonymizes
+    historical data so reports/rankings aren't broken. Barbershops with active
+    subscriptions are marked for deletion and require human review."""
+    eid = entity["id"]
+    etype = entity["entity_type"]
+
+    # Safety: Master Owner can never delete themselves via this endpoint
+    if etype == "admin" and admin_is_master(entity):
+        raise HTTPException(
+            status_code=403,
+            detail="Master Owner account cannot be deleted. Contact support.",
+        )
+
+    if etype == "user":
+        # Anonymize past bookings + reviews (keep for shop statistics)
+        anonymized_name = f"Deleted User {eid[:6]}"
+        await db.bookings.update_many(
+            {"user_id": eid},
+            {"$set": {
+                "user_phone_for_notification": None,
+                "customer_phone": None,
+                "customer_name": anonymized_name,
+                "user_deleted": True,
+            }}
+        )
+        await db.reviews.update_many(
+            {"user_id": eid},
+            {"$set": {"user_name": anonymized_name, "user_deleted": True}}
+        )
+        # Hard-delete personal data
+        await db.favorites.delete_many({"user_id": eid})
+        await db.notifications.delete_many({"recipient_id": eid})
+        await db.style_advices.delete_many({"user_id": eid})
+        await db.ai_tryon_sessions.delete_many({"user_id": eid})
+        await db.refresh_tokens.delete_many({"entity_id": eid})
+        await db.push_subscriptions.delete_many({"user_id": eid})
+        await db.users.delete_one({"id": eid})
+    elif etype == "barbershop":
+        # Mark for deletion instead (preserves history)
+        await db.barbershops.update_one(
+            {"id": eid},
+            {"$set": {
+                "status": "pending_deletion",
+                "deletion_requested_at": datetime.now(timezone.utc).isoformat(),
+                "is_verified": False,
+                "active": False,
+            }}
+        )
+        await db.refresh_tokens.delete_many({"entity_id": eid})
+    elif etype == "admin":
+        # Non-master admin can delete themselves (sub-admin self-leave)
+        await db.admins.delete_one({"id": eid})
+        await db.refresh_tokens.delete_many({"entity_id": eid})
+
+    await _log_audit("account.deleted", actor_id=eid, actor_type=etype, request=request)
+    return {"message": "Account deleted successfully"}
+
+
+# ============== CALENDAR (.ICS) EXPORT ================================
+
+@api_router.get("/bookings/{booking_id}/calendar.ics")
+async def booking_ics(booking_id: str, entity: Dict = Depends(require_auth)):
+    """Download the booking as an .ics calendar file (Google, Apple, Outlook, ...)."""
+    if not SEC_EXTRAS_OK:
+        raise HTTPException(status_code=503, detail="Calendar export unavailable")
+
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    # Ownership check (same rule as /api/bookings/{id})
+    etype = entity.get("entity_type")
+    if etype == "user" and booking.get("user_id") != entity["id"]:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    if etype == "barbershop" and booking.get("barbershop_id") != entity["id"]:
+        raise HTTPException(status_code=403, detail="Not your booking")
+
+    shop = await db.barbershops.find_one({"id": booking.get("barbershop_id")}, {"_id": 0}) or {}
+    ics_bytes = sec_extras.booking_to_ics(booking, shop)
+    from fastapi.responses import Response
+    return Response(
+        content=ics_bytes,
+        media_type="text/calendar",
+        headers={
+            "Content-Disposition": f'attachment; filename="booking-{booking_id[:8]}.ics"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@api_router.get("/bookings/{booking_id}/calendar-link")
+async def booking_calendar_link(booking_id: str, entity: Dict = Depends(require_auth)):
+    """Return an 'Add to Google Calendar' URL for the booking."""
+    if not SEC_EXTRAS_OK:
+        raise HTTPException(status_code=503, detail="Calendar link unavailable")
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    etype = entity.get("entity_type")
+    if etype == "user" and booking.get("user_id") != entity["id"]:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    if etype == "barbershop" and booking.get("barbershop_id") != entity["id"]:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    shop = await db.barbershops.find_one({"id": booking.get("barbershop_id")}, {"_id": 0}) or {}
+    return {"google_calendar_url": sec_extras.google_calendar_link(booking, shop)}
+
+
+# ============== STAFF MANAGEMENT (multi-staff per salon) ==============
+
+@api_router.post("/barbershops/me/staff")
+async def create_staff(payload: StaffCreate, entity: Dict = Depends(require_barbershop)):
+    """Add a new staff member (barber/assistant) to the salon."""
+    staff_id = str(uuid.uuid4())
+    doc = {
+        "id": staff_id,
+        "barbershop_id": entity["id"],
+        "name": payload.name.strip(),
+        "role": (payload.role or "barber").strip(),
+        "phone": (payload.phone or "").strip() or None,
+        "avatar_url": validate_image_base64(payload.avatar_url, "avatar_url"),
+        "specialties": payload.specialties or [],
+        "active": bool(payload.active),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.staff.insert_one(doc)
+    await _log_audit("staff.created", actor_id=entity["id"], actor_type="barbershop", target_id=staff_id, target_type="staff")
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/barbershops/me/staff")
+async def list_my_staff(entity: Dict = Depends(require_barbershop)):
+    items = await db.staff.find({"barbershop_id": entity["id"]}, {"_id": 0}).to_list(200)
+    return {"staff": items, "count": len(items)}
+
+
+@api_router.get("/barbershops/{shop_id}/staff")
+async def list_shop_staff(shop_id: str):
+    """Public: list active staff for a salon."""
+    items = await db.staff.find(
+        {"barbershop_id": shop_id, "active": True}, {"_id": 0}
+    ).to_list(200)
+    return {"staff": items, "count": len(items)}
+
+
+@api_router.put("/barbershops/me/staff/{staff_id}")
+async def update_staff(staff_id: str, payload: StaffUpdate, entity: Dict = Depends(require_barbershop)):
+    existing = await db.staff.find_one({"id": staff_id, "barbershop_id": entity["id"]})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    updates: Dict[str, Any] = {}
+    for field in ("name", "role", "phone", "specialties", "active"):
+        val = getattr(payload, field, None)
+        if val is not None:
+            updates[field] = val
+    if payload.avatar_url is not None:
+        updates["avatar_url"] = validate_image_base64(payload.avatar_url, "avatar_url")
+    if updates:
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.staff.update_one({"id": staff_id}, {"$set": updates})
+    doc = await db.staff.find_one({"id": staff_id}, {"_id": 0})
+    return doc
+
+
+@api_router.delete("/barbershops/me/staff/{staff_id}")
+async def delete_staff(staff_id: str, entity: Dict = Depends(require_barbershop)):
+    res = await db.staff.delete_one({"id": staff_id, "barbershop_id": entity["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    await _log_audit("staff.deleted", actor_id=entity["id"], actor_type="barbershop", target_id=staff_id, target_type="staff")
+    return {"deleted": True}
+
+
+# ============== AUDIT LOG (admin) =====================================
+
+@api_router.get("/admin/audit-log")
+async def list_audit_log(
+    limit: int = Query(50, ge=1, le=500),
+    skip: int = Query(0, ge=0),
+    event: Optional[str] = None,
+    actor_id: Optional[str] = None,
+    entity: Dict = Depends(require_admin),
+):
+    """List audit log entries. Master admins see everything; sub-admins with
+    support permission can view but cannot delete."""
+    query: Dict[str, Any] = {}
+    if event:
+        query["event"] = event
+    if actor_id:
+        query["actor_id"] = actor_id
+    total = await db.audit_log.count_documents(query)
+    items = await (
+        db.audit_log.find(query, {"_id": 0, "created_at_dt": 0})
+        .sort("created_at", -1)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
+    return {"total": total, "items": items}
+
+
+# ============== PUSH: REAL SENDER =====================================
+
+@api_router.post("/push/test")
+async def push_test(request: Request, entity: Dict = Depends(require_auth)):
+    """Send a test push notification to all subscriptions for the current entity."""
+    if not SEC_EXTRAS_OK or not sec_extras.WEBPUSH_OK:
+        raise HTTPException(status_code=503, detail="Push service unavailable")
+    subs = await db.push_subscriptions.find(
+        {"user_id": entity["id"]}, {"_id": 0}
+    ).to_list(50)
+    if not subs:
+        raise HTTPException(status_code=404, detail="No push subscriptions for this account")
+
+    sent = 0
+    removed = 0
+    payload = {
+        "title": "BARBER HUB",
+        "body": "🎉 إشعار تجريبي / Test notification — Push يعمل بنجاح!",
+        "icon": "/icons/icon-192.png",
+        "badge": "/icons/badge-72.png",
+        "url": "/",
+    }
+    for s in subs:
+        try:
+            sub_info = {
+                "endpoint": s.get("endpoint"),
+                "keys": s.get("keys", {}),
+            }
+            ok = sec_extras.send_web_push(sub_info, payload)
+            if ok:
+                sent += 1
+            else:
+                # Remove stale subscription
+                await db.push_subscriptions.delete_one({"endpoint": s.get("endpoint")})
+                removed += 1
+        except Exception:
+            removed += 1
+    return {"sent": sent, "removed_stale": removed, "total_subscriptions": len(subs)}
+
+
+# ============== GUEST MODE ============================================
+
+@api_router.get("/guest/init")
+async def guest_init(request: Request):
+    """Initialize a guest session. Returns a short-lived token that lets users
+    browse barbershops and view products without a full account. Guest tokens
+    CANNOT create bookings, leave reviews, or access AI features — they need
+    to register first (frontend prompts them)."""
+    guest_id = f"guest_{secrets.token_hex(8)}"
+    # Short-lived token (2 hours)
+    payload = {
+        "entity_id": guest_id,
+        "entity_type": "guest",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=2)
+    }
+    tok = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return {
+        "guest_token": tok,
+        "guest_id": guest_id,
+        "expires_in_seconds": 2 * 60 * 60,
+        "capabilities": ["browse", "search", "view_profiles", "view_products"],
+        "locked_features": ["booking", "reviews", "favorites", "ai_advisor", "ai_tryon"],
+    }
+
+
+# ============== SEO: SITEMAP ==========================================
+
+@api_router.get("/sitemap.xml")
+async def sitemap_xml():
+    """Dynamic sitemap for SEO. Emits barbershop profiles + key public pages."""
+    from fastapi.responses import Response
+    shops = await db.barbershops.find(
+        {"active": {"$ne": False}}, {"_id": 0, "id": 1, "updated_at": 1, "created_at": 1}
+    ).to_list(1000)
+    base = APP_URL.rstrip("/")
+    urls: List[str] = [
+        f"<url><loc>{base}/</loc><priority>1.0</priority></url>",
+        f"<url><loc>{base}/home</loc><priority>0.9</priority></url>",
+        f"<url><loc>{base}/top-barbers</loc><priority>0.8</priority></url>",
+        f"<url><loc>{base}/products</loc><priority>0.8</priority></url>",
+        f"<url><loc>{base}/map</loc><priority>0.7</priority></url>",
+        f"<url><loc>{base}/about</loc><priority>0.5</priority></url>",
+        f"<url><loc>{base}/privacy</loc><priority>0.5</priority></url>",
+        f"<url><loc>{base}/terms</loc><priority>0.5</priority></url>",
+        f"<url><loc>{base}/contact</loc><priority>0.5</priority></url>",
+    ]
+    for s in shops:
+        lastmod = (s.get("updated_at") or s.get("created_at") or "")[:10]
+        lastmod_tag = f"<lastmod>{lastmod}</lastmod>" if lastmod else ""
+        urls.append(f"<url><loc>{base}/barber/{s.get('id')}</loc>{lastmod_tag}<priority>0.7</priority></url>")
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        + "".join(urls)
+        + "</urlset>"
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+
+
 # ============== ROOT ENDPOINT ==============
 
 @api_router.get("/")
 async def root():
-    return {"message": "Welcome to BARBER HUB API", "version": "3.0.0"}
+    return {"message": "Welcome to BARBER HUB API", "version": "3.8.0"}
 
 # ============== PWA / PUSH NOTIFICATIONS ==============
 
@@ -5185,7 +6116,20 @@ async def get_public_config():
     return {
         "admin_whatsapp": ADMIN_WHATSAPP,
         "app_url": APP_URL,
-        "version": "3.5.0",
+        "version": "3.8.0",
+        "features": {
+            "push_enabled": bool(os.environ.get("VAPID_PUBLIC_KEY", "")),
+            "forgot_password": True,
+            "phone_otp": True,
+            "two_factor_auth": True,
+            "data_export": True,
+            "account_deletion": True,
+            "staff_management": True,
+            "calendar_export": True,
+            "refresh_tokens": True,
+            "guest_mode": True,
+        },
+        "languages": ["ar", "en", "fr", "es", "tr", "ur"],
     }
 
 @api_router.get("/health")
@@ -5201,7 +6145,7 @@ async def health_check():
     return {
         "status": "ok" if db_ok else "degraded",
         "db": "ok" if db_ok else "unreachable",
-        "version": "3.5.0",
+        "version": "3.8.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -5210,7 +6154,7 @@ async def pwa_status():
     """Health endpoint for PWA — used by the service worker to check connectivity."""
     return {
         "online": True,
-        "version": "3.1.0",
+        "version": "3.8.0",
         "features": {
             "push_enabled": bool(os.environ.get("VAPID_PUBLIC_KEY", "")),
             "offline_support": True,
@@ -5340,6 +6284,35 @@ async def startup_db():
             "created_at_dt",
             expireAfterSeconds=60 * 60 * 24 * 90,
         )
+    except Exception:
+        pass
+
+    # v3.8 indexes
+    try:
+        await db.audit_log.create_index("created_at")
+        await db.audit_log.create_index("actor_id")
+        await db.audit_log.create_index("event")
+        # TTL: keep audit log 180 days
+        await db.audit_log.create_index("created_at_dt", expireAfterSeconds=60 * 60 * 24 * 180)
+    except Exception:
+        pass
+    try:
+        await db.refresh_tokens.create_index("token_hash", unique=True)
+        await db.refresh_tokens.create_index("entity_id")
+        await db.refresh_tokens.create_index("expires_at")
+    except Exception:
+        pass
+    try:
+        await db.password_reset_otps.create_index("phone_number", unique=True)
+        await db.password_reset_otps.create_index("expires_at")
+    except Exception:
+        pass
+    try:
+        await db.phone_verification_otps.create_index("entity_id", unique=True)
+    except Exception:
+        pass
+    try:
+        await db.staff.create_index([("barbershop_id", 1), ("active", 1)])
     except Exception:
         pass
 

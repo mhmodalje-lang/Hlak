@@ -27,8 +27,17 @@ import ProductShowcase from "@/pages/ProductShowcase";
 import AIAdvisor from "@/pages/AIAdvisor";
 import FavoritesPage from "@/pages/FavoritesPage";
 import MyOrders from "@/pages/MyOrders";
+import NotFoundPage from "@/pages/NotFoundPage";
+import PrivacyPage from "@/pages/PrivacyPage";
+import TermsPage from "@/pages/TermsPage";
+import AboutPage from "@/pages/AboutPage";
+import ContactPage from "@/pages/ContactPage";
+import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
+import AccountSettingsPage from "@/pages/AccountSettingsPage";
 import InstallPrompt from "@/components/InstallPrompt";
+import OnboardingTour from "@/components/OnboardingTour";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 
 // Context
 const AppContext = createContext();
@@ -117,52 +126,65 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <LocalizationProvider>
-        <GeoLocationProvider>
-          <CurrencyProvider>
-            <AppContext.Provider value={contextValue}>
-              <div className={`App bh-surface min-h-screen ${gender ? themeClass : ''}`} dir={isRTL(language) ? 'rtl' : 'ltr'}>
-                <BrowserRouter>
-                  <Routes>
-                    {/* Gender Selection - Entry Point */}
-                    <Route path="/" element={!gender ? <GenderSelection /> : <Navigate to="/home" />} />
-                    
-                    {/* Auth */}
-                    <Route path="/auth" element={<AuthPage />} />
-                    <Route path="/change-password" element={<ChangePasswordPage />} />
-                    
-                    {/* Main Pages */}
-                    <Route path="/home" element={gender ? <HomePage /> : <Navigate to="/" />} />
-                    <Route path="/barber/:id" element={<BarberProfile />} />
-                    <Route path="/book/:barberId" element={<BookingPage />} />
-                    <Route path="/products/:shopId" element={<ProductShowcase />} />
-                    <Route path="/products" element={<ProductShowcase />} />
-                    <Route path="/top-barbers" element={<TopBarbers />} />
-                    <Route path="/map" element={<MapPage />} />
-                    <Route path="/my-bookings" element={<MyBookings />} />
-                    <Route path="/my-orders" element={<MyOrders />} />
-                    <Route path="/payment" element={<PaymentPage />} />
-                    <Route path="/ai-advisor" element={<AIAdvisor />} />
-                    <Route path="/favorites" element={<FavoritesPage />} />
-                    
-                    {/* Barber/Salon Dashboard */}
-                    <Route path="/dashboard" element={<BarberDashboard />} />
-                    <Route path="/profile-setup" element={<ProfileSetup />} />
-                    
-                    {/* Admin */}
-                    <Route path="/admin" element={<AdminDashboard />} />
-                    
-                    {/* Catch all */}
-                    <Route path="*" element={<Navigate to="/" />} />
-                  </Routes>
-                </BrowserRouter>
-                <Toaster position="top-center" richColors />
-                <InstallPrompt />
-              </div>
-            </AppContext.Provider>
-          </CurrencyProvider>
-        </GeoLocationProvider>
-      </LocalizationProvider>
+      <ThemeProvider>
+        <LocalizationProvider>
+          <GeoLocationProvider>
+            <CurrencyProvider>
+              <AppContext.Provider value={contextValue}>
+                <div className={`App bh-surface min-h-screen ${gender ? themeClass : ''}`} dir={isRTL(language) ? 'rtl' : 'ltr'}>
+                  <BrowserRouter>
+                    <Routes>
+                      {/* Gender Selection - Entry Point */}
+                      <Route path="/" element={!gender ? <GenderSelection /> : <Navigate to="/home" />} />
+
+                      {/* Auth */}
+                      <Route path="/auth" element={<AuthPage />} />
+                      <Route path="/change-password" element={<ChangePasswordPage />} />
+                      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+                      {/* Main Pages */}
+                      <Route path="/home" element={gender ? <HomePage /> : <Navigate to="/" />} />
+                      <Route path="/barber/:id" element={<BarberProfile />} />
+                      <Route path="/book/:barberId" element={<BookingPage />} />
+                      <Route path="/products/:shopId" element={<ProductShowcase />} />
+                      <Route path="/products" element={<ProductShowcase />} />
+                      <Route path="/top-barbers" element={<TopBarbers />} />
+                      <Route path="/map" element={<MapPage />} />
+                      <Route path="/my-bookings" element={<MyBookings />} />
+                      <Route path="/my-orders" element={<MyOrders />} />
+                      <Route path="/payment" element={<PaymentPage />} />
+                      <Route path="/ai-advisor" element={<AIAdvisor />} />
+                      <Route path="/favorites" element={<FavoritesPage />} />
+
+                      {/* Settings (GDPR + 2FA + Dark Mode) */}
+                      <Route path="/settings" element={<AccountSettingsPage />} />
+
+                      {/* Static pages - required for app stores */}
+                      <Route path="/privacy" element={<PrivacyPage />} />
+                      <Route path="/terms" element={<TermsPage />} />
+                      <Route path="/about" element={<AboutPage />} />
+                      <Route path="/contact" element={<ContactPage />} />
+
+                      {/* Barber/Salon Dashboard */}
+                      <Route path="/dashboard" element={<BarberDashboard />} />
+                      <Route path="/profile-setup" element={<ProfileSetup />} />
+
+                      {/* Admin */}
+                      <Route path="/admin" element={<AdminDashboard />} />
+
+                      {/* Catch all - proper 404 page */}
+                      <Route path="*" element={<NotFoundPage />} />
+                    </Routes>
+                  </BrowserRouter>
+                  <Toaster position="top-center" richColors />
+                  <InstallPrompt />
+                  <OnboardingTour />
+                </div>
+              </AppContext.Provider>
+            </CurrencyProvider>
+          </GeoLocationProvider>
+        </LocalizationProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

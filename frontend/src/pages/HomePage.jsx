@@ -385,9 +385,6 @@ const HomePage = () => {
               <Link to="/map" className="text-sm font-body text-[var(--bh-text-secondary)] hover:text-[var(--bh-gold)] transition-colors flex items-center gap-1.5">
                 <Location className="w-4 h-4" /> {t.map}
               </Link>
-              <Link to="/ai-advisor" className="text-sm font-body font-bold text-[var(--bh-gold)] flex items-center gap-1.5">
-                <AIBrain className="w-4 h-4" /> {t.aiAdvisor}
-              </Link>
               {isAuthenticated && (
                 <>
                   <Link to="/favorites" className="text-sm font-body text-[var(--bh-text-secondary)] hover:text-[var(--bh-gold)] transition-colors flex items-center gap-1.5">
@@ -431,7 +428,6 @@ const HomePage = () => {
             <div className="md:hidden mt-4 pt-4 border-t border-[var(--bh-glass-border)] space-y-3">
               <Link to="/top-barbers" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>👑 {t.topBarbers}</Link>
               <Link to="/map" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>🗺️ {t.map}</Link>
-              <Link to="/ai-advisor" className="block text-[var(--bh-gold)] font-bold" onClick={() => setIsMenuOpen(false)}>🧠 {t.aiAdvisor}</Link>
               {isAuthenticated && (
                 <>
                   <Link to="/favorites" className="block text-[var(--bh-text-secondary)]" onClick={() => setIsMenuOpen(false)}>❤️ {t.favorites}</Link>

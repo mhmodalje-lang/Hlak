@@ -2817,7 +2817,27 @@ async def create_booking(booking_data: BookingCreate, entity: Dict = Depends(get
         "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat()
     })
-    
+
+    # v3.8 — Push notification to the barber shop (Web Push via VAPID)
+    try:
+        if SEC_EXTRAS_OK and sec_extras.WEBPUSH_OK:
+            subs = await db.push_subscriptions.find({"user_id": barbershop_id}, {"_id": 0}).to_list(20)
+            for s in subs:
+                try:
+                    sec_extras.send_web_push(
+                        {"endpoint": s.get("endpoint"), "keys": s.get("keys", {})},
+                        {
+                            "title": "💈 حجز جديد / New booking",
+                            "body": f"{customer_name or 'عميل'} - {booking_date} {start_time}",
+                            "icon": "/icons/icon-192.png",
+                            "url": "/dashboard",
+                        },
+                    )
+                except Exception:
+                    pass
+    except Exception as _pex:
+        logger.debug(f"push on booking failed: {_pex}")
+
     return enrich_booking_for_frontend(booking_doc)
 
 @api_router.get("/bookings/my")
@@ -6451,6 +6471,506 @@ async def push_vapid_public_key():
 
 # ============== PWA MANIFEST STATUS ==============
 
+# ============== v3.9 — Dynamic Payment Wallets (Master Admin-managed) ==============
+# The Master Admin can add/edit/remove manual payment methods per country so the
+# app never ships hardcoded wallet numbers. Frontend reads from /api/payment-methods.
+
+DEFAULT_WALLETS = [
+    # Syria
+    {"id": "sy-syriatel", "country": "SY", "country_name": "Syria", "kind": "mobile_wallet",
+     "name_ar": "سيريتل كاش", "name_en": "Syriatel Cash", "recipient": "محمد الرجب",
+     "number": "0935964158", "qr_image": None, "icon": "smartphone", "enabled": True, "order": 1},
+    {"id": "sy-mtn", "country": "SY", "country_name": "Syria", "kind": "mobile_wallet",
+     "name_ar": "MTN كاش", "name_en": "MTN Cash", "recipient": "محمد الرجب",
+     "number": "0947000000", "qr_image": None, "icon": "smartphone", "enabled": True, "order": 2},
+    # Iraq
+    {"id": "iq-zain", "country": "IQ", "country_name": "Iraq", "kind": "mobile_wallet",
+     "name_ar": "زين كاش", "name_en": "Zain Cash", "recipient": "محمد الرجب",
+     "number": "07700000000", "qr_image": None, "icon": "smartphone", "enabled": True, "order": 1},
+    {"id": "iq-asia", "country": "IQ", "country_name": "Iraq", "kind": "hawala",
+     "name_ar": "آسيا حوالة", "name_en": "Asia Hawala", "recipient": "محمد الرجب",
+     "number": "07830000000", "qr_image": None, "icon": "building", "enabled": True, "order": 2},
+    # Jordan
+    {"id": "jo-zain", "country": "JO", "country_name": "Jordan", "kind": "mobile_wallet",
+     "name_ar": "زين كاش الأردن", "name_en": "Zain Cash Jordan", "recipient": "محمد الرجب",
+     "number": "0790000000", "qr_image": None, "icon": "smartphone", "enabled": True, "order": 1},
+    # Lebanon
+    {"id": "lb-whish", "country": "LB", "country_name": "Lebanon", "kind": "mobile_wallet",
+     "name_ar": "Whish Money", "name_en": "Whish Money", "recipient": "محمد الرجب",
+     "number": "0300000000", "qr_image": None, "icon": "smartphone", "enabled": True, "order": 1},
+    # Global fallback
+    {"id": "gl-wu", "country": "XX", "country_name": "Global", "kind": "wire",
+     "name_ar": "Western Union", "name_en": "Western Union", "recipient": "محمد الرجب",
+     "number": "Contact admin", "qr_image": None, "icon": "globe", "enabled": True, "order": 1},
+]
+
+class PaymentMethodCreate(BaseModel):
+    country: str  # ISO-2 (SY, IQ, JO, LB, XX for global)
+    country_name: Optional[str] = None
+    kind: str = "mobile_wallet"  # mobile_wallet | hawala | wire | bank | crypto
+    name_ar: str
+    name_en: Optional[str] = None
+    recipient: Optional[str] = None
+    number: Optional[str] = None
+    qr_image: Optional[str] = None  # base64 data URL
+    icon: Optional[str] = "smartphone"
+    enabled: bool = True
+    order: int = 99
+
+class PaymentMethodUpdate(BaseModel):
+    country: Optional[str] = None
+    country_name: Optional[str] = None
+    kind: Optional[str] = None
+    name_ar: Optional[str] = None
+    name_en: Optional[str] = None
+    recipient: Optional[str] = None
+    number: Optional[str] = None
+    qr_image: Optional[str] = None
+    icon: Optional[str] = None
+    enabled: Optional[bool] = None
+    order: Optional[int] = None
+
+
+async def _ensure_default_payment_methods():
+    """Seed default wallet methods on first run (idempotent)."""
+    try:
+        count = await db.payment_methods.count_documents({})
+        if count == 0:
+            now = datetime.now(timezone.utc).isoformat()
+            seeded = []
+            for w in DEFAULT_WALLETS:
+                doc = dict(w)
+                doc["created_at"] = now
+                doc["updated_at"] = now
+                seeded.append(doc)
+            await db.payment_methods.insert_many(seeded)
+            logger.info(f"Seeded {len(seeded)} default payment methods.")
+    except Exception as e:
+        logger.error(f"payment_methods seed failed: {e}")
+
+
+@api_router.get("/payment-methods")
+async def list_payment_methods(country: Optional[str] = None, all: bool = False):
+    """Public: list enabled payment methods (optionally filtered by country)."""
+    q: Dict[str, Any] = {} if all else {"enabled": True}
+    if country:
+        q["$or"] = [{"country": country.upper()}, {"country": "XX"}]
+    items = await db.payment_methods.find(q, {"_id": 0}).sort([("country", 1), ("order", 1)]).to_list(200)
+    # Don't expose QR image in list (can be big); use detail endpoint for QR.
+    for it in items:
+        if it.get("qr_image"):
+            it["has_qr"] = True
+            # Keep preview first 64 chars to enable showing in admin page.
+        else:
+            it["has_qr"] = False
+    return items
+
+
+@api_router.get("/payment-methods/{method_id}")
+async def get_payment_method(method_id: str):
+    m = await db.payment_methods.find_one({"id": method_id}, {"_id": 0})
+    if not m or not m.get("enabled", True):
+        raise HTTPException(status_code=404, detail="Not found")
+    return m
+
+
+@api_router.post("/admin/payment-methods")
+async def admin_create_payment_method(
+    payload: PaymentMethodCreate,
+    admin: Dict = Depends(require_admin),
+):
+    validate_image_base64(payload.qr_image, "qr_image")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = payload.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    doc["country"] = (doc.get("country") or "XX").upper()
+    doc["created_at"] = now
+    doc["updated_at"] = now
+    await db.payment_methods.insert_one(doc)
+    return {k: v for k, v in doc.items() if k != "_id"}
+
+
+@api_router.put("/admin/payment-methods/{method_id}")
+async def admin_update_payment_method(
+    method_id: str,
+    payload: PaymentMethodUpdate,
+    admin: Dict = Depends(require_admin),
+):
+    validate_image_base64(payload.qr_image, "qr_image")
+    updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    if "country" in updates and updates["country"]:
+        updates["country"] = updates["country"].upper()
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.payment_methods.update_one({"id": method_id}, {"$set": updates})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    m = await db.payment_methods.find_one({"id": method_id}, {"_id": 0})
+    return m
+
+
+@api_router.delete("/admin/payment-methods/{method_id}")
+async def admin_delete_payment_method(method_id: str, admin: Dict = Depends(require_admin)):
+    res = await db.payment_methods.delete_one({"id": method_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"message": "deleted"}
+
+
+# ============== v3.9 — Payment Receipts (booking + subscription manual verification) ==============
+class PaymentReceiptCreate(BaseModel):
+    amount: float
+    currency: str = "USD"
+    method_id: Optional[str] = None  # id from payment_methods
+    method_name: Optional[str] = None
+    receipt_image: str  # base64 data URL
+    target_type: str  # "booking" | "subscription" | "order"
+    target_id: Optional[str] = None
+    notes: Optional[str] = None
+    # optional payer info for guests/anonymous
+    payer_name: Optional[str] = None
+    payer_phone: Optional[str] = None
+
+
+@api_router.post("/payment-receipts")
+async def submit_payment_receipt(
+    payload: PaymentReceiptCreate,
+    request: Request,
+    entity: Optional[Dict] = Depends(get_current_entity),
+):
+    """Submit a payment receipt for manual verification by an admin or city agent."""
+    validate_image_base64(payload.receipt_image, "receipt_image")
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Invalid amount")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "amount": payload.amount,
+        "currency": payload.currency,
+        "method_id": payload.method_id,
+        "method_name": payload.method_name or "",
+        "receipt_image": payload.receipt_image,
+        "target_type": payload.target_type,
+        "target_id": payload.target_id,
+        "notes": payload.notes or "",
+        "payer_name": payload.payer_name or (entity.get("full_name") if entity else None),
+        "payer_phone": payload.payer_phone or (entity.get("phone_number") if entity else None),
+        "submitter_id": entity.get("id") if entity else None,
+        "submitter_type": entity.get("entity_type") if entity else "guest",
+        "status": "pending",  # pending | approved | rejected
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "rejection_reason": None,
+        "ip": _client_ip(request),
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.payment_receipts.insert_one(doc)
+    # Notify admins
+    try:
+        await db.admin_notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "recipient_type": "admin",
+            "kind": "payment_receipt_pending",
+            "title": "💰 إيصال دفع جديد بانتظار المراجعة / New payment receipt",
+            "body": f"{payload.amount} {payload.currency} - {payload.target_type}",
+            "data": {"receipt_id": doc["id"], "target_type": payload.target_type, "target_id": payload.target_id},
+            "read": False,
+            "created_at": now,
+            "created_at_dt": datetime.now(timezone.utc),
+        })
+    except Exception:
+        pass
+    return {k: v for k, v in doc.items() if k not in ("_id", "receipt_image")}
+
+
+@api_router.get("/admin/payment-receipts")
+async def admin_list_payment_receipts(
+    admin: Dict = Depends(require_admin),
+    status: Optional[str] = None,
+    limit: int = 100,
+):
+    q: Dict[str, Any] = {}
+    if status:
+        q["status"] = status
+    items = await db.payment_receipts.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    return items
+
+
+@api_router.get("/admin/payment-receipts/{receipt_id}")
+async def admin_get_payment_receipt(receipt_id: str, admin: Dict = Depends(require_admin)):
+    r = await db.payment_receipts.find_one({"id": receipt_id}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="Not found")
+    return r
+
+
+class ReceiptReviewAction(BaseModel):
+    rejection_reason: Optional[str] = None
+
+
+@api_router.put("/admin/payment-receipts/{receipt_id}/approve")
+async def admin_approve_receipt(
+    receipt_id: str,
+    admin: Dict = Depends(require_admin),
+):
+    r = await db.payment_receipts.find_one({"id": receipt_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.payment_receipts.update_one(
+        {"id": receipt_id},
+        {"$set": {
+            "status": "approved",
+            "reviewed_by": admin.get("id"),
+            "reviewed_at": now,
+            "updated_at": now,
+        }},
+    )
+    # If it was tied to a booking, mark the booking paid.
+    try:
+        if r.get("target_type") == "booking" and r.get("target_id"):
+            await db.bookings.update_one(
+                {"id": r["target_id"]},
+                {"$set": {"payment_status": "paid", "paid_at": now, "updated_at": now}},
+            )
+        elif r.get("target_type") == "subscription" and r.get("target_id"):
+            await db.subscriptions.update_one(
+                {"id": r["target_id"]},
+                {"$set": {"status": "active", "approved_at": now, "updated_at": now}},
+            )
+        elif r.get("target_type") == "order" and r.get("target_id"):
+            await db.orders.update_one(
+                {"id": r["target_id"]},
+                {"$set": {"payment_status": "paid", "paid_at": now, "updated_at": now}},
+            )
+    except Exception as e:
+        logger.debug(f"receipt approve side-effect error: {e}")
+    return {"message": "approved"}
+
+
+@api_router.put("/admin/payment-receipts/{receipt_id}/reject")
+async def admin_reject_receipt(
+    receipt_id: str,
+    payload: ReceiptReviewAction,
+    admin: Dict = Depends(require_admin),
+):
+    r = await db.payment_receipts.find_one({"id": receipt_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.payment_receipts.update_one(
+        {"id": receipt_id},
+        {"$set": {
+            "status": "rejected",
+            "rejection_reason": (payload.rejection_reason or "").strip()[:500] or "Not provided",
+            "reviewed_by": admin.get("id"),
+            "reviewed_at": now,
+            "updated_at": now,
+        }},
+    )
+    return {"message": "rejected"}
+
+
+# ============== v3.9 — Agents (City Collection Representatives) ==============
+# Agents are sub-admins with a city scope. They can approve receipts only for
+# targets inside their city and activate barbershops assigned to them.
+class AgentCreate(BaseModel):
+    full_name: str
+    phone_number: str
+    password: str
+    email: Optional[str] = None
+    country: str
+    city: str
+    commission_percent: float = 10.0
+
+class AgentUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    commission_percent: Optional[float] = None
+    active: Optional[bool] = None
+
+
+@api_router.post("/admin/agents")
+async def admin_create_agent(payload: AgentCreate, master: Dict = Depends(require_master_admin)):
+    # Validate password policy
+    try:
+        validate_password_strength(payload.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    existing = await db.agents.find_one({"phone_number": payload.phone_number})
+    if existing:
+        raise HTTPException(status_code=400, detail="Phone already used by another agent")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "full_name": payload.full_name,
+        "phone_number": payload.phone_number,
+        "email": payload.email,
+        "password": hash_password(payload.password),
+        "country": payload.country,
+        "city": payload.city,
+        "commission_percent": payload.commission_percent,
+        "role": "agent",
+        "active": True,
+        "total_collected": 0.0,
+        "created_by": master.get("id"),
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.agents.insert_one(doc)
+    return {k: v for k, v in doc.items() if k not in ("_id", "password")}
+
+
+@api_router.get("/admin/agents")
+async def admin_list_agents(admin: Dict = Depends(require_admin)):
+    items = await db.agents.find({}, {"_id": 0, "password": 0}).sort("created_at", -1).to_list(200)
+    return items
+
+
+@api_router.put("/admin/agents/{agent_id}")
+async def admin_update_agent(agent_id: str, payload: AgentUpdate, master: Dict = Depends(require_master_admin)):
+    updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.agents.update_one({"id": agent_id}, {"$set": updates})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {"message": "updated"}
+
+
+@api_router.delete("/admin/agents/{agent_id}")
+async def admin_delete_agent(agent_id: str, master: Dict = Depends(require_master_admin)):
+    res = await db.agents.delete_one({"id": agent_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {"message": "deleted"}
+
+
+class AgentLoginRequest(BaseModel):
+    phone_number: str
+    password: str
+
+
+@api_router.post("/agents/login", response_model=TokenResponse)
+async def agent_login(payload: AgentLoginRequest, request: Request):
+    ip = _client_ip(request)
+    if not _rate_limit_check(f"login-agent:ip:{ip}", 20):
+        raise HTTPException(status_code=429, detail="Too many login attempts")
+    agent = await db.agents.find_one({"phone_number": payload.phone_number})
+    if not agent or not verify_password(payload.password, agent.get("password", "")):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not agent.get("active", True):
+        raise HTTPException(status_code=403, detail="Agent account disabled")
+    # Tokenize as a separate entity type so /api/agents/* routes can be gated.
+    # Keep compatible with existing decode_token() by using entity_type='agent'.
+    token = jwt.encode(
+        {
+            "entity_id": agent["id"],
+            "entity_type": "agent",
+            "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS),
+        },
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
+    safe = {k: v for k, v in agent.items() if k not in ("_id", "password")}
+    return TokenResponse(access_token=token, user_type="agent", user=safe)
+
+
+async def require_agent(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict:
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Agent authentication required")
+    payload = decode_token(credentials.credentials)
+    if not payload or payload.get("entity_type") != "agent":
+        raise HTTPException(status_code=403, detail="Agent access required")
+    agent = await db.agents.find_one({"id": payload.get("entity_id")}, {"_id": 0, "password": 0})
+    if not agent or not agent.get("active", True):
+        raise HTTPException(status_code=403, detail="Agent account inactive")
+    agent["entity_type"] = "agent"
+    return agent
+
+
+@api_router.get("/agents/me")
+async def agent_me(agent: Dict = Depends(require_agent)):
+    return agent
+
+
+@api_router.get("/agents/receipts")
+async def agent_list_receipts(agent: Dict = Depends(require_agent), status: Optional[str] = None):
+    """Agents see receipts where the target barbershop/user lives in their city."""
+    q: Dict[str, Any] = {}
+    if status:
+        q["status"] = status
+    items = await db.payment_receipts.find(q, {"_id": 0}).sort("created_at", -1).limit(200).to_list(200)
+    # Filter by city from linked target if possible
+    filtered = []
+    for r in items:
+        matched_city = False
+        if r.get("target_type") == "booking" and r.get("target_id"):
+            b = await db.bookings.find_one({"id": r["target_id"]}, {"_id": 0, "barbershop_id": 1})
+            if b:
+                s = await db.barbershops.find_one({"id": b["barbershop_id"]}, {"_id": 0, "city": 1})
+                if s and (s.get("city") or "").lower() == (agent.get("city") or "").lower():
+                    matched_city = True
+        elif r.get("target_type") == "subscription" and r.get("target_id"):
+            sub = await db.subscriptions.find_one({"id": r["target_id"]}, {"_id": 0, "barbershop_id": 1})
+            if sub:
+                s = await db.barbershops.find_one({"id": sub["barbershop_id"]}, {"_id": 0, "city": 1})
+                if s and (s.get("city") or "").lower() == (agent.get("city") or "").lower():
+                    matched_city = True
+        if matched_city:
+            filtered.append(r)
+    return filtered
+
+
+@api_router.put("/agents/receipts/{receipt_id}/approve")
+async def agent_approve_receipt(receipt_id: str, agent: Dict = Depends(require_agent)):
+    r = await db.payment_receipts.find_one({"id": receipt_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Not found")
+    # Enforce city scope
+    shop_city = None
+    if r.get("target_type") == "booking" and r.get("target_id"):
+        b = await db.bookings.find_one({"id": r["target_id"]}, {"_id": 0, "barbershop_id": 1})
+        if b:
+            s = await db.barbershops.find_one({"id": b["barbershop_id"]}, {"_id": 0, "city": 1})
+            shop_city = (s or {}).get("city")
+    elif r.get("target_type") == "subscription" and r.get("target_id"):
+        sub = await db.subscriptions.find_one({"id": r["target_id"]}, {"_id": 0, "barbershop_id": 1})
+        if sub:
+            s = await db.barbershops.find_one({"id": sub["barbershop_id"]}, {"_id": 0, "city": 1})
+            shop_city = (s or {}).get("city")
+    if (shop_city or "").lower() != (agent.get("city") or "").lower():
+        raise HTTPException(status_code=403, detail="Out-of-city receipt — cannot approve")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.payment_receipts.update_one(
+        {"id": receipt_id},
+        {"$set": {"status": "approved", "reviewed_by": agent["id"],
+                  "reviewed_at": now, "reviewer_type": "agent", "updated_at": now}},
+    )
+    # Side-effects same as admin approval
+    if r.get("target_type") == "booking" and r.get("target_id"):
+        await db.bookings.update_one(
+            {"id": r["target_id"]},
+            {"$set": {"payment_status": "paid", "paid_at": now, "updated_at": now}},
+        )
+    elif r.get("target_type") == "subscription" and r.get("target_id"):
+        await db.subscriptions.update_one(
+            {"id": r["target_id"]},
+            {"$set": {"status": "active", "approved_at": now, "updated_at": now}},
+        )
+    # Update agent commission
+    try:
+        commission = (r.get("amount", 0) or 0) * (agent.get("commission_percent", 0) / 100.0)
+        await db.agents.update_one(
+            {"id": agent["id"]},
+            {"$inc": {"total_collected": r.get("amount", 0), "total_commission": commission}},
+        )
+    except Exception:
+        pass
+    return {"message": "approved"}
+
+
 @api_router.get("/config/public")
 async def get_public_config():
     """Public configuration used by the frontend (non-sensitive)."""
@@ -6823,6 +7343,19 @@ async def startup_db():
                 logger.info("🔐 Site Owner account re-elevated to master_admin with all permissions.")
     except Exception as e:
         logger.error(f"Site Owner bootstrap failed: {e}")
+
+    # v3.9 — Seed payment methods + indexes for new collections
+    try:
+        await db.payment_methods.create_index("id", unique=True)
+        await db.payment_methods.create_index([("country", 1), ("order", 1)])
+        await db.payment_receipts.create_index("id", unique=True)
+        await db.payment_receipts.create_index([("status", 1), ("created_at", -1)])
+        await db.agents.create_index("id", unique=True)
+        await db.agents.create_index("phone_number", unique=True)
+        await db.agents.create_index([("country", 1), ("city", 1)])
+        await _ensure_default_payment_methods()
+    except Exception as e:
+        logger.error(f"v3.9 indexes/seed failed: {e}")
 
     # ---------- Ranking recompute: initial + nightly schedule ----------
     import asyncio

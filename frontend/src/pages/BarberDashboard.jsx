@@ -255,6 +255,57 @@ const BarberDashboard = () => {
     );
   }
 
+  // v3.9 — Approval-state guard: a newly-registered shop must wait for the Master
+  // Admin to approve it before it appears publicly. During this waiting period we
+  // still allow them to access their dashboard (to configure profile), but we
+  // surface a clear status banner instead of the full dashboard if the shop is
+  // rejected OR still pending.
+  const approvalStatus = user?.approval_status || (user?.is_verified ? 'approved' : 'pending');
+  if (approvalStatus === 'pending' || approvalStatus === 'rejected') {
+    const titleAr = approvalStatus === 'pending'
+      ? 'صالونك قيد المراجعة من قبل الإدارة'
+      : 'تم رفض طلب صالونك';
+    const titleEn = approvalStatus === 'pending'
+      ? 'Your salon is under review'
+      : 'Your salon request was rejected';
+    const descAr = approvalStatus === 'pending'
+      ? 'بانتظار موافقة الإدارة. عند القبول، سيظهر صالونك فوراً للزبائن وتصلك الإشعارات.'
+      : `السبب: ${user?.rejection_reason || 'لم يتم تحديده'}. تواصل معنا لمعرفة التفاصيل.`;
+    const descEn = approvalStatus === 'pending'
+      ? 'Awaiting admin approval. Once approved, your salon will appear publicly and you will start receiving bookings.'
+      : `Reason: ${user?.rejection_reason || 'Not specified'}. Please contact support for details.`;
+    return (
+      <div className={`min-h-screen ${themeClass} flex items-center justify-center px-4 py-10`} data-testid={`shop-${approvalStatus}-screen`}>
+        <div className="max-w-md w-full bg-gray-900/60 border border-yellow-500/30 backdrop-blur-xl rounded-3xl p-8 text-center">
+          <div className={`w-20 h-20 rounded-full mx-auto mb-5 flex items-center justify-center ${approvalStatus === 'pending' ? 'bg-yellow-500/20' : 'bg-red-500/20'}`}>
+            {approvalStatus === 'pending' ? (
+              <Clock className="w-10 h-10 text-yellow-400" />
+            ) : (
+              <X className="w-10 h-10 text-red-400" />
+            )}
+          </div>
+          <h2 className="text-xl md:text-2xl font-bold text-white mb-3">
+            {language === 'ar' ? titleAr : titleEn}
+          </h2>
+          <p className="text-sm text-gray-300 leading-relaxed mb-6">
+            {language === 'ar' ? descAr : descEn}
+          </p>
+          <div className="flex flex-col gap-2">
+            <Button onClick={() => navigate('/profile-setup')} className={`${isMen ? 'btn-primary-men' : 'btn-primary-women'} w-full`} data-testid="complete-profile-btn">
+              {language === 'ar' ? 'إكمال ملف الصالون' : 'Complete salon profile'}
+            </Button>
+            <Button variant="ghost" onClick={() => window.open(`https://wa.me/963935964158?text=${encodeURIComponent(language === 'ar' ? `مرحبا، بخصوص صالون: ${user?.shop_name}` : `Hi, regarding salon: ${user?.shop_name}`)}`, '_blank')} className="text-gray-400 hover:text-white">
+              {language === 'ar' ? '💬 تواصل مع الدعم عبر واتساب' : '💬 Contact support on WhatsApp'}
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/home')} className="text-gray-500 hover:text-white">
+              {language === 'ar' ? 'العودة للرئيسية' : 'Back to home'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className={`min-h-screen ${themeClass} flex items-center justify-center`}>

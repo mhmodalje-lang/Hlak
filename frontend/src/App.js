@@ -24,7 +24,6 @@ import AdminDashboard from "@/pages/AdminDashboard";
 import PaymentPage from "@/pages/PaymentPage";
 import ProfileSetup from "@/pages/ProfileSetup";
 import ProductShowcase from "@/pages/ProductShowcase";
-import AIAdvisor from "@/pages/AIAdvisor";
 import FavoritesPage from "@/pages/FavoritesPage";
 import MyOrders from "@/pages/MyOrders";
 import NotFoundPage from "@/pages/NotFoundPage";
@@ -153,7 +152,6 @@ function App() {
                       <Route path="/my-bookings" element={<MyBookings />} />
                       <Route path="/my-orders" element={<MyOrders />} />
                       <Route path="/payment" element={<PaymentPage />} />
-                      <Route path="/ai-advisor" element={<AIAdvisor />} />
                       <Route path="/favorites" element={<FavoritesPage />} />
 
                       {/* Settings (GDPR + 2FA + Dark Mode) */}

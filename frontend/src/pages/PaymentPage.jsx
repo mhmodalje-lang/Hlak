@@ -19,13 +19,14 @@ import {
 } from '@/components/icons';
 import {
   CreditCard, Smartphone, Banknote, Building2, Shield,
-  Copy, Globe, MapPin, Sparkles, Lock
+  Copy, Globe, MapPin, Sparkles, Lock, Upload
 } from 'lucide-react';
+import ReceiptUpload from '@/components/ReceiptUpload';
 
 const PaymentPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { gender } = useApp();
+  const { gender, token, user } = useApp();
   const { language } = useLocalization();
   const { country, countryCode, city, getPaymentRegion } = useGeoLocation();
   const { formatPrice, currency, currencySymbol } = useCurrency();
@@ -41,8 +42,10 @@ const PaymentPage = () => {
   const [selectedPackage, setSelectedPackage] = useState('barber');
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [adminWhatsApp, setAdminWhatsApp] = useState('963935964158');
+  const [dynamicMethods, setDynamicMethods] = useState([]);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
 
-  // Fetch admin WhatsApp from backend (configurable via env) so it is not hardcoded.
+  // Fetch admin WhatsApp + dynamic payment methods from backend.
   useEffect(() => {
     let active = true;
     fetch(`${API}/config/public`)
@@ -53,8 +56,14 @@ const PaymentPage = () => {
         }
       })
       .catch(() => {});
+    // Dynamic methods (Master-admin configurable)
+    const params = countryCode && countryCode !== 'XX' ? `?country=${countryCode}` : '';
+    fetch(`${API}/payment-methods${params}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => { if (active) setDynamicMethods(Array.isArray(data) ? data : []); })
+      .catch(() => {});
     return () => { active = false; };
-  }, []);
+  }, [countryCode]);
 
   const t = isRTL ? {
     back: 'رجوع',
@@ -214,8 +223,42 @@ const PaymentPage = () => {
     { id: 'cash',     name: t.cashOnService, icon: <Banknote className="w-6 h-6" />, desc: t.cashDesc },
   ];
 
-  // Build the list of methods based on detected region + specific country overrides
+  // Build the list of methods based on detected region + specific country overrides.
+  // Now prefers dynamic methods from the backend (Master-admin configurable). Falls
+  // back to hardcoded defaults only if the backend returned nothing.
   const methodsForRegion = useMemo(() => {
+    const iconFor = (kind) => {
+      switch (kind) {
+        case 'mobile_wallet': return <Smartphone className="w-6 h-6" />;
+        case 'hawala':
+        case 'bank':         return <Building2 className="w-6 h-6" />;
+        case 'wire':         return <Globe className="w-6 h-6" />;
+        case 'crypto':       return <Lock className="w-6 h-6" />;
+        default:             return <Smartphone className="w-6 h-6" />;
+      }
+    };
+    if (dynamicMethods && dynamicMethods.length > 0) {
+      const mapped = dynamicMethods.map((m) => ({
+        id: m.id,
+        name: (isRTL ? m.name_ar : (m.name_en || m.name_ar)),
+        icon: iconFor(m.kind),
+        recipient: m.recipient || '',
+        number: m.number || '',
+        desc: t.manualDesc,
+        dynamic: true,
+        country: m.country,
+        kind: m.kind,
+      }));
+      // Always append the "cash on service" option at the end for local regions.
+      if (paymentRegion === 'local_arab') {
+        mapped.push({ id: 'cash', name: t.cashOnService, icon: <Banknote className="w-6 h-6" />, desc: t.cashDesc });
+      }
+      if (paymentRegion === 'global') {
+        mapped.push({ id: 'card', name: t.creditCard, icon: <CreditCard className="w-6 h-6" />, desc: t.cardDesc, comingSoon: true });
+        mapped.push({ id: 'cash', name: t.cashOnService, icon: <Banknote className="w-6 h-6" />, desc: t.cashDesc });
+      }
+      return mapped;
+    }
     if (paymentRegion === 'local_arab') {
       const base = [...universalLocal];
       if (country === 'Syria')   return [...syriaMethods, ...base];
@@ -223,7 +266,7 @@ const PaymentPage = () => {
       return base;
     }
     return globalMethods;
-  }, [paymentRegion, country]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dynamicMethods, paymentRegion, country, isRTL]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // -------------------- RENDER --------------------
 
@@ -482,10 +525,21 @@ const PaymentPage = () => {
           className="sticky bottom-4 z-30"
         >
           <div className="p-4 rounded-3xl bh-glass-vip bh-corner-accents space-y-3">
+            {selectedMethod && selectedMethod !== 'cash' && selectedMethod !== 'card' && selectedMethod !== 'applepay' && (
+              <button
+                onClick={() => setShowReceiptModal(true)}
+                className="w-full bh-btn bh-btn-primary bh-btn-lg flex items-center justify-center gap-3"
+                data-testid="upload-receipt-btn"
+              >
+                <Upload className="w-6 h-6" />
+                {isRTL ? 'رفع إيصال الدفع' : 'Upload payment receipt'}
+              </button>
+            )}
+
             {paymentRegion === 'local_arab' || selectedMethod === 'cash' ? (
               <button
                 onClick={() => openWhatsApp(methodsForRegion.find(m => m.id === selectedMethod)?.name || 'Manual')}
-                className="w-full bh-btn bh-btn-primary bh-btn-lg flex items-center justify-center gap-3"
+                className="w-full bh-btn bh-btn-ghost bh-btn-lg flex items-center justify-center gap-3"
                 data-testid="whatsapp-confirm-btn"
               >
                 <WhatsApp className="w-6 h-6" />
@@ -525,6 +579,24 @@ const PaymentPage = () => {
           {t.adminPhone}
         </div>
       </div>
+
+      {/* Receipt Upload Modal */}
+      <ReceiptUpload
+        open={showReceiptModal}
+        onClose={() => setShowReceiptModal(false)}
+        API={API}
+        amount={amountUSD || 100}
+        currency={currency || 'USD'}
+        methodId={selectedMethod}
+        methodName={methodsForRegion.find(m => m.id === selectedMethod)?.name || ''}
+        targetType={bookingContext ? 'booking' : 'subscription'}
+        targetId={bookingContext?.id || null}
+        token={token}
+        defaultPayerName={user?.full_name || ''}
+        defaultPayerPhone={user?.phone_number || ''}
+        language={language}
+        onSubmitted={() => navigate('/my-bookings')}
+      />
     </div>
   );
 };

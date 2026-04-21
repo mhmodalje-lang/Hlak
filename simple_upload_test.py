@@ -6,7 +6,7 @@ Simple test for gallery upload functionality
 import requests
 import json
 
-BASE_URL = "https://vuln-checker-8.preview.emergentagent.com/api"
+BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
 SALON_CREDENTIALS = {"phone_number": "0935964158", "password": "salon123"}
 
 def test_single_upload():

@@ -34,7 +34,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Get APP_URL from environment for QR codes and referral links
-APP_URL = os.environ.get('APP_URL', 'https://vuln-checker-8.preview.emergentagent.com')
+APP_URL = os.environ.get('APP_URL', 'https://security-audit-110.preview.emergentagent.com')
 # Admin WhatsApp phone (for payment confirmations) - can be set via env
 ADMIN_WHATSAPP = os.environ.get('ADMIN_WHATSAPP', '963935964158')
 

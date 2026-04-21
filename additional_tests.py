@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 
 # Configuration
-BASE_URL = "https://vuln-checker-8.preview.emergentagent.com/api"
+BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
 ADMIN_CREDS = {"phone_number": "admin", "password": "admin123"}
 SALON_CREDS = {"phone_number": "07701234567", "password": "salon123"}
 

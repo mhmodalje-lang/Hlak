@@ -16,6 +16,7 @@ import ImageUploader from '@/components/ImageUploader';
 import SponsoredAdsManagement from '@/components/SponsoredAdsManagement';
 import RevenueStats from '@/components/RevenueStats';
 import LeaveManagement from '@/components/LeaveManagement';
+import WorkingHoursVacation from '@/components/WorkingHoursVacation';
 import TierStatusCard from '@/components/TierStatusCard';
 import { 
   ArrowRight, ArrowLeft, Calendar, Clock, Star, 
@@ -580,6 +581,19 @@ const BarberDashboard = () => {
         <ShopOrdersManagement API={API} token={token} isMen={isMen} language={language} />
         <SponsoredAdsManagement API={API} token={token} isMen={isMen} language={language} />
         <LeaveManagement API={API} token={token} isMen={isMen} language={language} />
+        <WorkingHoursVacation
+          API={API}
+          token={token}
+          profile={profile}
+          language={language}
+          isMen={isMen}
+          onRefresh={() => {
+            // Re-fetch the profile so the new hours / vacation state reflect
+            axios.get(`${API}/barbers/profile/me`, { headers: { Authorization: `Bearer ${token}` } })
+              .then(r => setProfile(r.data))
+              .catch(() => {});
+          }}
+        />
         <ServicesManagement API={API} token={token} isMen={isMen} language={language} />
         <SocialMediaManagement API={API} token={token} isMen={isMen} language={language} profile={profile} onUpdate={() => window.location.reload()} />
 

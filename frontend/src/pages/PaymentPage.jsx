@@ -1,604 +1,641 @@
 /**
- * BARBER HUB - PaymentPage (VIP Warm Luxury + Smart Gateway)
- * Intelligently routes between:
- *  - LOCAL (Arab countries): Manual transfer (Syriatel/MTN/Zain Cash, Asia Hawala, Cash on Delivery, WhatsApp confirmation)
- *  - GLOBAL (EU/US/UK/etc.): Card payment (Stripe placeholder) + Cash on Delivery
+ * BARBER HUB — PaymentPage (v3.9.1)
  *
- * Also shows subscription packages for barbers (Basic / Barber / Store / VIP).
+ * Manual subscription flow:
+ *  1. Pick a subscription plan (auto-filtered by country_code with Global fallback)
+ *  2. Pick a transfer method: Syriatel Cash (single recipient) or an exchange office
+ *  3. See recipient details (name + number + region) with copy-to-clipboard
+ *  4. Transfer money offline, then upload the receipt image
+ *  5. Submit → server stores order + creates admin notification with wa.me link
+ *  6. Show reference code + "awaiting admin approval within 24h"
  */
-import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useApp, API } from '@/App';
 import { useLocalization } from '@/contexts/LocalizationContext';
 import { useGeoLocation } from '@/contexts/GeoLocationContext';
-import { useCurrency } from '@/contexts/CurrencyContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, ArrowRight, WhatsApp, Crown, Star, Check, Shears
-} from '@/components/icons';
-import {
-  CreditCard, Smartphone, Banknote, Building2, Shield,
-  Copy, Globe, MapPin, Sparkles, Lock, Upload
+  ArrowLeft, ArrowRight, Crown, Check, Copy, Building2, Smartphone,
+  Upload, Loader2, Shield, Sparkles, FileText, Clock, MapPin,
 } from 'lucide-react';
-import ReceiptUpload from '@/components/ReceiptUpload';
 
 const PaymentPage = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const { gender, token, user } = useApp();
   const { language } = useLocalization();
-  const { country, countryCode, city, getPaymentRegion } = useGeoLocation();
-  const { formatPrice, currency, currencySymbol } = useCurrency();
-
-  const isMen = gender !== 'female';
+  const { countryCode, country } = useGeoLocation();
   const isRTL = language === 'ar';
-  const paymentRegion = getPaymentRegion(); // 'local_arab' | 'global'
 
-  // Optional booking context (passed via navigate state)
-  const bookingContext = location.state?.booking || null;
-  const amountUSD = bookingContext?.total_price ?? null;
+  const [plans, setPlans] = useState([]);
+  const [recipients, setRecipients] = useState({ syriatel_cash: null, exchanges: [] });
+  const [loading, setLoading] = useState(true);
 
-  const [selectedPackage, setSelectedPackage] = useState('barber');
-  const [selectedMethod, setSelectedMethod] = useState(null);
-  const [adminWhatsApp, setAdminWhatsApp] = useState('963935964158');
-  const [dynamicMethods, setDynamicMethods] = useState([]);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedMethod, setSelectedMethod] = useState(null); // 'syriatel_cash' | 'exchange'
+  const [selectedExchangeId, setSelectedExchangeId] = useState(null);
+  const [referenceNumber, setReferenceNumber] = useState('');
+  const [notes, setNotes] = useState('');
 
-  // Fetch admin WhatsApp + dynamic payment methods from backend.
-  useEffect(() => {
-    let active = true;
-    fetch(`${API}/config/public`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (active && data && data.admin_whatsapp) {
-          setAdminWhatsApp(String(data.admin_whatsapp).replace(/\D/g, ''));
-        }
-      })
-      .catch(() => {});
-    // Dynamic methods (Master-admin configurable)
-    const params = countryCode && countryCode !== 'XX' ? `?country=${countryCode}` : '';
-    fetch(`${API}/payment-methods${params}`)
-      .then((r) => r.ok ? r.json() : [])
-      .then((data) => { if (active) setDynamicMethods(Array.isArray(data) ? data : []); })
-      .catch(() => {});
-    return () => { active = false; };
-  }, [countryCode]);
+  const [receiptImage, setReceiptImage] = useState(null);
+  const [receiptPreview, setReceiptPreview] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submittedOrder, setSubmittedOrder] = useState(null);
 
   const t = isRTL ? {
     back: 'رجوع',
-    title: 'بوابة الدفع الذكية',
-    subtitle: 'اختر الطريقة الأنسب لك حسب منطقتك',
-    detectedRegion: 'منطقتك:',
-    packages: 'باقات الاشتراك السنوي',
-    basic: 'عادي',
-    barber: 'حلاق',
-    store: 'متجر',
-    vip: 'VIP',
-    selectPackage: 'اختر الباقة',
-    selectedPackage: 'الباقة المختارة',
-    availableMethods: 'طرق الدفع المتاحة',
-    localMethods: 'الدفع المحلي (الوطن العربي)',
-    globalMethods: 'الدفع العالمي',
-    cashOnService: 'الدفع عند الخدمة',
-    cashDesc: 'ادفع مباشرة في الصالون بعد انتهاء الخدمة',
-    syriatelCash: 'سيريتل كاش',
-    mtnCash: 'MTN كاش',
-    zainCash: 'زين كاش',
-    asiaHawala: 'آسيا حوالة',
-    bankTransfer: 'تحويل بنكي / مكتب صرافة',
-    westernUnion: 'Western Union',
-    manualDesc: 'حوّل المبلغ ثم أرسل الإيصال عبر واتساب للتأكيد خلال 24 ساعة',
-    creditCard: 'بطاقة ائتمان',
-    cardDesc: 'Visa / Mastercard / AmEx - دفع آمن عبر Stripe',
-    applePay: 'Apple Pay / Google Pay',
+    title: 'بوابة الاشتراك',
+    subtitle: 'اختر الخطة، حوّل المبلغ، وارفع الإيصال ليتم تفعيل الاشتراك خلال 24 ساعة',
+    step1: 'اختر خطة الاشتراك',
+    step2: 'اختر طريقة التحويل',
+    step3: 'معلومات المستلم',
+    step4: 'ارفع إيصال التحويل',
+    submit: 'إرسال الإيصال وطلب التفعيل',
+    submitting: 'جاري الإرسال...',
+    monthly: '/شهر',
+    yearly: '/سنة',
+    freeTrial: 'تجربة مجانية',
+    month: 'شهر',
+    months: 'أشهر',
+    syriatel: 'سيريتل كاش',
+    exchange: 'شركة / مكتب صرافة',
+    recipientName: 'اسم المستلم',
+    phoneNumber: 'رقم الهاتف',
+    region: 'المنطقة',
+    notes: 'ملاحظات',
     copy: 'نسخ',
     copied: 'تم النسخ',
-    recipientName: 'اسم المستلم',
-    recipientNumber: 'رقم المستلم',
-    accountName: 'اسم الحساب',
-    adminName: 'محمد الرجب',
-    adminPhone: '+963 935 964 158',
-    location: 'الموقع',
-    locationValue: 'موقع عالمي',
-    confirmWhatsApp: 'تأكيد الحوالة عبر واتساب',
-    payNow: 'ادفع الآن',
-    comingSoon: 'قريباً',
-    securePayment: 'دفع آمن ومشفر 100%',
-    trustedBy: 'موثوق من قبل آلاف الصالونات',
-    support247: 'دعم فوري 24/7',
-    billingAmount: 'المبلغ المطلوب',
-    yearly: 'سنوياً',
-    features: {
-      basic: ['ملف شخصي', 'حجوزات محدودة', 'دعم أساسي'],
-      barber: ['ملف احترافي', 'حجوزات لا محدودة', 'QR Code', 'معرض 4 صور', 'دعم أولوية'],
-      store: ['كل مزايا الحلاق', 'متجر مصغر', 'حتى 10 منتجات', 'نظام طلبات'],
-      vip: ['كل المزايا', 'ظهور مميز', 'شارة VIP', 'أولوية في البحث', 'إعلانات مدفوعة']
-    },
-    popular: 'الأكثر شيوعاً'
+    reference: 'رقم مرجع التحويل (اختياري)',
+    additionalNotes: 'ملاحظات إضافية (اختياري)',
+    uploadReceipt: 'اضغط لاختيار صورة الإيصال',
+    receiptHint: 'JPG/PNG · أقل من 3 ميغابايت',
+    imageRequired: 'يرجى رفع صورة الإيصال',
+    tooLarge: 'الصورة كبيرة جداً. الحد الأقصى 3 ميغابايت',
+    selectPlanFirst: 'يرجى اختيار خطة أولاً',
+    selectMethodFirst: 'يرجى اختيار طريقة التحويل',
+    selectExchangeFirst: 'يرجى اختيار مكتب الصرافة',
+    orderSubmitted: 'تم إرسال الطلب!',
+    yourRefCode: 'رقم مرجع طلبك',
+    awaitingReview: 'سيتم مراجعة الإيصال وتفعيل اشتراكك خلال 24 ساعة.',
+    backToDashboard: 'العودة للوحة التحكم',
+    viewMyOrders: 'طلباتي',
+    amountToTransfer: 'المبلغ المطلوب',
+    loginRequired: 'يجب تسجيل الدخول كصالون لإرسال الطلب',
+    loading: 'جاري التحميل...',
+    noPlans: 'لا توجد خطط متاحة حالياً',
+    note: 'ملاحظة',
   } : {
     back: 'Back',
-    title: 'Smart Payment Gateway',
-    subtitle: 'Choose the best method for your region',
-    detectedRegion: 'Your region:',
-    packages: 'Annual Subscription Packages',
-    basic: 'Basic',
-    barber: 'Barber',
-    store: 'Store',
-    vip: 'VIP',
-    selectPackage: 'Select package',
-    selectedPackage: 'Selected Package',
-    availableMethods: 'Available Payment Methods',
-    localMethods: 'Local Payment (Arab Region)',
-    globalMethods: 'Global Payment',
-    cashOnService: 'Cash on Service',
-    cashDesc: 'Pay directly at the salon after service',
-    syriatelCash: 'Syriatel Cash',
-    mtnCash: 'MTN Cash',
-    zainCash: 'Zain Cash',
-    asiaHawala: 'Asia Hawala',
-    bankTransfer: 'Bank / Exchange Transfer',
-    westernUnion: 'Western Union',
-    manualDesc: 'Transfer the amount, then send receipt via WhatsApp for confirmation within 24h',
-    creditCard: 'Credit Card',
-    cardDesc: 'Visa / Mastercard / AmEx - Secure payment via Stripe',
-    applePay: 'Apple Pay / Google Pay',
+    title: 'Subscription Gateway',
+    subtitle: 'Pick a plan, transfer the amount, upload the receipt — activated within 24h',
+    step1: 'Choose a plan',
+    step2: 'Choose transfer method',
+    step3: 'Recipient details',
+    step4: 'Upload transfer receipt',
+    submit: 'Submit receipt & request activation',
+    submitting: 'Submitting...',
+    monthly: '/month',
+    yearly: '/year',
+    freeTrial: 'Free trial',
+    month: 'month',
+    months: 'months',
+    syriatel: 'Syriatel Cash',
+    exchange: 'Exchange office',
+    recipientName: 'Recipient name',
+    phoneNumber: 'Phone',
+    region: 'Region',
+    notes: 'Note',
     copy: 'Copy',
     copied: 'Copied',
-    recipientName: 'Recipient Name',
-    recipientNumber: 'Recipient Number',
-    accountName: 'Account Name',
-    adminName: 'Mohamad Al-Rajab',
-    adminPhone: '+963 935 964 158',
-    location: 'Location',
-    locationValue: 'Global',
-    confirmWhatsApp: 'Confirm Transfer via WhatsApp',
-    payNow: 'Pay Now',
-    comingSoon: 'Coming Soon',
-    securePayment: '100% secure & encrypted payment',
-    trustedBy: 'Trusted by thousands of salons',
-    support247: '24/7 instant support',
-    billingAmount: 'Amount Due',
-    yearly: 'per year',
-    features: {
-      basic: ['Profile', 'Limited bookings', 'Basic support'],
-      barber: ['Pro profile', 'Unlimited bookings', 'QR Code', '4-image gallery', 'Priority support'],
-      store: ['All Barber perks', 'Mini store', 'Up to 10 products', 'Order system'],
-      vip: ['All perks', 'Featured listing', 'VIP badge', 'Search priority', 'Paid ads']
-    },
-    popular: 'Most Popular'
+    reference: 'Transfer reference (optional)',
+    additionalNotes: 'Extra notes (optional)',
+    uploadReceipt: 'Tap to pick receipt image',
+    receiptHint: 'JPG/PNG · under 3 MB',
+    imageRequired: 'Please upload the receipt image',
+    tooLarge: 'Image too large (max 3 MB)',
+    selectPlanFirst: 'Please pick a plan first',
+    selectMethodFirst: 'Please choose a transfer method',
+    selectExchangeFirst: 'Please choose an exchange office',
+    orderSubmitted: 'Order submitted!',
+    yourRefCode: 'Your reference code',
+    awaitingReview: 'Your receipt will be reviewed and activated within 24 hours.',
+    backToDashboard: 'Back to dashboard',
+    viewMyOrders: 'My orders',
+    amountToTransfer: 'Amount to transfer',
+    loginRequired: 'You must be logged in as a salon to submit',
+    loading: 'Loading...',
+    noPlans: 'No plans available for your country yet',
+    note: 'Note',
   };
 
-  // Packages in USD (base). Currency converter will display in local currency.
-  const packages = useMemo(() => [
-    { id: 'basic',  name: t.basic,  priceUSD: 75,  features: t.features.basic,  tier: 'silver',   popular: false },
-    { id: 'barber', name: t.barber, priceUSD: 100, features: t.features.barber, tier: 'gold',     popular: true  },
-    { id: 'store',  name: t.store,  priceUSD: 150, features: t.features.store,  tier: 'platinum', popular: false },
-    { id: 'vip',    name: t.vip,    priceUSD: 175, features: t.features.vip,    tier: 'vip',      popular: false },
-  ], [t]);
-
-  const currentPkg = packages.find(p => p.id === selectedPackage) || packages[1];
-  const displayAmount = amountUSD ?? currentPkg.priceUSD;
-
-  const openWhatsApp = (method = 'general') => {
-    const pkgLine = isRTL
-      ? `الباقة: ${currentPkg.name} - ${formatPrice(currentPkg.priceUSD)}`
-      : `Package: ${currentPkg.name} - ${formatPrice(currentPkg.priceUSD)}`;
-    const methodLine = isRTL
-      ? `طريقة الدفع: ${method}`
-      : `Payment method: ${method}`;
-    const greeting = isRTL
-      ? 'مرحباً، أريد تفعيل اشتراك BARBER HUB'
-      : 'Hello, I would like to activate a BARBER HUB subscription';
-    const msg = encodeURIComponent(`${greeting}\n${pkgLine}\n${methodLine}\n${t.location}: ${country}, ${city}`);
-    window.open(`https://wa.me/${adminWhatsApp}?text=${msg}`, '_blank');
-  };
-
-  const copyText = (text) => {
-    navigator.clipboard?.writeText(text);
-    toast.success(t.copied);
-  };
-
-  // -------------------- PAYMENT METHOD DEFINITIONS --------------------
-
-  const syriaMethods = [
-    { id: 'syriatel', name: t.syriatelCash,  icon: <Smartphone className="w-6 h-6" />, recipient: t.adminName, number: '0935 964 158' },
-    { id: 'mtn',      name: t.mtnCash,       icon: <Smartphone className="w-6 h-6" />, recipient: t.adminName, number: '0947 000 000' },
-  ];
-
-  const iraqMethods = [
-    { id: 'zain',     name: t.zainCash,      icon: <Smartphone className="w-6 h-6" />, recipient: t.adminName, number: '0770 000 000' },
-    { id: 'asia',     name: t.asiaHawala,    icon: <Building2 className="w-6 h-6" />,  recipient: t.adminName, number: '0783 000 000' },
-  ];
-
-  const universalLocal = [
-    { id: 'cash',         name: t.cashOnService, icon: <Banknote className="w-6 h-6" />,  desc: t.cashDesc },
-    { id: 'bank',         name: t.bankTransfer,  icon: <Building2 className="w-6 h-6" />, desc: t.manualDesc, recipient: t.adminName, number: t.locationValue },
-    { id: 'westernunion', name: t.westernUnion,  icon: <Globe className="w-6 h-6" />,     desc: t.manualDesc, recipient: t.adminName, number: t.locationValue },
-  ];
-
-  const globalMethods = [
-    { id: 'card',     name: t.creditCard, icon: <CreditCard className="w-6 h-6" />,  desc: t.cardDesc, comingSoon: true },
-    { id: 'applepay', name: t.applePay,   icon: <Smartphone className="w-6 h-6" />,  desc: t.cardDesc, comingSoon: true },
-    { id: 'cash',     name: t.cashOnService, icon: <Banknote className="w-6 h-6" />, desc: t.cashDesc },
-  ];
-
-  // Build the list of methods based on detected region + specific country overrides.
-  // Now prefers dynamic methods from the backend (Master-admin configurable). Falls
-  // back to hardcoded defaults only if the backend returned nothing.
-  const methodsForRegion = useMemo(() => {
-    const iconFor = (kind) => {
-      switch (kind) {
-        case 'mobile_wallet': return <Smartphone className="w-6 h-6" />;
-        case 'hawala':
-        case 'bank':         return <Building2 className="w-6 h-6" />;
-        case 'wire':         return <Globe className="w-6 h-6" />;
-        case 'crypto':       return <Lock className="w-6 h-6" />;
-        default:             return <Smartphone className="w-6 h-6" />;
+  // ---- Load plans + recipients ----
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const plansQuery = countryCode && countryCode !== 'XX' ? `?country_code=${countryCode}` : '';
+        const [plansRes, recipientsRes] = await Promise.all([
+          axios.get(`${API}/subscription-plans${plansQuery}`),
+          axios.get(`${API}/transfer-recipients`),
+        ]);
+        if (!active) return;
+        const plansData = Array.isArray(plansRes.data) ? plansRes.data : (plansRes.data?.plans || []);
+        setPlans(plansData);
+        setRecipients(recipientsRes.data || { syriatel_cash: null, exchanges: [] });
+      } catch (e) {
+        console.error('Failed to load payment data:', e);
+        if (active) toast.error(isRTL ? 'فشل تحميل بيانات الدفع' : 'Failed to load payment data');
+      } finally {
+        if (active) setLoading(false);
       }
     };
-    if (dynamicMethods && dynamicMethods.length > 0) {
-      const mapped = dynamicMethods.map((m) => ({
-        id: m.id,
-        name: (isRTL ? m.name_ar : (m.name_en || m.name_ar)),
-        icon: iconFor(m.kind),
-        recipient: m.recipient || '',
-        number: m.number || '',
-        desc: t.manualDesc,
-        dynamic: true,
-        country: m.country,
-        kind: m.kind,
-      }));
-      // Always append the "cash on service" option at the end for local regions.
-      if (paymentRegion === 'local_arab') {
-        mapped.push({ id: 'cash', name: t.cashOnService, icon: <Banknote className="w-6 h-6" />, desc: t.cashDesc });
-      }
-      if (paymentRegion === 'global') {
-        mapped.push({ id: 'card', name: t.creditCard, icon: <CreditCard className="w-6 h-6" />, desc: t.cardDesc, comingSoon: true });
-        mapped.push({ id: 'cash', name: t.cashOnService, icon: <Banknote className="w-6 h-6" />, desc: t.cashDesc });
-      }
-      return mapped;
-    }
-    if (paymentRegion === 'local_arab') {
-      const base = [...universalLocal];
-      if (country === 'Syria')   return [...syriaMethods, ...base];
-      if (country === 'Iraq')    return [...iraqMethods, ...base];
-      return base;
-    }
-    return globalMethods;
-  }, [dynamicMethods, paymentRegion, country, isRTL]); // eslint-disable-line react-hooks/exhaustive-deps
+    load();
+    return () => { active = false; };
+  }, [countryCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // -------------------- RENDER --------------------
+  // Auto-select the first plan once loaded
+  useEffect(() => {
+    if (plans.length > 0 && !selectedPlan) setSelectedPlan(plans[0]);
+  }, [plans]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- Derived values ----
+  const selectedExchange = useMemo(() => {
+    if (selectedMethod !== 'exchange' || !selectedExchangeId) return null;
+    return (recipients.exchanges || []).find(e => e.id === selectedExchangeId) || null;
+  }, [selectedMethod, selectedExchangeId, recipients]);
+
+  /**
+   * Normalize recipient shape across syriatel_cash and exchange offices.
+   * Returns: { name, phone, region, note, title } localized for RTL/LTR.
+   */
+  const currentRecipient = useMemo(() => {
+    if (selectedMethod === 'syriatel_cash' && recipients.syriatel_cash) {
+      const sc = recipients.syriatel_cash;
+      return {
+        title: isRTL ? (sc.display_name_ar || 'سيريتل كاش') : (sc.display_name_en || 'Syriatel Cash'),
+        name: isRTL ? 'سيريتل كاش' : 'Syriatel Cash',
+        phone: sc.number || '',
+        region: '',
+        note: isRTL ? sc.instructions_ar : sc.instructions_en,
+      };
+    }
+    if (selectedMethod === 'exchange' && selectedExchange) {
+      const ex = selectedExchange;
+      return {
+        title: isRTL ? (ex.name_ar || ex.name_en) : (ex.name_en || ex.name_ar),
+        name: isRTL ? (ex.recipient_ar || ex.recipient_en) : (ex.recipient_en || ex.recipient_ar),
+        phone: ex.phone || '',
+        region: isRTL ? (ex.province_ar || ex.province_en) : (ex.province_en || ex.province_ar),
+        note: isRTL ? (recipients.general_note_ar || '') : (recipients.general_note_en || ''),
+      };
+    }
+    return null;
+  }, [selectedMethod, selectedExchange, recipients, isRTL]);
+
+  // ---- Handlers ----
+  const copyToClipboard = (text) => {
+    try {
+      navigator.clipboard.writeText(String(text || ''));
+      toast.success(t.copied);
+    } catch (_) {}
+  };
+
+  const handleFilePick = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 3 * 1024 * 1024) { toast.error(t.tooLarge); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setReceiptImage(reader.result);
+      setReceiptPreview(reader.result);
+    };
+    reader.readAsDataURL(f);
+  };
+
+  const handleSubmit = async () => {
+    if (!token) { toast.error(t.loginRequired); return; }
+    if (!selectedPlan) { toast.error(t.selectPlanFirst); return; }
+    if (!selectedMethod) { toast.error(t.selectMethodFirst); return; }
+    if (selectedMethod === 'exchange' && !selectedExchangeId) { toast.error(t.selectExchangeFirst); return; }
+    if (!receiptImage) { toast.error(t.imageRequired); return; }
+
+    setSubmitting(true);
+    try {
+      const res = await axios.post(`${API}/subscription-orders`, {
+        plan_id: selectedPlan.id,
+        payment_method: selectedMethod,
+        exchange_id: selectedMethod === 'exchange' ? selectedExchangeId : null,
+        reference_number: referenceNumber || null,
+        receipt_image: receiptImage,
+        notes: notes || null,
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      setSubmittedOrder(res.data);
+      toast.success(t.orderSubmitted);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || 'Error';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ---- Success Screen ----
+  if (submittedOrder) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-black via-[#0a0a0a] to-black p-4 md:p-8 flex items-center justify-center" dir={isRTL ? 'rtl' : 'ltr'}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-lg bg-gradient-to-br from-[#111] via-[#0d0d0d] to-black rounded-3xl border-2 border-amber-400/40 p-8 text-center shadow-2xl"
+          data-testid="order-success-screen"
+        >
+          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/40">
+            <Check className="w-10 h-10 text-white" strokeWidth={3} />
+          </div>
+          <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">{t.orderSubmitted}</h2>
+          <p className="text-gray-400 text-sm mb-6">{t.awaitingReview}</p>
+
+          <div className="bg-amber-500/10 border border-amber-400/40 rounded-2xl p-5 mb-6">
+            <p className="text-xs text-gray-400 mb-1">{t.yourRefCode}</p>
+            <p className="text-3xl font-mono font-black text-amber-400 tracking-wider" data-testid="ref-code">
+              {submittedOrder.reference_code}
+            </p>
+            <button onClick={() => copyToClipboard(submittedOrder.reference_code)}
+              className="mt-2 text-xs text-amber-300 hover:text-amber-200 flex items-center gap-1 mx-auto">
+              <Copy size={12} /> {t.copy}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-gray-500 justify-center mb-6">
+            <Clock size={14} />
+            <span>{isRTL ? 'وقت التفعيل المتوقع: خلال 24 ساعة' : 'Expected activation: within 24 hours'}</span>
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={() => navigate('/barber-dashboard')}
+              className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-black font-bold hover:from-amber-400 hover:to-yellow-400 transition-all"
+              data-testid="back-to-dashboard">
+              {t.backToDashboard}
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ---- Loading ----
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center" dir={isRTL ? 'rtl' : 'ltr'}>
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-amber-400 animate-spin mx-auto mb-3" />
+          <p className="text-gray-400">{t.loading}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Main Screen ----
   return (
-    <div className="bh-surface min-h-screen" data-testid="payment-page" dir={isRTL ? 'rtl' : 'ltr'}>
-      {/* Ambient Orbs */}
-      <div className="bh-orb bh-orb-gold w-96 h-96 top-0 right-0 opacity-20" />
-      <div className="bh-orb bh-orb-burgundy w-80 h-80 bottom-0 left-0 opacity-15" />
+    <div className="min-h-screen bg-gradient-to-b from-black via-[#0a0a0a] to-black pb-24" dir={isRTL ? 'rtl' : 'ltr'} data-testid="payment-page">
+      {/* Ambient glow */}
+      <div className="fixed top-0 left-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed bottom-0 right-0 w-96 h-96 bg-yellow-600/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-40 backdrop-blur-2xl bg-[var(--bh-obsidian)]/85 border-b border-[var(--bh-glass-border)]">
+      {/* Header */}
+      <div className="sticky top-0 z-30 backdrop-blur-xl bg-black/80 border-b border-amber-500/20">
         <div className="container mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="bh-btn bh-btn-ghost bh-btn-sm" data-testid="back-btn">
-            {isRTL ? <ArrowRight className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
-            <span className="hidden sm:inline">{t.back}</span>
+          <button onClick={() => navigate(-1)}
+            className="w-10 h-10 rounded-full bg-white/5 border border-white/10 hover:border-amber-400/50 flex items-center justify-center text-gray-300 hover:text-amber-400 transition-all"
+            data-testid="back-btn">
+            {isRTL ? <ArrowRight size={18} /> : <ArrowLeft size={18} />}
           </button>
           <div className="flex-1 text-center">
-            <h1 className="text-xl md:text-2xl font-display font-bold bh-gold-text flex items-center justify-center gap-2">
-              <Shield className="w-5 h-5 md:w-6 md:h-6" />
+            <h1 className="text-lg md:text-xl font-black bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 bg-clip-text text-transparent flex items-center justify-center gap-2">
+              <Crown className="w-5 h-5 text-amber-400" />
               {t.title}
             </h1>
           </div>
-          <div className="w-14 md:w-24" />
+          <div className="w-10" />
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-6 max-w-4xl">
-        {/* Hero badge: detected region */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-6 p-4 rounded-2xl bh-glass-vip bh-corner-accents"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--bh-gold)]/30 to-[var(--bh-gold-deep)]/20 flex items-center justify-center">
-              <MapPin className="w-6 h-6 text-[var(--bh-gold)]" />
-            </div>
-            <div>
-              <div className="text-xs text-[var(--bh-text-muted)]">{t.detectedRegion}</div>
-              <div className="font-bold text-white">
-                {country}{city ? ` • ${city}` : ''} <span className="opacity-60">({countryCode})</span>
-              </div>
-            </div>
-          </div>
-          <div className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 ${
-            paymentRegion === 'local_arab'
-              ? 'bg-[var(--bh-gold)]/20 text-[var(--bh-gold)] border border-[var(--bh-gold)]/40'
-              : 'bg-blue-500/15 text-blue-300 border border-blue-400/30'
-          }`}>
-            {paymentRegion === 'local_arab' ? <Crown className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
-            {paymentRegion === 'local_arab' ? t.localMethods : t.globalMethods}
-          </div>
-        </motion.div>
+      <div className="container mx-auto px-4 py-6 max-w-2xl relative z-10">
+        <p className="text-center text-gray-400 text-sm mb-8">{t.subtitle}</p>
 
-        {/* Subtitle */}
-        <p className="text-center text-[var(--bh-text-secondary)] mb-8 text-sm md:text-base">
-          {t.subtitle}
-        </p>
-
-        {/* Package Selector (only when no booking context) */}
-        {!amountUSD && (
-          <section className="mb-10">
-            <h2 className="text-lg md:text-xl font-display font-bold mb-4 flex items-center gap-2 bh-gold-text">
-              <Crown className="w-5 h-5" />
-              {t.packages}
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {packages.map((pkg, idx) => {
-                const active = selectedPackage === pkg.id;
+        {/* Step 1 — Plans */}
+        <section className="mb-8">
+          <h2 className="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-xs font-black flex items-center justify-center">1</span>
+            {t.step1}
+          </h2>
+          {plans.length === 0 ? (
+            <div className="p-8 rounded-2xl border border-white/10 text-center text-gray-500">{t.noPlans}</div>
+          ) : (
+            <div className="grid gap-3">
+              {plans.map(plan => {
+                const active = selectedPlan?.id === plan.id;
                 return (
                   <motion.button
-                    key={pkg.id}
-                    onClick={() => setSelectedPackage(pkg.id)}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
+                    key={plan.id}
+                    onClick={() => setSelectedPlan(plan)}
                     whileHover={{ y: -2 }}
-                    className={`relative text-start p-4 rounded-2xl transition-all ${
+                    className={`text-start p-4 rounded-2xl transition-all border-2 ${
                       active
-                        ? 'bh-glass-vip ring-2 ring-[var(--bh-gold)] shadow-xl shadow-[var(--bh-gold)]/20'
-                        : 'bh-glass opacity-80 hover:opacity-100'
+                        ? 'border-amber-400 bg-gradient-to-br from-amber-500/20 via-yellow-500/10 to-amber-500/5 shadow-lg shadow-amber-500/20'
+                        : 'border-white/10 bg-white/[0.03] hover:border-amber-400/40'
                     }`}
-                    data-testid={`pkg-${pkg.id}`}
+                    data-testid={`plan-${plan.id}`}
                   >
-                    {pkg.popular && (
-                      <div className="absolute -top-2 left-1/2 -translate-x-1/2 bh-vip-badge">
-                        <Sparkles className="w-3 h-3" />
-                        <span>{t.popular}</span>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-white text-base">
+                          {isRTL ? (plan.title_ar || plan.title_en) : (plan.title_en || plan.title_ar)}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {plan.country || (isRTL ? 'عالمي' : 'Global')}
+                          {plan.free_trial_months > 0 && (
+                            <span className="ms-2 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px]">
+                              {t.freeTrial} {plan.free_trial_months} {plan.free_trial_months === 1 ? t.month : t.months}
+                            </span>
+                          )}
+                        </p>
                       </div>
-                    )}
-                    <div className="text-xs text-[var(--bh-text-muted)] uppercase tracking-wider">{pkg.name}</div>
-                    <div className="text-2xl md:text-3xl font-display font-black my-2 bh-gold-text">
-                      {formatPrice(pkg.priceUSD)}
+                      <div className="text-end">
+                        <p className="text-2xl font-black text-amber-400">
+                          {plan.currency_symbol || ''}{Number(plan.monthly_price || 0).toLocaleString()}
+                        </p>
+                        <p className="text-[10px] text-gray-500">{plan.currency || ''}{t.monthly}</p>
+                      </div>
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                        active ? 'border-amber-400 bg-amber-400' : 'border-gray-600'
+                      }`}>
+                        {active && <Check size={14} className="text-black" strokeWidth={3} />}
+                      </div>
                     </div>
-                    <div className="text-[10px] text-[var(--bh-text-muted)] mb-2">/{t.yearly}</div>
-                    <ul className="space-y-1">
-                      {pkg.features.slice(0, 3).map((f, i) => (
-                        <li key={i} className="text-[11px] text-[var(--bh-text-secondary)] flex items-start gap-1">
-                          <Check className="w-3 h-3 text-[var(--bh-gold)] flex-shrink-0 mt-0.5" />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    {active && (
-                      <motion.div
-                        layoutId="pkg-check"
-                        className="absolute top-2 end-2 w-7 h-7 rounded-full bg-[var(--bh-gold)] text-[var(--bh-obsidian)] flex items-center justify-center"
-                      >
-                        <Check className="w-4 h-4" />
-                      </motion.div>
-                    )}
                   </motion.button>
                 );
               })}
             </div>
-          </section>
-        )}
-
-        {/* Amount Due Banner */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="mb-8 p-6 rounded-3xl bh-glass-vip bh-corner-accents text-center"
-        >
-          <div className="text-xs uppercase tracking-widest text-[var(--bh-text-muted)] mb-2">{t.billingAmount}</div>
-          <div className="text-4xl md:text-5xl font-display font-black bh-gold-text">
-            {formatPrice(displayAmount)}
-          </div>
-          {!amountUSD && (
-            <div className="text-xs text-[var(--bh-text-muted)] mt-1">
-              {t.selectedPackage}: <span className="text-white font-bold">{currentPkg.name}</span>
-            </div>
           )}
-        </motion.div>
+        </section>
 
-        {/* Payment Methods */}
-        <section className="mb-8">
-          <h2 className="text-lg md:text-xl font-display font-bold mb-4 flex items-center gap-2 text-white">
-            <CreditCard className="w-5 h-5 text-[var(--bh-gold)]" />
-            {t.availableMethods}
-          </h2>
-
-          <div className="grid gap-3">
-            {methodsForRegion.map((method, idx) => {
-              const active = selectedMethod === method.id;
-              return (
-                <motion.div
-                  key={`${method.id}-${idx}`}
-                  initial={{ opacity: 0, x: isRTL ? 20 : -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.05 }}
-                >
+        {/* Step 2 — Method */}
+        {selectedPlan && (
+          <section className="mb-8">
+            <h2 className="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-xs font-black flex items-center justify-center">2</span>
+              {t.step2}
+            </h2>
+            <div className="grid gap-3">
+              {/* Syriatel Cash */}
+              {recipients.syriatel_cash && recipients.syriatel_cash.active !== false && (
+                <MethodCard
+                  icon={<Smartphone size={20} />}
+                  name={t.syriatel}
+                  active={selectedMethod === 'syriatel_cash'}
+                  onClick={() => { setSelectedMethod('syriatel_cash'); setSelectedExchangeId(null); }}
+                  testId="method-syriatel"
+                />
+              )}
+              {/* Exchange offices */}
+              {(recipients.exchanges || []).length > 0 && (
+                <div className={`rounded-2xl border-2 transition-all ${
+                  selectedMethod === 'exchange' ? 'border-amber-400 bg-amber-500/5' : 'border-white/10 bg-white/[0.03]'
+                }`}>
                   <button
-                    disabled={method.comingSoon}
-                    onClick={() => setSelectedMethod(active ? null : method.id)}
-                    className={`w-full text-start p-4 rounded-2xl transition-all ${
-                      active
-                        ? 'bh-glass-vip ring-2 ring-[var(--bh-gold)]'
-                        : 'bh-glass hover:ring-1 hover:ring-[var(--bh-gold)]/40'
-                    } ${method.comingSoon ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-                    data-testid={`method-${method.id}`}
+                    onClick={() => setSelectedMethod('exchange')}
+                    className="w-full text-start p-4 flex items-center gap-3"
+                    data-testid="method-exchange"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        active
-                          ? 'bg-gradient-to-br from-[var(--bh-gold)] to-[var(--bh-gold-deep)] text-[var(--bh-obsidian)]'
-                          : 'bg-[var(--bh-glass-bg)] text-[var(--bh-gold)]'
-                      }`}>
-                        {method.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-bold text-white">{method.name}</h3>
-                          {method.comingSoon && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                              {t.comingSoon}
-                            </span>
-                          )}
-                        </div>
-                        {method.desc && (
-                          <p className="text-xs text-[var(--bh-text-secondary)] mt-1 line-clamp-2">{method.desc}</p>
-                        )}
-                      </div>
-                      <div className={`w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${
-                        active
-                          ? 'border-[var(--bh-gold)] bg-[var(--bh-gold)]'
-                          : 'border-[var(--bh-glass-border)]'
-                      }`}>
-                        {active && <Check className="w-3.5 h-3.5 text-[var(--bh-obsidian)]" />}
-                      </div>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                      selectedMethod === 'exchange' ? 'bg-amber-500 text-black' : 'bg-white/5 text-amber-400'
+                    }`}>
+                      <Building2 size={20} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-bold text-white">{t.exchange}</p>
+                      <p className="text-xs text-gray-400">{recipients.exchanges.length} {isRTL ? 'مكاتب متاحة' : 'offices available'}</p>
+                    </div>
+                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                      selectedMethod === 'exchange' ? 'border-amber-400 bg-amber-400' : 'border-gray-600'
+                    }`}>
+                      {selectedMethod === 'exchange' && <Check size={14} className="text-black" strokeWidth={3} />}
                     </div>
                   </button>
-
-                  {/* Expanded details */}
+                  {/* Exchange sub-list */}
                   <AnimatePresence>
-                    {active && !method.comingSoon && (
+                    {selectedMethod === 'exchange' && (
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
                         className="overflow-hidden"
                       >
-                        <div className="mt-3 p-4 rounded-2xl bg-[var(--bh-obsidian)]/60 border border-[var(--bh-gold)]/20">
-                          {method.id === 'cash' ? (
-                            <div className="flex items-center gap-3 text-sm text-[var(--bh-text-secondary)]">
-                              <Banknote className="w-5 h-5 text-[var(--bh-gold)]" />
-                              <span>{t.cashDesc}</span>
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              {method.recipient && (
-                                <div className="flex items-center justify-between gap-3 pb-2 border-b border-[var(--bh-glass-border)]">
-                                  <span className="text-xs text-[var(--bh-text-muted)]">{t.recipientName}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-white text-sm">{method.recipient}</span>
-                                    <button onClick={(e) => { e.stopPropagation(); copyText(method.recipient); }}
-                                      className="p-1.5 rounded-lg hover:bg-[var(--bh-gold)]/10 text-[var(--bh-gold)]">
-                                      <Copy className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
+                        <div className="px-4 pb-4 space-y-2">
+                          {recipients.exchanges.map(ex => (
+                            <button
+                              key={ex.id}
+                              onClick={() => setSelectedExchangeId(ex.id)}
+                              className={`w-full text-start p-3 rounded-xl border transition-all ${
+                                selectedExchangeId === ex.id
+                                  ? 'border-amber-400 bg-amber-500/10'
+                                  : 'border-white/10 bg-white/[0.02] hover:border-amber-400/30'
+                              }`}
+                              data-testid={`exchange-${ex.id}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-semibold text-white text-sm">{isRTL ? (ex.name_ar || ex.name_en) : (ex.name_en || ex.name_ar)}</p>
+                                  <p className="text-[11px] text-gray-400 flex items-center gap-1">
+                                    <MapPin size={10} />
+                                    {isRTL ? (ex.recipient_ar || ex.recipient_en) : (ex.recipient_en || ex.recipient_ar)}
+                                    {(ex.province_ar || ex.province_en) && <span className="text-gray-500">· {isRTL ? (ex.province_ar || ex.province_en) : (ex.province_en || ex.province_ar)}</span>}
+                                  </p>
                                 </div>
-                              )}
-                              {method.number && (
-                                <div className="flex items-center justify-between gap-3 pb-2 border-b border-[var(--bh-glass-border)]">
-                                  <span className="text-xs text-[var(--bh-text-muted)]">
-                                    {method.id === 'bank' || method.id === 'westernunion' ? t.location : t.recipientNumber}
-                                  </span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-white text-sm font-mono" dir="ltr">{method.number}</span>
-                                    <button onClick={(e) => { e.stopPropagation(); copyText(method.number); }}
-                                      className="p-1.5 rounded-lg hover:bg-[var(--bh-gold)]/10 text-[var(--bh-gold)]">
-                                      <Copy className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                              <p className="text-xs text-[var(--bh-text-muted)] italic text-center pt-1">
-                                {t.manualDesc}
-                              </p>
-                            </div>
-                          )}
+                                {selectedExchangeId === ex.id && (
+                                  <Check size={16} className="text-amber-400" />
+                                )}
+                              </div>
+                            </button>
+                          ))}
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* CTA button */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="sticky bottom-4 z-30"
-        >
-          <div className="p-4 rounded-3xl bh-glass-vip bh-corner-accents space-y-3">
-            {selectedMethod && selectedMethod !== 'cash' && selectedMethod !== 'card' && selectedMethod !== 'applepay' && (
-              <button
-                onClick={() => setShowReceiptModal(true)}
-                className="w-full bh-btn bh-btn-primary bh-btn-lg flex items-center justify-center gap-3"
-                data-testid="upload-receipt-btn"
-              >
-                <Upload className="w-6 h-6" />
-                {isRTL ? 'رفع إيصال الدفع' : 'Upload payment receipt'}
-              </button>
-            )}
-
-            {paymentRegion === 'local_arab' || selectedMethod === 'cash' ? (
-              <button
-                onClick={() => openWhatsApp(methodsForRegion.find(m => m.id === selectedMethod)?.name || 'Manual')}
-                className="w-full bh-btn bh-btn-ghost bh-btn-lg flex items-center justify-center gap-3"
-                data-testid="whatsapp-confirm-btn"
-              >
-                <WhatsApp className="w-6 h-6" />
-                {t.confirmWhatsApp}
-              </button>
-            ) : (
-              <button
-                disabled
-                className="w-full bh-btn bh-btn-primary bh-btn-lg flex items-center justify-center gap-3 opacity-60 cursor-not-allowed"
-                data-testid="pay-now-btn"
-              >
-                <Lock className="w-5 h-5" />
-                {t.payNow} - {t.comingSoon}
-              </button>
-            )}
-
-            {/* Trust signals */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[var(--bh-glass-border)]">
-              <div className="flex items-center gap-1.5 justify-center text-[10px] text-[var(--bh-text-muted)]">
-                <Shield className="w-3.5 h-3.5 text-[var(--bh-gold)]" />
-                <span className="truncate">{t.securePayment}</span>
-              </div>
-              <div className="flex items-center gap-1.5 justify-center text-[10px] text-[var(--bh-text-muted)]">
-                <Star className="w-3.5 h-3.5 text-[var(--bh-gold)]" fill="currentColor" />
-                <span className="truncate">{t.trustedBy}</span>
-              </div>
-              <div className="flex items-center gap-1.5 justify-center text-[10px] text-[var(--bh-text-muted)]">
-                <WhatsApp className="w-3.5 h-3.5 text-[var(--bh-gold)]" />
-                <span className="truncate">{t.support247}</span>
-              </div>
+                </div>
+              )}
             </div>
-          </div>
-        </motion.div>
+          </section>
+        )}
 
-        {/* Admin contact footer */}
-        <div className="text-center text-[10px] text-[var(--bh-text-muted)] mt-6 mb-4">
-          {t.adminPhone}
+        {/* Step 3 — Recipient details */}
+        {currentRecipient && (
+          <section className="mb-8">
+            <h2 className="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-xs font-black flex items-center justify-center">3</span>
+              {t.step3}
+            </h2>
+            <div className="rounded-2xl border border-amber-400/40 bg-gradient-to-br from-amber-500/10 to-black/40 p-5 space-y-3">
+              {/* Amount badge */}
+              <div className="flex items-center justify-between gap-3 pb-3 border-b border-amber-400/20">
+                <span className="text-xs text-gray-400 uppercase tracking-wider">{t.amountToTransfer}</span>
+                <span className="text-2xl font-black text-amber-400">
+                  {selectedPlan?.currency_symbol || ''}{Number(selectedPlan?.monthly_price || 0).toLocaleString()}
+                  <span className="text-xs text-gray-500 ms-1">{selectedPlan?.currency || ''}</span>
+                </span>
+              </div>
+              {/* Recipient name */}
+              <RecipientRow
+                label={t.recipientName}
+                value={currentRecipient.name}
+                onCopy={copyToClipboard}
+                testId="recipient-name"
+              />
+              {/* Phone / number */}
+              {currentRecipient.phone && (
+                <RecipientRow
+                  label={t.phoneNumber}
+                  value={currentRecipient.phone}
+                  onCopy={copyToClipboard}
+                  mono
+                  testId="recipient-phone"
+                />
+              )}
+              {/* Region */}
+              {currentRecipient.region && (
+                <RecipientRow
+                  label={t.region}
+                  value={currentRecipient.region}
+                  onCopy={copyToClipboard}
+                  testId="recipient-region"
+                />
+              )}
+              {/* Notes */}
+              {currentRecipient.note && (
+                <div className="pt-2 border-t border-amber-400/20">
+                  <p className="text-[10px] text-gray-500 uppercase mb-1">{t.note}</p>
+                  <p className="text-xs text-amber-200/90 leading-relaxed">
+                    {currentRecipient.note}
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Step 4 — Receipt upload */}
+        {currentRecipient && (
+          <section className="mb-8">
+            <h2 className="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-xs font-black flex items-center justify-center">4</span>
+              {t.step4}
+            </h2>
+
+            <label className="block cursor-pointer" data-testid="receipt-upload-label">
+              <input type="file" accept="image/*" onChange={handleFilePick} className="hidden" data-testid="receipt-file-input" />
+              <div className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
+                receiptPreview
+                  ? 'border-emerald-400/60 bg-emerald-500/5'
+                  : 'border-amber-400/40 hover:border-amber-400 bg-white/[0.02]'
+              }`}>
+                {receiptPreview ? (
+                  <img src={receiptPreview} alt="receipt" className="max-h-56 mx-auto rounded-xl" />
+                ) : (
+                  <>
+                    <Upload className="w-12 h-12 mx-auto text-amber-400 mb-3" />
+                    <p className="text-sm text-white font-semibold">{t.uploadReceipt}</p>
+                    <p className="text-xs text-gray-500 mt-1">{t.receiptHint}</p>
+                  </>
+                )}
+              </div>
+            </label>
+
+            <input
+              type="text"
+              value={referenceNumber}
+              onChange={e => setReferenceNumber(e.target.value)}
+              placeholder={t.reference}
+              className="mt-3 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:border-amber-400/60 focus:outline-none"
+              data-testid="reference-input"
+            />
+
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder={t.additionalNotes}
+              rows={2}
+              className="mt-3 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 resize-none focus:border-amber-400/60 focus:outline-none"
+              data-testid="notes-input"
+            />
+          </section>
+        )}
+
+        {/* Submit */}
+        {currentRecipient && (
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !receiptImage}
+            className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 text-black font-black text-base hover:shadow-2xl hover:shadow-amber-500/30 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            data-testid="submit-order-btn"
+          >
+            {submitting ? (
+              <><Loader2 className="w-5 h-5 animate-spin" /> {t.submitting}</>
+            ) : (
+              <><FileText className="w-5 h-5" /> {t.submit}</>
+            )}
+          </button>
+        )}
+
+        {/* Trust signals */}
+        <div className="mt-6 flex items-center justify-center gap-4 text-[10px] text-gray-500">
+          <div className="flex items-center gap-1"><Shield size={12} /> {isRTL ? 'دفع آمن' : 'Secure'}</div>
+          <div className="flex items-center gap-1"><Sparkles size={12} /> {isRTL ? 'تفعيل خلال 24 ساعة' : '24h activation'}</div>
+          <div className="flex items-center gap-1"><Crown size={12} /> {country} {countryCode && countryCode !== 'XX' ? `(${countryCode})` : ''}</div>
         </div>
       </div>
-
-      {/* Receipt Upload Modal */}
-      <ReceiptUpload
-        open={showReceiptModal}
-        onClose={() => setShowReceiptModal(false)}
-        API={API}
-        amount={amountUSD || 100}
-        currency={currency || 'USD'}
-        methodId={selectedMethod}
-        methodName={methodsForRegion.find(m => m.id === selectedMethod)?.name || ''}
-        targetType={bookingContext ? 'booking' : 'subscription'}
-        targetId={bookingContext?.id || null}
-        token={token}
-        defaultPayerName={user?.full_name || ''}
-        defaultPayerPhone={user?.phone_number || ''}
-        language={language}
-        onSubmitted={() => navigate('/my-bookings')}
-      />
     </div>
   );
 };
+
+// -------- Helper components --------
+const MethodCard = ({ icon, name, active, onClick, testId }) => (
+  <button
+    onClick={onClick}
+    className={`text-start p-4 rounded-2xl border-2 flex items-center gap-3 transition-all ${
+      active ? 'border-amber-400 bg-amber-500/10' : 'border-white/10 bg-white/[0.03] hover:border-amber-400/40'
+    }`}
+    data-testid={testId}
+  >
+    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+      active ? 'bg-amber-500 text-black' : 'bg-white/5 text-amber-400'
+    }`}>
+      {icon}
+    </div>
+    <div className="flex-1">
+      <p className="font-bold text-white">{name}</p>
+    </div>
+    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+      active ? 'border-amber-400 bg-amber-400' : 'border-gray-600'
+    }`}>
+      {active && <Check size={14} className="text-black" strokeWidth={3} />}
+    </div>
+  </button>
+);
+
+const RecipientRow = ({ label, value, onCopy, mono = false, testId }) => (
+  <div className="flex items-center justify-between gap-3">
+    <span className="text-xs text-gray-400">{label}</span>
+    <div className="flex items-center gap-2">
+      <span className={`font-bold text-white text-sm ${mono ? 'font-mono' : ''}`} dir="ltr" data-testid={testId}>{value}</span>
+      <button onClick={() => onCopy(value)} className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition-colors">
+        <Copy size={13} />
+      </button>
+    </div>
+  </div>
+);
 
 export default PaymentPage;

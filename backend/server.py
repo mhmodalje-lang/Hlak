@@ -696,6 +696,10 @@ async def enrich_barbershop_for_frontend(shop: Dict) -> Dict:
         "country": shop.get("country", ""),
         "city": shop.get("city", ""),
         "district": shop.get("district"),
+        "is_on_vacation": bool(shop.get("is_on_vacation", False)),
+        "vacation_until": shop.get("vacation_until"),
+        "vacation_message_ar": shop.get("vacation_message_ar"),
+        "vacation_message_en": shop.get("vacation_message_en"),
         "address": profile_ext.get("address", shop.get("address", "")) if profile_ext else shop.get("address", ""),
         "neighborhood": profile_ext.get("neighborhood", shop.get("neighborhood", "")) if profile_ext else shop.get("neighborhood", ""),
         "village": profile_ext.get("village", shop.get("village", "")) if profile_ext else shop.get("village", ""),
@@ -1388,6 +1392,7 @@ async def list_barbershops(
 ):
     # v3.8 — Public listings are ALWAYS filtered to approved salons only.
     # Pending / rejected / pending_deletion shops are invisible to guests & users.
+    # v3.9.1 — Salons on vacation are also hidden from public listings.
     query = {
         "$or": [
             {"approval_status": "approved"},
@@ -1396,6 +1401,7 @@ async def list_barbershops(
             {"approval_status": {"$exists": False}, "is_verified": True},
         ],
         "status": {"$ne": "pending_deletion"},
+        "is_on_vacation": {"$ne": True},
     }
     if type:
         query["shop_type"] = type
@@ -4751,7 +4757,10 @@ async def advanced_search(
     / district / city — used when the customer types a locality name that isn't
     on the city dropdown (common for villages / remote areas).
     """
-    query: Dict[str, Any] = {}
+    query: Dict[str, Any] = {
+        # v3.9.1 — hide salons on vacation from search results
+        "is_on_vacation": {"$ne": True},
+    }
     if shop_type in ("male", "female"):
         query["shop_type"] = shop_type
     if country:
@@ -7506,6 +7515,7 @@ async def create_subscription_order(
         "reference_code": ref_code,
         "salon_id": salon_id,
         "salon_name": salon_name,
+        "salon_phone": entity.get("phone_number") or entity.get("whatsapp_number") or "",
         "entity_type": entity.get("entity_type"),
         "plan_id": plan.get("id"),
         "plan_title_ar": plan.get("title_ar"),
@@ -7533,6 +7543,20 @@ async def create_subscription_order(
     }
     await db.subscription_orders.insert_one(order_doc)
 
+    # Build a ready-to-use wa.me link that admin can tap to message the salon
+    # directly for follow-up. We prefer the salon's phone on file.
+    import urllib.parse as _urlp
+    salon_phone = None
+    if entity.get("entity_type") == "barbershop":
+        salon_phone = entity.get("phone_number") or entity.get("whatsapp_number")
+    else:
+        salon_phone = entity.get("phone_number")
+    wa_digits = re.sub(r"\D", "", str(salon_phone or ""))
+    admin_wa_link = None
+    if wa_digits:
+        wa_msg = f"مرحباً {salon_name or ''}، وصلنا طلب اشتراك {ref_code} وسنقوم بمراجعته."
+        admin_wa_link = f"https://wa.me/{wa_digits}?text={_urlp.quote(wa_msg)}"
+
     # Create an in-app admin notification if the collection exists
     try:
         await db.admin_notifications.insert_one({
@@ -7542,6 +7566,7 @@ async def create_subscription_order(
             "message": f"الصالون {salon_name or '-'} أرسل طلب اشتراك جديد ({plan.get('country') or ''})",
             "entity_id": order_doc["id"],
             "entity_type": "subscription_order",
+            "wa_link": admin_wa_link,
             "read": False,
             "created_at": now,
         })
@@ -7549,7 +7574,8 @@ async def create_subscription_order(
         pass
 
     order_doc.pop("_id", None)
-    return {"success": True, "order": order_doc, "reference_code": ref_code}
+    order_doc["admin_wa_link"] = admin_wa_link
+    return {"success": True, "order": order_doc, "reference_code": ref_code, "admin_wa_link": admin_wa_link}
 
 
 @api_router.get("/my-subscription-orders")
@@ -7587,6 +7613,17 @@ async def admin_list_subscription_orders(
     orders = await db.subscription_orders.find(
         query, {"_id": 0, "receipt_image": 0}
     ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+
+    # Attach a wa.me link per order so the admin can tap-to-message the salon.
+    import urllib.parse as _urlp
+    for o in orders:
+        phone = o.get("salon_phone") or ""
+        digits = re.sub(r"\D", "", str(phone))
+        if digits:
+            msg = f"مرحباً {o.get('salon_name') or ''}، بخصوص طلب الاشتراك {o.get('reference_code') or ''}"
+            o["admin_wa_link"] = f"https://wa.me/{digits}?text={_urlp.quote(msg)}"
+        else:
+            o["admin_wa_link"] = None
 
     total = await db.subscription_orders.count_documents(query)
     pending_count = await db.subscription_orders.count_documents({"status": "pending"})

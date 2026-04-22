@@ -14,7 +14,7 @@ import { motion } from 'framer-motion';
 import {
   Clock, ShieldCheck, Award, Rocket, Sparkles, Check, Gift,
   Search, Scissors, CheckCircle2, Quote, Star,
-  Phone, Mail, Facebook, Instagram, MessageCircle, Youtube, MapPin, Link as LinkIcon,
+  Phone, Mail, Facebook, Instagram, Youtube, MapPin, Link as LinkIcon,
   Twitter
 } from 'lucide-react';
 
@@ -402,7 +402,6 @@ export const PremiumFooter = ({ API, language }) => {
     { key: 'youtube',   icon: Youtube,       href: s.youtube   || '' },
   ].filter(x => x.href);
 
-  const waLink = s.whatsapp ? `https://wa.me/${String(s.whatsapp).replace(/\D/g, '')}` : '';
   const telLink = s.phone ? `tel:${String(s.phone).replace(/\s/g, '')}` : '';
 
   return (
@@ -434,11 +433,6 @@ export const PremiumFooter = ({ API, language }) => {
               {telLink && (
                 <a href={telLink} className="w-10 h-10 rounded-full bg-gray-800/60 hover:bg-amber-500/20 border border-gray-700 hover:border-amber-500/50 flex items-center justify-center text-gray-300 hover:text-amber-400 transition-all" data-testid="footer-phone">
                   <Phone size={16} />
-                </a>
-              )}
-              {waLink && (
-                <a href={waLink} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-gray-800/60 hover:bg-green-500/20 border border-gray-700 hover:border-green-500/50 flex items-center justify-center text-gray-300 hover:text-green-400 transition-all" data-testid="footer-whatsapp">
-                  <MessageCircle size={16} />
                 </a>
               )}
             </div>

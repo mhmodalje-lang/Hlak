@@ -11,7 +11,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Facebook, Instagram, MessageCircle, Phone, Check, Scissors, Sparkles, X,
+  Facebook, Instagram, Check, Scissors, Sparkles,
 } from 'lucide-react';
 
 const STORAGE_KEY = 'bh_social_gate_v1_completed';
@@ -27,13 +27,43 @@ const DEFAULT_LINKS = {
   facebook: 'https://www.facebook.com/share/1Rs76LaVkS/',
   instagram: 'https://instagram.com/barber.hub2',
   tiktok: 'https://tiktok.com/@barber.hub2',
-  whatsapp: '+963 935 964 158',
+};
+
+/**
+ * Build a URL that prefers opening the native app on mobile, and the normal
+ * web URL on desktop. Uses fb://, instagram://, snssdk1233:// schemes where
+ * possible.
+ */
+const buildAppIntent = (platform, webUrl) => {
+  if (typeof navigator === 'undefined' || !webUrl) return webUrl;
+  const ua = navigator.userAgent || '';
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(ua);
+  if (!isMobile) return webUrl;
+
+  try {
+    if (platform === 'facebook') {
+      // Use fb://facewebmodal to open inside Facebook app
+      return `fb://facewebmodal/f?href=${encodeURIComponent(webUrl)}`;
+    }
+    if (platform === 'instagram') {
+      // Extract handle from URL (https://instagram.com/handle or /@handle)
+      const match = webUrl.match(/instagram\.com\/(?:@)?([^/?#]+)/i);
+      const handle = match ? match[1] : '';
+      return handle ? `instagram://user?username=${handle}` : webUrl;
+    }
+    if (platform === 'tiktok') {
+      const match = webUrl.match(/tiktok\.com\/@?([^/?#]+)/i);
+      const handle = match ? match[1].replace(/^@/, '') : '';
+      return handle ? `https://www.tiktok.com/@${handle}` : webUrl;
+    }
+  } catch (_) { /* noop */ }
+  return webUrl;
 };
 
 const SocialFollowGate = ({ language = 'ar', API }) => {
   const isRTL = language === 'ar';
   const [visible, setVisible] = useState(false);
-  const [clicked, setClicked] = useState({ facebook: false, instagram: false, tiktok: false, whatsapp: false });
+  const [clicked, setClicked] = useState({ facebook: false, instagram: false, tiktok: false });
   const [links, setLinks] = useState(DEFAULT_LINKS);
 
   // Initialize visibility and load dynamic links from settings
@@ -54,7 +84,6 @@ const SocialFollowGate = ({ language = 'ar', API }) => {
           facebook:  s.facebook  || DEFAULT_LINKS.facebook,
           instagram: s.instagram || DEFAULT_LINKS.instagram,
           tiktok:    s.tiktok    || DEFAULT_LINKS.tiktok,
-          whatsapp:  s.whatsapp  || DEFAULT_LINKS.whatsapp,
         });
       }).catch(() => { /* keep defaults */ });
     }
@@ -74,18 +103,17 @@ const SocialFollowGate = ({ language = 'ar', API }) => {
 
   const markClicked = (key, href) => {
     setClicked(prev => ({ ...prev, [key]: true }));
-    // Open link in new tab
+    // Open link in new tab. For mobile, try native app intent first.
     if (typeof window !== 'undefined') {
-      window.open(href, '_blank', 'noopener,noreferrer');
+      const intent = buildAppIntent(key, href);
+      window.open(intent, '_blank', 'noopener,noreferrer');
+      // Fallback: if intent didn't open (e.g. desktop without fb://), the
+      // browser will gracefully fall back to the original webUrl for fb://
+      // via opener. Nothing extra needed here.
     }
   };
 
-  const waHref = (() => {
-    const digits = String(links.whatsapp || '').replace(/\D/g, '');
-    return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(isRTL ? 'مرحباً، لدي استفسار' : 'Hello, I have a question')}` : '#';
-  })();
-
-  const allClicked = clicked.facebook && clicked.instagram && clicked.tiktok && clicked.whatsapp;
+  const allClicked = clicked.facebook && clicked.instagram && clicked.tiktok;
 
   const proceed = () => {
     if (!allClicked) return;
@@ -120,15 +148,6 @@ const SocialFollowGate = ({ language = 'ar', API }) => {
       href: links.tiktok,
       bg: 'from-black to-gray-900',
       ring: 'ring-white/30',
-    },
-    {
-      key: 'whatsapp',
-      icon: MessageCircle,
-      name_ar: 'واتساب',   name_en: 'WhatsApp',
-      sub_ar: links.whatsapp || '+963 935 964 158', sub_en: links.whatsapp || '+963 935 964 158',
-      href: waHref,
-      bg: 'from-[#25D366] to-[#128C7E]',
-      ring: 'ring-[#25D366]/40',
     },
   ];
 
@@ -231,14 +250,14 @@ const SocialFollowGate = ({ language = 'ar', API }) => {
                   {isRTL ? 'تقدمك' : 'Progress'}
                 </span>
                 <span className="text-amber-400 font-bold">
-                  {Object.values(clicked).filter(Boolean).length}/4
+                  {Object.values(clicked).filter(Boolean).length}/3
                 </span>
               </div>
               <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                 <motion.div
                   className="h-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500"
                   initial={{ width: 0 }}
-                  animate={{ width: `${(Object.values(clicked).filter(Boolean).length / 4) * 100}%` }}
+                  animate={{ width: `${(Object.values(clicked).filter(Boolean).length / 3) * 100}%` }}
                   transition={{ type: 'spring', damping: 15 }}
                 />
               </div>
@@ -264,8 +283,8 @@ const SocialFollowGate = ({ language = 'ar', API }) => {
               ) : (
                 <span>
                   {isRTL
-                    ? `يجب النقر على جميع الصفحات (${Object.values(clicked).filter(Boolean).length}/4)`
-                    : `Click on all pages (${Object.values(clicked).filter(Boolean).length}/4)`}
+                    ? `يجب النقر على جميع الصفحات (${Object.values(clicked).filter(Boolean).length}/3)`
+                    : `Click on all pages (${Object.values(clicked).filter(Boolean).length}/3)`}
                 </span>
               )}
             </button>

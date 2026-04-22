@@ -1,0 +1,79 @@
+{
+  "summary": "Barber Hub v3.9.1 regression — 17/17 backend pytest passed + frontend UI spot-checks (SocialFollowGate, ContactPage, HomeSections footer, PaymentPage) all green. All new v3.9.1 endpoints validated: subscription-plans (country_code=SY + Global fallback), transfer-recipients (syriatel_cash + 4 exchanges), subscription-orders (create/validate/list/admin/approve), vacation toggle (hides from /api/barbershops and /api/search/barbers), working_hours PUT persistence including closed:true.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/admin/barbershops/{id}/approve", "issue": "Test salon 0998765432 (shop_id fefee4cb-...) was NOT pre-approved as claimed in credentials doc — approval_status was 'pending' when tests started. Testing agent had to auto-approve it via admin endpoint in TestVacation setup. Recommend either (a) updating /app/memory/test_credentials.md to reflect actual status, or (b) re-running admin approve on this shop and persisting it."},
+      {"endpoint": "POST /api/subscription-orders", "issue": "Reference code format is 'BH-YY-XXXXXX' where XXXXXX is 4-8 alphanumeric chars. Slight variance in length — if admins rely on fixed width (e.g., always 6) they should normalize. Currently regex matches ^BH-\\d{2}-[A-Z0-9]{4,8}$."},
+      {"endpoint": "POST /api/admin/subscription-orders/{id}/approve", "issue": "Duration logic gives a full year when order.amount >= plan.yearly_price*0.95 but currency/amount come from the plan.monthly_price at order creation — it can never satisfy the yearly check unless the payload overrides amount. Consider exposing a 'billing_cycle: monthly|yearly' field on SubscriptionOrderCreate so salons can opt in to yearly."},
+      {"endpoint": "GET /api/subscription-plans?country_code=ZZ", "issue": "Fallback to GLOBAL works, but the response does not indicate it was a fallback. UI might incorrectly label the GLOBAL plan as the user's country's plan. Consider adding {fallback: true, requested_country_code: 'ZZ'} to the response."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SocialFollowGate", "issue": "Platform cards lack data-testid attributes (social-follow-btn-facebook, -instagram, -tiktok). Makes E2E selector-based testing brittle — had to fall back to body-text inspection. Recommend adding data-testid to each platform card and to the progress counter + 'Click on all pages (N/3)' CTA.", "selector": "a[href*='facebook.com'] / a[href*='instagram.com'] / a[href*='tiktok.com']", "priority": "LOW"},
+      {"component": "PaymentPage", "issue": "File upload dropzone/submit button not detectable via generic input[type=file] or button[type=submit] selectors — appears to use a styled wrapper. Add data-testid=\"payment-receipt-upload\" and data-testid=\"payment-submit-order\" for testability.", "selector": "N/A", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": {
+    "backend": [
+      "TestSubscriptionPlans::test_plans_sy_returns_plans_wrapper",
+      "TestSubscriptionPlans::test_plans_unknown_country_falls_back_to_global (GLOBAL in codes)",
+      "TestSubscriptionPlans::test_plans_no_filter_returns_all",
+      "TestTransferRecipients::test_public_transfer_recipients_shape (syriatel_cash + {al-haram,al-admiral,al-fuad,balance-transfer})",
+      "TestSubscriptionOrders::test_create_order_syriatel_cash_happy (status=pending, reference_code BH-YY-XXXXXX, admin_wa_link=wa.me URL)",
+      "TestSubscriptionOrders::test_create_order_exchange_requires_exchange_id (400)",
+      "TestSubscriptionOrders::test_create_order_invalid_exchange_id_404",
+      "TestSubscriptionOrders::test_create_order_invalid_plan_404",
+      "TestSubscriptionOrders::test_create_order_missing_receipt_400",
+      "TestSubscriptionOrders::test_create_order_plain_text_receipt_400 ('not-a-data-uri' rejected)",
+      "TestSubscriptionOrders::test_my_orders_lists_and_excludes_receipt (receipt_image stripped)",
+      "TestSubscriptionOrders::test_admin_list_orders_with_wa_link (admin_wa_link enriched per order)",
+      "TestSubscriptionOrders::test_admin_list_requires_admin (salon -> 401/403)",
+      "TestSubscriptionOrders::test_admin_approve_activates_salon (order.status=approved, activated_until set, re-approve -> 400)",
+      "TestVacation::test_vacation_on_hides_from_listing_and_search (hidden from /api/barbershops AND /api/search/barbers; profile.is_on_vacation=true)",
+      "TestVacation::test_vacation_off_appears_in_listing (reappears after is_on_vacation=false)",
+      "TestWorkingHours::test_put_working_hours_persists_closed_flag (friday/sunday closed:true, wednesday 10:00-20:00 persisted + returned via GET /api/barbers/profile/me)"
+    ],
+    "frontend": [
+      "SocialFollowGate shows 3 platforms (Facebook, Instagram, TikTok) — NO WhatsApp; progress counter 0/3 visible",
+      "ContactPage has NO WhatsApp text; Email + Phone cards present",
+      "HomeSections footer has NO WhatsApp ref (no wa.me / whatsapp substring)",
+      "PaymentPage /payment route loads for authenticated salon; /api/subscription-plans?country_code=SY returns 1 plan; page renders Syriatel Cash + Exchange + Upload receipt UI"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v391_subscriptions.py",
+    "/app/test_reports/pytest/v391_results.xml"
+  ],
+  "action_items": [
+    "(LOW) Add data-testid attributes to SocialFollowGate platform cards + progress CTA, and PaymentPage file upload + submit button for robust E2E.",
+    "(LOW) Reconcile /app/memory/test_credentials.md — salon 0998765432 approval_status was 'pending' not 'approved'. Either re-approve and persist or fix the doc.",
+    "(LOW) Consider surfacing a fallback=true flag on /api/subscription-plans when country_code doesn't match and Global is returned, so UI can show a note.",
+    "(OPTIONAL) Add billing_cycle:monthly|yearly to SubscriptionOrderCreate; today the yearly-duration branch in admin_approve is unreachable for salons since order.amount is auto-populated from plan.monthly_price."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew to 8119 lines — well past the 700-line guideline. The v3.9.1 additions (subscription-plans, transfer-recipients, subscription-orders CRUD, vacation toggle, working_hours handling) alone add ~500 lines. Recommend splitting into routers/subscriptions.py, routers/vacation.py, routers/working_hours.py.",
+    "Receipt validation only checks startswith('data:image') — does NOT validate base64 body integrity, MIME subtype, or size. A 10-char string 'data:image' passes. Recommend adding: (a) cap receipt_image size at ~2MB after decode, (b) validate MIME in ('image/png','image/jpeg','image/webp'), (c) verify base64 decodes successfully.",
+    "Reference code generator _generate_reference_code uses a while-loop find_one for uniqueness — OK at low volume but not atomic. Consider a unique index on reference_code field (db.subscription_orders.create_index('reference_code', unique=True)) + retry on DuplicateKeyError.",
+    "admin_wa_link is built using naive re.sub(r'\\D','', phone). If salon phone has a leading '0' (Syrian local), the resulting wa.me link will be '0935964158' instead of '963935964158' — wa.me requires country code. Recommend prepending default country code (963) when digits don't start with a country code and are <11 digits long.",
+    "Vacation filter uses is_on_vacation:{$ne:True}. Any shop with missing field correctly passes. No compound index on is_on_vacation+country — for a large dataset, add one. Also: search/barbers applies the filter but the text-search pipeline may not — verify across ALL public endpoints that surface shops.",
+    "SubscriptionOrderCreate.receipt_image is Optional=None in Pydantic, then rejected at 400 in-handler. Cleaner to make it required (str) so 422 fires at the Pydantic layer.",
+    "subscribe order approve endpoint accepts an already-rejected order and flips it to 'approved' (check is only 'if status == approved -> 400'). Rejected orders should also be non-re-activatable (should 409/400) OR the transition should be explicit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v391_subscriptions.py"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% visual spot-check (4/4)"},
+  "test_credentials": {
+    "admin": {"phone": "admin", "password": "NewStrong2026!xYz"},
+    "salon": {"phone": "0998765432", "password": "TestPass2026!", "shop_id": "fefee4cb-4bb7-4000-a3ee-7290f5054114"}
+  },
+  "seed_data_creation": "Created 2 TEST_ subscription orders for salon 0998765432 in db.subscription_orders (one happy path still pending, one approved with activated_until ~2026-07-21). Salon's is_on_vacation was toggled on then off (final state: false). Salon approval_status was flipped from 'pending' to 'approved' via admin endpoint so vacation listing assertion could pass. Working hours were written: friday+sunday closed, wednesday 10:00-20:00.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend v3.9.1 subscriptions + vacation + working_hours fully covered in /app/backend/tests/test_v391_subscriptions.py. Tests are idempotent (each run adds 2 orders). Salon 0998765432 is now approved + has seeded working_hours and vacation=false. If future phases add SubscriptionOrder edits (e.g., duplicate-guard or billing_cycle), extend TestSubscriptionOrders. PaymentPage + SocialFollowGate lack data-testid on their interactive elements — flagged to main agent.",
+  "rca of the issue": "No critical issue. One minor test-infra gap: salon 0998765432 was not actually pre-approved as documented; test now self-heals via admin approve. Several code-quality/security observations (data:image validation loose, reference-code race, wa.me digits country-code) flagged for main agent."
+}

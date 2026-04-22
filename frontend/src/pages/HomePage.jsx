@@ -373,7 +373,7 @@ const HomePage = () => {
   };
 
   return (
-    <div className="bh-surface" data-testid="home-page">
+    <div className="bh-surface bh-dark-zone" data-testid="home-page">
       {/* Ambient Orbs */}
       <div className="bh-orb bh-orb-gold w-96 h-96 top-0 left-0 opacity-20" />
       <div className="bh-orb bh-orb-burgundy w-80 h-80 bottom-0 right-0 opacity-15" />

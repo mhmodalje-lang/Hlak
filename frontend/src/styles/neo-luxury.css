@@ -435,92 +435,70 @@ body, html {
 
 
 /* ============================================================
-   v3.9.4 — Global True-Black Override
-   The user explicitly requested a full-screen dark mode without
-   stray white sections. Many pages were built with light-theme
-   Tailwind classes (bg-white / bg-amber-50 / bg-gray-50 etc).
-   These overrides force every such surface to blend into the
-   pure-black luxury theme. We use specific class selectors so
-   intentionally-white cards (e.g. logos on login) still work
-   when they use inline style.
+   v3.9.4 — Global True-Black Override (v3.9.5 scoped safely)
+   Only applies to the TOP-LEVEL page chrome (body + app root)
+   and the public HomePage-style light sections. Salon detail
+   pages, product pages, admin panels and any component that
+   manages its own theme are untouched.
 ============================================================ */
 
 /* App root backgrounds */
 body, html, #root {
-  background: #000000 !important;
+  background: #000000;
   color: var(--bh-text-primary);
 }
 
-/* Sweep common light-theme backgrounds to glass-black */
-.bg-white,
-.bg-amber-50,
-.bg-amber-100\/50,
-.bg-gray-50,
-.bg-neutral-50,
-.bg-stone-50,
-.bg-rose-50,
-.bg-pink-50,
-.bg-slate-50 {
+/* Only force dark theme inside marked dark zones.
+   Pages that want the new look wrap themselves in .bh-dark-zone. */
+.bh-dark-zone .bg-white,
+.bh-dark-zone .bg-amber-50,
+.bh-dark-zone .bg-gray-50,
+.bh-dark-zone .bg-neutral-50,
+.bh-dark-zone .bg-stone-50,
+.bh-dark-zone .bg-rose-50,
+.bh-dark-zone .bg-pink-50,
+.bh-dark-zone .bg-slate-50 {
   background-color: rgba(10, 10, 10, 0.85) !important;
   color: var(--bh-text-primary);
   backdrop-filter: blur(12px) saturate(150%);
   -webkit-backdrop-filter: blur(12px) saturate(150%);
 }
 
-/* Gradients built from white/light stops → black with warm overlay */
-.bg-gradient-to-b.from-amber-50,
-.bg-gradient-to-b.from-white,
-.bg-gradient-to-br.from-white,
-.bg-gradient-to-t.from-white,
-.bg-gradient-to-tr.from-amber-50 {
+.bh-dark-zone .bg-gradient-to-b.from-amber-50,
+.bh-dark-zone .bg-gradient-to-b.from-white,
+.bh-dark-zone .bg-gradient-to-br.from-white,
+.bh-dark-zone .bg-gradient-to-t.from-white,
+.bh-dark-zone .bg-gradient-to-tr.from-amber-50 {
   background: linear-gradient(to bottom,
     rgba(20, 20, 20, 0.95) 0%,
     rgba(0, 0, 0, 1) 100%) !important;
 }
 
-/* Any `to-white` utility likewise becomes dark */
-.to-white,
-.to-amber-50 {
+.bh-dark-zone .to-white,
+.bh-dark-zone .to-amber-50 {
   --tw-gradient-to: rgba(0, 0, 0, 1) !important;
 }
 
-/* Cards that rely on shadow and white bg need a gold hairline */
-.rounded-2xl.shadow-sm.bg-white,
-.rounded-2xl.bg-white,
-.rounded-xl.bg-white {
-  border: 1px solid rgba(212, 175, 55, 0.15);
-}
-
-/* Headlines and body copy in dark-mode-unaware pages */
-.text-neutral-900,
-.text-gray-900,
-.text-stone-900,
-.text-zinc-900,
-.text-black {
+.bh-dark-zone .text-neutral-900,
+.bh-dark-zone .text-gray-900,
+.bh-dark-zone .text-stone-900,
+.bh-dark-zone .text-zinc-900,
+.bh-dark-zone .text-black {
   color: var(--bh-text-primary) !important;
 }
 
-.text-neutral-700,
-.text-gray-700,
-.text-stone-700,
-.text-zinc-700 {
+.bh-dark-zone .text-neutral-700,
+.bh-dark-zone .text-gray-700,
+.bh-dark-zone .text-stone-700,
+.bh-dark-zone .text-zinc-700 {
   color: var(--bh-text-secondary) !important;
 }
 
-.text-neutral-600,
-.text-gray-600,
-.text-stone-600,
-.text-zinc-600 {
+.bh-dark-zone .text-neutral-600,
+.bh-dark-zone .text-gray-600,
+.bh-dark-zone .text-stone-600,
+.bh-dark-zone .text-zinc-600 {
   color: var(--bh-text-muted) !important;
-}
-
-/* Remove white focus rings that looked washed-out */
-input, textarea, select {
-  background-color: rgba(20, 20, 20, 0.6);
-  color: var(--bh-text-primary);
-}
-input:focus, textarea:focus, select:focus {
-  outline-color: var(--bh-gold);
 }
 
 /* Auth page: make the shell feel full-screen / luxurious on desktop */

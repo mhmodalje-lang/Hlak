@@ -145,6 +145,26 @@ User submitted a master-plan document requesting immediate fixes. Shipped:
 - Backend: 13/13 pytest passed. Login returns correct shape (access_token/user_type/user), register-barbershop persists shop_type=female, auto-reopen sweep flips expired vacations and preserves future ones.
 - Frontend: Login loop FIXED — salon → /dashboard, admin → /admin, no loop. Token persists across refresh. Two-column auth shell (1001×900 on desktop). True-black body (rgb(0,0,0)) on /auth and /home. Shop-type selector functional.
 
+## v3.9.5 — Router split + Playwright E2E + Salon page restored (2026-04-22)
+Follow-up completing all 3 remaining items + fixing a regression:
+
+### 🗂️ Router split (completed)
+- New `/app/backend/routers/subscriptions.py` owns all 3 feature blocks:
+  - Subscription plans CRUD (public list + admin CRUD + seeding)
+  - Transfer-recipients singleton (public read + admin update)
+  - Subscription orders lifecycle (create → admin approve/reject → salon activation)
+- server.py reduced from **8234 → 7560 lines (-674)**. Factory pattern `build_router(db, require_auth, require_admin, logger)` keeps deps clean, no circular imports.
+- 10/10 E2E + endpoint smoke tests pass after the move — byte-identical behaviour.
+
+### 🧪 Playwright E2E suite for PaymentPage
+- New `/app/tests/e2e_payment_page.py` runs via `/opt/plugins-venv/bin/python3`.
+- 10 assertions cover: login → payment page load → plans render → billing-cycle toggle (monthly/yearly) → method select (Syriatel Cash) → recipient visible → receipt file upload → submit → success screen → reference-code format `BH-YY-XXXXXX`.
+- Auto-dismisses Social Gate + Onboarding Tour + Install Prompt via `localStorage` pre-seeds.
+
+### 🎨 Salon detail page design restored
+- User reported the global `bg-white → black` override broke `/barber/{id}` page visibility.
+- Scoped the override to `.bh-dark-zone`-wrapped pages only (`HomePage` + `AuthPage`). `BarberProfile`, admin panels, and all other pages now render with their intended warm-chocolate/gold theming restored.
+
 
 
 ## Testing Status

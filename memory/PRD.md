@@ -102,6 +102,25 @@ Follow-up to v3.9.1 addressing P1 items from testing agent:
 - **Admin WhatsApp quick-contact** — AdminSubscriptionOrdersPanel now shows a green "واتساب" button on every order row and a prominent full-width "التواصل مع الصالون عبر واتساب" CTA inside the OrderDetailModal. `/api/admin/subscription-orders/{id}` now also returns `admin_wa_link`.
 - **data-testid polish** — SocialFollowGate platform cards renamed to `social-follow-btn-{key}` per testing conventions; added `social-gate-progress` + `social-gate-progress-count` wrappers.
 
+## v3.9.3 — Routers split + billing_cycle + gender/vacation segregation (2026-04-22)
+Follow-up completing all 3 P1 items from v3.9.2:
+
+- **Server.py router split (proof-of-concept)**: Created `/app/backend/routers/` package with `vacation.py` as the first extracted module. Uses a **factory pattern** (`build_router(db, require_barbershop)`) to avoid circular imports with server.py. Tested: behavior identical — the `POST /api/barbershop/me/vacation` endpoint is now served out of routers/vacation.py with zero user-visible change. Pattern established for future v3.9.x migration of subscriptions/transfer-recipients/plans routers.
+
+- **billing_cycle field on subscription orders**: `SubscriptionOrderCreate` now accepts `billing_cycle: "monthly" | "yearly"` (default monthly). Backend picks `yearly_price` when cycle=yearly (falls back to monthly_price if null). Admin approve now uses billing_cycle to compute duration: 365 days for yearly, 30 days for monthly (+ free_trial_months bonus). Frontend PaymentPage shows a billing-cycle toggle with "Save X%" badge for yearly. Invalid cycles return 400.
+
+- **Gender/Approval/Vacation segregation across all listing endpoints**: Added `approval_status:approved` + `is_on_vacation:{$ne: true}` filters to 5 previously-unfiltered public listing endpoints:
+  - `GET /api/barbers/nearby`
+  - `GET /api/barbers`
+  - `GET /api/ranking/top` (vacation only — approval was already filtered)
+  - `GET /api/ranking/tiers`
+  - `GET /api/seo/city/{country}/{city}` (vacation only)
+  - Gender strictness verified: male salons are excluded when `type=female` and vice versa on all 4 primary listings.
+
+### Testing (iteration_7.json)
+- Backend: 23/23 pytest passed. Covers vacation endpoint, billing_cycle happy+error paths, yearly duration calc, 5 listing filters (approval + vacation + gender), receipt validation regression, admin GET detail wa_link.
+
+
 
 ## Testing Status
 - **Phase 3**: 18/18 backend pytest cases passed (iteration_4.json).

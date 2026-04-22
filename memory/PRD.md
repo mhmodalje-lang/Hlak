@@ -84,3 +84,29 @@ BARBER HUB is a **global marketplace super-app** connecting barbers, salons, and
 
 ## Known Issues
 - None blocking. All backend endpoints pass. Pre-existing Python shadow-imports in `server.py` (`date`, `time`, `status` reuse as variable names) are style warnings, not bugs.
+
+
+## v3.9.0 — GentoSY-Style Landing + Admin Control Center (latest)
+User request (Arabic): apply the GentoSY premium black+gold landing design they saw, keep the site name "BARBER HUB" unchanged, and add an admin panel that controls:
+- Contact info (phone `+963 935 964 158` provided) + social links
+- Subscription prices per country, each with its own currency (e.g. Syria in SYP)
+
+### Backend (7 new endpoints in /app/backend/server.py)
+- `GET /api/site-settings` (PUBLIC) — singleton contact info + social + taglines; auto-seeds default on first read
+- `PUT /api/admin/site-settings` (ADMIN)
+- `GET /api/subscription-plans` (PUBLIC) — supports `?country_code=SY` with Global fallback
+- `GET /api/admin/subscription-plans` (ADMIN)
+- `POST /api/admin/subscription-plans` (ADMIN) — per-country plan CRUD
+- `PUT /api/admin/subscription-plans/{id}` (ADMIN)
+- `DELETE /api/admin/subscription-plans/{id}` (ADMIN)
+
+### Frontend (3 new components + HomePage/AdminDashboard integration)
+- `/components/HomeSections.jsx` — WhyChoose / SubscriptionPlan (country-aware) / Journey / Testimonials / PremiumFooter (all black+gold GentoSY style)
+- `/components/AdminSiteSettingsPanel.jsx` — admin tab for contact info/social
+- `/components/AdminSubscriptionPlansPanel.jsx` — admin tab for per-country plan CRUD with currency support
+- HomePage.jsx — old simple footer replaced with the 5-section premium stack
+- AdminDashboard.jsx — 2 new tabs: "إعدادات الموقع" + "خطط الاشتراك"
+
+### Testing
+- Backend: 100% pass on 7 new endpoints (tested via deep_testing_backend_v2)
+- Frontend: lint clean on all modified files

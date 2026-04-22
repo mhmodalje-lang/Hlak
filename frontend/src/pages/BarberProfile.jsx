@@ -526,7 +526,7 @@ const BarberProfile = () => {
                     </div>
                   </div>
                   <button
-                    onClick={() => navigate(`/products/shop/${id}`)}
+                    onClick={() => navigate(`/products/${id}`)}
                     className="hidden md:flex items-center gap-1 text-sm text-[var(--bh-gold)] hover:text-white transition-colors font-bold"
                     data-testid="view-all-products-btn"
                   >
@@ -612,7 +612,7 @@ const BarberProfile = () => {
                 {/* View all (mobile) */}
                 <div className="mt-4 md:hidden text-center">
                   <button
-                    onClick={() => navigate(`/products/shop/${id}`)}
+                    onClick={() => navigate(`/products/${id}`)}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--bh-glass-bg-hi)] hover:bg-[var(--bh-gold)]/20 text-[var(--bh-gold)] text-sm font-bold transition-all"
                   >
                     {t.viewAllProducts}

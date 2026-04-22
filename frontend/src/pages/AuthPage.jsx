@@ -379,12 +379,14 @@ const AuthPage = () => {
 
                 <Button
                   type="submit"
-                  className="bh-btn bh-btn-primary w-full"
+                  className="bh-btn bh-btn-primary w-full whitespace-nowrap justify-center"
                   disabled={isLoading}
                   data-testid="login-submit"
                 >
-                  {isLoading ? '...' : t.loginBtn}
-                  {!isLoading && <Crown className="w-4 h-4 ml-2" />}
+                  <span className="inline-flex items-center justify-center gap-2 leading-none">
+                    {isLoading ? '...' : t.loginBtn}
+                    {!isLoading && <Crown className="w-4 h-4" />}
+                  </span>
                 </Button>
               </form>
             </TabsContent>
@@ -589,15 +591,17 @@ const AuthPage = () => {
 
                 <Button
                   type="submit"
-                  className="bh-btn bh-btn-primary w-full"
+                  className="bh-btn bh-btn-primary w-full whitespace-nowrap justify-center"
                   disabled={
                     isLoading ||
                     !isPasswordValid(authType === 'user' ? registerData.password : shopRegisterData.password)
                   }
                   data-testid="register-submit"
                 >
-                  {isLoading ? '...' : t.registerBtn}
-                  {!isLoading && <Crown className="w-4 h-4 ml-2" />}
+                  <span className="inline-flex items-center justify-center gap-2 leading-none">
+                    {isLoading ? '...' : t.registerBtn}
+                    {!isLoading && <Crown className="w-4 h-4" />}
+                  </span>
                 </Button>
               </form>
             </TabsContent>

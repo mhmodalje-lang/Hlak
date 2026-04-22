@@ -117,6 +117,20 @@ export const GeoLocationProvider = ({ children }) => {
   const [geoData, setGeoData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  // v3.9.8 — manual country override set by user from the HomePage pill.
+  // Persisted to localStorage so it survives refresh. Takes precedence over
+  // IP-based geo (which returns Germany when the container is hosted in EU).
+  const [manualCountry, setManualCountryState] = useState(() => {
+    try { return localStorage.getItem('barberhub_manual_country') || ''; }
+    catch { return ''; }
+  });
+  const setManualCountry = (country) => {
+    try {
+      if (country) localStorage.setItem('barberhub_manual_country', country);
+      else localStorage.removeItem('barberhub_manual_country');
+    } catch {}
+    setManualCountryState(country || '');
+  };
 
   useEffect(() => {
     const fetchGeoLocation = async () => {
@@ -213,52 +227,71 @@ export const GeoLocationProvider = ({ children }) => {
     fetchGeoLocation();
   }, []);
 
+  // v3.9.8 — when manualCountry is set, it overrides IP-based detection.
+  const effectiveCountry = manualCountry || geoData?.country || 'Unknown';
+  // Helper: find the country-code that matches a country name in our mapping
+  const _codeForCountryName = (name) => {
+    // Common mappings — extend as needed
+    const MAP = {
+      'Syria': 'SY', 'سوريا': 'SY',
+      'Iraq': 'IQ', 'العراق': 'IQ',
+      'Saudi Arabia': 'SA', 'السعودية': 'SA',
+      'UAE': 'AE', 'United Arab Emirates': 'AE', 'الإمارات': 'AE',
+      'Egypt': 'EG', 'مصر': 'EG',
+      'Jordan': 'JO', 'الأردن': 'JO',
+      'Lebanon': 'LB', 'لبنان': 'LB',
+      'Kuwait': 'KW', 'الكويت': 'KW',
+      'Qatar': 'QA', 'قطر': 'QA',
+      'Bahrain': 'BH', 'البحرين': 'BH',
+      'Oman': 'OM', 'عُمان': 'OM',
+      'Yemen': 'YE', 'اليمن': 'YE',
+      'Palestine': 'PS', 'فلسطين': 'PS',
+      'Morocco': 'MA', 'المغرب': 'MA',
+      'Algeria': 'DZ', 'الجزائر': 'DZ',
+      'Tunisia': 'TN', 'تونس': 'TN',
+      'Libya': 'LY', 'ليبيا': 'LY',
+      'Sudan': 'SD', 'السودان': 'SD',
+    };
+    return MAP[name] || '';
+  };
+
   const getDynamicHeader = (language) => {
-    if (!geoData) return COUNTRY_TO_REGION.default[language];
-    
-    const countryMapping = COUNTRY_TO_REGION[geoData.country];
-    if (countryMapping) {
-      return countryMapping[language];
-    }
-    
-    // Fallback for unmapped countries
+    const country = effectiveCountry;
+    if (!country || country === 'Unknown') return COUNTRY_TO_REGION.default[language];
+    const countryMapping = COUNTRY_TO_REGION[country];
+    if (countryMapping) return countryMapping[language];
     return COUNTRY_TO_REGION.default[language];
   };
 
   const getCurrency = () => {
-    if (!geoData) return 'USD';
-    
-    const countryMapping = COUNTRY_TO_REGION[geoData.country];
-    if (countryMapping) {
-      return countryMapping.currency;
-    }
-    
+    const country = effectiveCountry;
+    const countryMapping = COUNTRY_TO_REGION[country];
+    if (countryMapping) return countryMapping.currency;
     return 'USD';
   };
 
-  /**
-   * Returns 'local_arab' for Arab countries (manual transfer methods)
-   * or 'global' for EU/US/UK/Canada etc. (card payment methods).
-   * Used by Smart Payment Gateway on PaymentPage.
-   */
   const getPaymentRegion = () => {
-    if (!geoData) return 'global';
-    const mapping = COUNTRY_TO_REGION[geoData.country];
+    const country = effectiveCountry;
+    const mapping = COUNTRY_TO_REGION[country];
     return mapping?.paymentRegion || 'global';
   };
+
+  const effectiveCode = manualCountry ? _codeForCountryName(manualCountry) : (geoData?.countryCode || 'XX');
 
   const value = {
     geoData,
     isLoading,
     error,
-    country: geoData?.country || 'Unknown',
-    countryCode: geoData?.countryCode || 'XX',
-    city: geoData?.city || '',
+    country: effectiveCountry,
+    countryCode: effectiveCode,
+    city: manualCountry ? '' : (geoData?.city || ''), // clear IP city when user picks a different country
     region: geoData?.region || '',
+    manualCountry,
+    setManualCountry,
     getDynamicHeader,
     getCurrency,
     getPaymentRegion,
-    getRegionLabel: (lang = 'ar') => getRegionLabelForCountry(geoData?.countryCode, lang),
+    getRegionLabel: (lang = 'ar') => getRegionLabelForCountry(effectiveCode, lang),
   };
 
   return (

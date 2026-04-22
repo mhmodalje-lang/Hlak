@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import LanguageToggle from '@/components/LanguageToggle';
+import CountryPickerPill from '@/components/CountryPickerPill';
 import axios from 'axios';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -37,7 +38,7 @@ const HomePage = () => {
   const navigate = useNavigate();
   const { API, gender, user, logout, themeClass, isAuthenticated, isBarber, isAdmin, token } = useApp();
   const { language } = useLocalization();
-  const { getDynamicHeader, city, country, countryCode, region, getRegionLabel } = useGeoLocation();
+  const { getDynamicHeader, city, country, countryCode, region, getRegionLabel, manualCountry, setManualCountry } = useGeoLocation();
   const { formatPrice, currency } = useCurrency();
   
   const [barbers, setBarbers] = useState([]);
@@ -468,6 +469,15 @@ const HomePage = () => {
             <div className="bh-divider mb-6">
               <span className="bh-divider-text">{country}</span>
             </div>
+
+            {/* v3.9.8 — Manual country picker. User can override IP geo. */}
+            <CountryPickerPill
+              currentCountry={country}
+              onChange={setManualCountry}
+              onReset={() => setManualCountry('')}
+              language={language}
+              manualCountry={manualCountry}
+            />
             
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display font-bold bh-gold-text mb-6 bh-anim-fade-up">
               {dynamicHeader}

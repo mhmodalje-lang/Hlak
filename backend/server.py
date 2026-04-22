@@ -1677,6 +1677,7 @@ async def get_ranked_top(
             {"approval_status": {"$exists": False}, "is_verified": True},
         ],
         "status": {"$ne": "pending_deletion"},
+        "is_on_vacation": {"$ne": True},
     }
     if gender in ("male", "female"):
         query["shop_type"] = gender
@@ -1746,7 +1747,15 @@ async def get_ranking_tiers(
     # with English country names still match our Arabic shop data.
     country = normalize_country(country)
 
-    base_query: Dict[str, Any] = {}
+    base_query: Dict[str, Any] = {
+        # v3.9.3 — only approved salons + not on vacation show up in ranking tiers
+        "$or": [
+            {"approval_status": "approved"},
+            {"approval_status": {"$exists": False}, "is_verified": True},
+        ],
+        "status": {"$ne": "pending_deletion"},
+        "is_on_vacation": {"$ne": True},
+    }
     if gender:
         base_query["shop_type"] = gender
 
@@ -2234,7 +2243,16 @@ async def get_nearby_barbers(
     limit: int = 50
 ):
     """Get nearby barbers based on coordinates"""
-    query = {}
+    # v3.9.3 — apply the same public-visibility filters as /api/barbershops:
+    # only approved salons, not on vacation, not pending deletion.
+    query: Dict[str, Any] = {
+        "$or": [
+            {"approval_status": "approved"},
+            {"approval_status": {"$exists": False}, "is_verified": True},
+        ],
+        "status": {"$ne": "pending_deletion"},
+        "is_on_vacation": {"$ne": True},
+    }
     if type:
         query["shop_type"] = type
     
@@ -2274,7 +2292,15 @@ async def list_barbers(
     limit: int = 50
 ):
     """List all barbers (alias for barbershops)"""
-    query = {}
+    # v3.9.3 — public visibility filters (approved + not on vacation + not pending deletion)
+    query: Dict[str, Any] = {
+        "$or": [
+            {"approval_status": "approved"},
+            {"approval_status": {"$exists": False}, "is_verified": True},
+        ],
+        "status": {"$ne": "pending_deletion"},
+        "is_on_vacation": {"$ne": True},
+    }
     if type:
         query["shop_type"] = type
     if country:
@@ -6359,6 +6385,7 @@ async def seo_city_page(country: str, city: str, gender: Optional[str] = None, l
             {"approval_status": "approved"},
             {"approval_status": {"$exists": False}, "is_verified": True},
         ],
+        "is_on_vacation": {"$ne": True},
     }
     if gender in ("male", "female"):
         query["shop_type"] = gender
@@ -7453,6 +7480,7 @@ class SubscriptionOrderCreate(BaseModel):
     reference_number: Optional[str] = None  # transfer ref/operation number (optional)
     receipt_image: Optional[str] = None     # base64 data URI (required)
     notes: Optional[str] = None             # additional notes from salon
+    billing_cycle: str = "monthly"          # 'monthly' | 'yearly'
 
 
 class SubscriptionOrderAdminAction(BaseModel):
@@ -7494,6 +7522,16 @@ async def create_subscription_order(
     # Validate payment method
     if payload.payment_method not in ("syriatel_cash", "exchange"):
         raise HTTPException(status_code=400, detail="payment_method must be 'syriatel_cash' or 'exchange'")
+
+    # Validate billing cycle
+    billing_cycle = (payload.billing_cycle or "monthly").lower()
+    if billing_cycle not in ("monthly", "yearly"):
+        raise HTTPException(status_code=400, detail="billing_cycle must be 'monthly' or 'yearly'")
+    # Pick amount based on cycle; fall back to monthly if no yearly price is set
+    if billing_cycle == "yearly":
+        amount = plan.get("yearly_price") or plan.get("monthly_price") or 0
+    else:
+        amount = plan.get("monthly_price") or 0
 
     exchange_info = None
     if payload.payment_method == "exchange":
@@ -7538,7 +7576,8 @@ async def create_subscription_order(
         "country_code": plan.get("country_code"),
         "currency": plan.get("currency"),
         "currency_symbol": plan.get("currency_symbol"),
-        "amount": plan.get("monthly_price", 0),
+        "amount": amount,
+        "billing_cycle": billing_cycle,
         "free_trial_months": plan.get("free_trial_months", 0),
         "payment_method": payload.payment_method,
         "exchange_id": payload.exchange_id,
@@ -7683,12 +7722,17 @@ async def admin_approve_subscription_order(
         raise HTTPException(status_code=400, detail="Order is already approved")
 
     now = datetime.now(timezone.utc)
-    # Determine duration in days
-    duration_days = payload.duration_days or 30
-    # If plan's yearly_price matches the paid amount, give a year
-    plan = await db.subscription_plans.find_one({"id": order.get("plan_id")}, {"_id": 0}) or {}
-    if plan.get("yearly_price") and float(order.get("amount", 0)) >= float(plan["yearly_price"]) * 0.95:
-        duration_days = payload.duration_days or 365
+    # Determine duration in days based on the order's billing_cycle:
+    #   monthly -> 30 days, yearly -> 365 days (admin can override via payload.duration_days)
+    cycle = (order.get("billing_cycle") or "monthly").lower()
+    default_days = 365 if cycle == "yearly" else 30
+    duration_days = payload.duration_days or default_days
+    # Safety net: if billing_cycle is missing on legacy orders but the amount matches
+    # yearly_price, honour yearly.
+    if not payload.duration_days and cycle == "monthly":
+        plan = await db.subscription_plans.find_one({"id": order.get("plan_id")}, {"_id": 0}) or {}
+        if plan.get("yearly_price") and float(order.get("amount", 0)) >= float(plan["yearly_price"]) * 0.95:
+            duration_days = 365
 
     # Add free-trial months bonus
     ft_months = int(order.get("free_trial_months") or 0)
@@ -7757,36 +7801,18 @@ async def admin_reject_subscription_order(
 
 
 # ============================================================================
-# SALON VACATION / TEMPORARY-CLOSED toggle
+# SALON VACATION / TEMPORARY-CLOSED toggle — extracted to routers/vacation.py
 # ============================================================================
-class VacationToggle(BaseModel):
-    is_on_vacation: bool
-    vacation_message_ar: Optional[str] = None
-    vacation_message_en: Optional[str] = None
-    vacation_until: Optional[str] = None  # ISO date (optional — auto-reopen)
-
-
-@api_router.post("/barbershop/me/vacation")
-async def toggle_vacation(payload: VacationToggle, entity: Dict = Depends(require_barbershop)):
-    """Salon toggles temporary-closed / vacation mode."""
-    now = datetime.now(timezone.utc).isoformat()
-    updates: Dict[str, Any] = {
-        "is_on_vacation": bool(payload.is_on_vacation),
-        "updated_at": now,
-    }
-    if payload.vacation_message_ar is not None:
-        updates["vacation_message_ar"] = payload.vacation_message_ar
-    if payload.vacation_message_en is not None:
-        updates["vacation_message_en"] = payload.vacation_message_en
-    if payload.vacation_until is not None:
-        updates["vacation_until"] = payload.vacation_until
-
-    await db.barbershops.update_one({"id": entity.get("id")}, {"$set": updates})
-    return {"success": True, "is_on_vacation": updates["is_on_vacation"]}
+# See routers/vacation.py. Router is registered below the api_router include.
 
 
 # Include the router
 app.include_router(api_router)
+
+# --- v3.9.3 extracted routers (code-quality split). Each is a self-contained
+# module with its own endpoints; they receive shared deps via a factory fn. ---
+from routers.vacation import build_router as _build_vacation_router  # noqa: E402
+app.include_router(_build_vacation_router(db, require_barbershop), prefix="/api")
 
 # ============== SECURITY HEADERS MIDDLEWARE ==============
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

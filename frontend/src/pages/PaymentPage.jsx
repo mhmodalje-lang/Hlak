@@ -34,6 +34,7 @@ const PaymentPage = () => {
   const [loading, setLoading] = useState(true);
 
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [billingCycle, setBillingCycle] = useState('monthly'); // 'monthly' | 'yearly'
   const [selectedMethod, setSelectedMethod] = useState(null); // 'syriatel_cash' | 'exchange'
   const [selectedExchangeId, setSelectedExchangeId] = useState(null);
   const [referenceNumber, setReferenceNumber] = useState('');
@@ -56,6 +57,10 @@ const PaymentPage = () => {
     submitting: 'جاري الإرسال...',
     monthly: '/شهر',
     yearly: '/سنة',
+    cycle: 'دورة الدفع',
+    cycleMonthly: 'شهري',
+    cycleYearly: 'سنوي',
+    saveAnnual: 'وفّر',
     freeTrial: 'تجربة مجانية',
     month: 'شهر',
     months: 'أشهر',
@@ -98,6 +103,10 @@ const PaymentPage = () => {
     submitting: 'Submitting...',
     monthly: '/month',
     yearly: '/year',
+    cycle: 'Billing cycle',
+    cycleMonthly: 'Monthly',
+    cycleYearly: 'Yearly',
+    saveAnnual: 'Save',
     freeTrial: 'Free trial',
     month: 'month',
     months: 'months',
@@ -231,6 +240,7 @@ const PaymentPage = () => {
         reference_number: referenceNumber || null,
         receipt_image: receiptImage,
         notes: notes || null,
+        billing_cycle: billingCycle,
       }, { headers: { Authorization: `Bearer ${token}` } });
       setSubmittedOrder(res.data);
       toast.success(t.orderSubmitted);
@@ -383,6 +393,47 @@ const PaymentPage = () => {
           )}
         </section>
 
+        {/* Billing cycle toggle */}
+        {selectedPlan && (Number(selectedPlan.yearly_price) > 0) && (
+          <section className="mb-8">
+            <h2 className="text-sm font-bold text-amber-400 mb-3">{t.cycle}</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {['monthly', 'yearly'].map(c => {
+                const active = billingCycle === c;
+                const price = c === 'yearly' ? Number(selectedPlan.yearly_price || 0) : Number(selectedPlan.monthly_price || 0);
+                const saving = c === 'yearly' && Number(selectedPlan.monthly_price) > 0
+                  ? Math.max(0, Math.round((Number(selectedPlan.monthly_price) * 12 - price) / (Number(selectedPlan.monthly_price) * 12) * 100))
+                  : 0;
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setBillingCycle(c)}
+                    className={`p-4 rounded-2xl border-2 transition-all text-start ${
+                      active ? 'border-amber-400 bg-amber-500/10' : 'border-white/10 bg-white/[0.03] hover:border-amber-400/40'
+                    }`}
+                    data-testid={`billing-cycle-${c}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-white">{c === 'monthly' ? t.cycleMonthly : t.cycleYearly}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {selectedPlan.currency_symbol || ''}{price.toLocaleString()}
+                          <span className="text-[10px] text-gray-500 ms-1">{c === 'monthly' ? t.monthly : t.yearly}</span>
+                        </p>
+                      </div>
+                      {saving > 0 && c === 'yearly' && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                          {t.saveAnnual} {saving}%
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {/* Step 2 — Method */}
         {selectedPlan && (
           <section className="mb-8">
@@ -484,8 +535,8 @@ const PaymentPage = () => {
               <div className="flex items-center justify-between gap-3 pb-3 border-b border-amber-400/20">
                 <span className="text-xs text-gray-400 uppercase tracking-wider">{t.amountToTransfer}</span>
                 <span className="text-2xl font-black text-amber-400">
-                  {selectedPlan?.currency_symbol || ''}{Number(selectedPlan?.monthly_price || 0).toLocaleString()}
-                  <span className="text-xs text-gray-500 ms-1">{selectedPlan?.currency || ''}</span>
+                  {selectedPlan?.currency_symbol || ''}{Number(billingCycle === 'yearly' ? (selectedPlan?.yearly_price || selectedPlan?.monthly_price || 0) : (selectedPlan?.monthly_price || 0)).toLocaleString()}
+                  <span className="text-xs text-gray-500 ms-1">{selectedPlan?.currency || ''} {billingCycle === 'yearly' ? t.yearly : t.monthly}</span>
                 </span>
               </div>
               {/* Recipient name */}

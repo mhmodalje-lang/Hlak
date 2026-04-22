@@ -1,0 +1,68 @@
+{
+  "summary": "Barber Hub v3.9.3 backend regression — 23/23 pytest passed. Validated (a) routers/vacation.py extracted endpoint behaves identically to server.py version (toggle on/off/with-messages), (b) new billing_cycle field on SubscriptionOrderCreate correctly picks yearly_price for cycle=yearly, monthly_price for cycle=monthly, rejects invalid cycles with 400 + proper detail, and falls back to monthly_price when yearly_price is null, (c) admin approve now produces activated_until ~365 days for yearly orders and ~30 days for monthly orders (plus free_trial_months*30 bonus), (d) listing filters (is_on_vacation + approval_status) now enforced on /api/barbers, /api/barbers/nearby, /api/ranking/top, /api/ranking/tiers — toggling vacation ON hides the test salon from all four, (e) gender segregation strict on /api/barbers, /api/barbers/nearby, /api/barbershops, /api/search/barbers, (f) admin GET /api/admin/subscription-orders/{id} includes admin_wa_link, (g) receipt validation (gif/invalid-base64/<100B) still 400s.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/search/barbers", "issue": "Accepts query param `shop_type` (not `type`) — inconsistent with /api/barbers + /api/barbers/nearby + /api/barbershops which accept `type`. If the SPA sends `type=female` here the server silently ignores it and returns mixed genders. Recommend accepting both `type` and `shop_type` on this endpoint (or rename for consistency)."},
+      {"endpoint": "/api/search/barbers", "issue": "Does NOT apply the approval_status filter that was added to the other five listing endpoints in v3.9.3. Only is_on_vacation is filtered. Non-approved / rejected salons can still appear here. Add the same $or filter used in /api/barbers (approval_status == approved OR approval_status missing + is_verified)."},
+      {"endpoint": "POST /api/admin/subscription-orders/{id}/approve", "issue": "When an admin passes a non-None `duration_days`, the legacy yearly-safety-net (checking amount >= yearly_price*0.95) is skipped. This is fine for current tests but worth a comment. The legacy-order upgrade path only triggers when billing_cycle is missing AND duration_days isn't provided."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "passed_tests": {
+    "backend": [
+      "TestVacationRouter::test_vacation_on (200, is_on_vacation=true echoed)",
+      "TestVacationRouter::test_vacation_off (200, is_on_vacation=false echoed)",
+      "TestVacationRouter::test_vacation_with_messages (vacation_message_ar/en accepted)",
+      "TestBillingCycle::test_yearly_picks_yearly_price (GLOBAL plan, amount=200.0, billing_cycle=yearly persisted)",
+      "TestBillingCycle::test_monthly_picks_monthly_price (GLOBAL plan, amount=20.0, billing_cycle=monthly)",
+      "TestBillingCycle::test_invalid_cycle_weekly_rejected (400 + detail contains 'billing_cycle must be monthly or yearly')",
+      "TestBillingCycle::test_yearly_on_plan_without_yearly_price_falls_back (SY plan yearly_price=null -> amount=250000 monthly fallback)",
+      "TestAdminApproveDurations::test_approve_yearly_without_duration_gives_365_plus_trial (|delta-425| < 2 days, includes 2-month free trial)",
+      "TestAdminApproveDurations::test_approve_monthly_without_duration_gives_30_plus_trial (|delta-90| < 2 days, includes 2-month free trial)",
+      "TestAdminApproveDurations::test_admin_detail_includes_wa_link (GET /api/admin/subscription-orders/{id} -> admin_wa_link starts with https://wa.me/ and carries ?text=)",
+      "TestListingFilters::test_barbers_hides_vacation (shop_id hidden from /api/barbers when is_on_vacation=true)",
+      "TestListingFilters::test_barbers_shows_after_vacation_off (shop_id reappears)",
+      "TestListingFilters::test_nearby_hides_vacation (/api/barbers/nearby excludes)",
+      "TestListingFilters::test_ranking_top_filters_vacation (scope=global)",
+      "TestListingFilters::test_ranking_tiers_filters_vacation (walked nested tiers, no leak)",
+      "TestGenderSegregation::test_barbers_type_male_only_male",
+      "TestGenderSegregation::test_barbers_type_female_excludes_male (male test salon not present)",
+      "TestGenderSegregation::test_nearby_type_female_excludes_male",
+      "TestGenderSegregation::test_barbershops_type_female_excludes_male",
+      "TestGenderSegregation::test_search_barbers_type_female_excludes_male (using shop_type=female)",
+      "TestReceiptValidation::test_gif_rejected (400)",
+      "TestReceiptValidation::test_invalid_base64_rejected (400)",
+      "TestReceiptValidation::test_tiny_image_rejected (<100B -> 400)"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v393_backend.py",
+    "/app/test_reports/pytest/v393_results.xml"
+  ],
+  "action_items": [
+    "(MINOR) /api/search/barbers accepts `shop_type` not `type` — inconsistent with the other four listing endpoints. Either alias or rename.",
+    "(MINOR) /api/search/barbers still lacks the approval_status filter that v3.9.3 added to /api/barbers, /api/barbers/nearby, /api/ranking/top, /api/ranking/tiers, /api/seo/city. Non-approved / rejected salons could surface in advanced search. Add the same $or filter.",
+    "(CLEANUP) Test-suite seeded several pending subscription orders with notes='TEST_v393' / 'TEST_v393_approve' on salon 0998765432 — consider a cron or fixture teardown that prunes TEST_-tagged orders periodically."
+  ],
+  "critical_code_review_comments": [
+    "routers/vacation.py uses a build_router(db, require_barbershop) factory to avoid a server.py import cycle — clean pattern, recommend applying it to subscriptions/working_hours next. File is 50 LOC and focused.",
+    "admin_approve branch has a slightly subtle safety-net: `if not payload.duration_days and cycle == 'monthly' and amount >= yearly_price*0.95 -> upgrade to yearly`. Works, but the 0.95 tolerance is undocumented and could surprise ops. Consider adding a comment or a feature-flag.",
+    "server.py still 8177 LOC — only vacation was extracted in this iteration. The iteration_6 recommendation to extract subscriptions/working_hours still applies.",
+    "SubscriptionOrderCreate.billing_cycle defaults to 'monthly' but is NOT validated via Literal — defaults to str. Upgrading to `Literal['monthly','yearly']` in Pydantic would trigger 422 at the layer instead of 400 in-handler and give better OpenAPI docs.",
+    "Approval-status filter is consistently expressed as the same 3-line $or block in 6 places — extract to a module-level helper (e.g. _active_shop_query(shop_type=None) -> Dict) to keep them in sync forever."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v393_backend.py"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "skipped per request"},
+  "test_credentials": {
+    "admin": {"phone": "admin", "password": "NewStrong2026!xYz"},
+    "salon": {"phone": "0998765432", "password": "TestPass2026!", "shop_id": "fefee4cb-4bb7-4000-a3ee-7290f5054114"}
+  },
+  "seed_data_creation": "Added ~6 TEST_-tagged pending/approved subscription_orders to db.subscription_orders for salon 0998765432 (notes starting with TEST_v393). Test salon's subscription_expiry was extended (approve tests run every iteration). Vacation toggled on/off several times — final state: is_on_vacation=false.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_v393_backend.py as the v3.9.3 regression suite (23 tests, all green). Run with REACT_APP_BACKEND_URL exported. The admin_approve tests append ~425 days (yearly) + ~90 days (monthly) to the salon's subscription_expiry every run — consider resetting periodically. Two gaps remain on /api/search/barbers: query param name (`shop_type` vs `type`) and missing approval_status filter — flagged to main agent as MINOR. Gender segregation only has ONE male salon in the DB to test against; to exercise cross-pollution a female salon would need to be seeded.",
+  "rca of the issue": "No critical issues. Two minor endpoint-consistency gaps on /api/search/barbers: (a) param name is `shop_type` instead of `type` — SPA may silently be ignored; (b) approval_status filter was not added in this iteration's pass. Reproduce: curl 'BASE/api/search/barbers?type=female' -> returns male salons because param `type` is dropped by FastAPI. Mitigation: add `type: Optional[str] = None` alias and add the same approval $or filter used on the 5 fixed endpoints."
+}

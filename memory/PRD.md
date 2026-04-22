@@ -149,6 +149,44 @@ User submitted a master-plan document requesting immediate fixes. Shipped:
 Follow-up completing all 3 remaining items + fixing a regression:
 
 ### 🗂️ Router split (completed)
+- New `/app/backend/routers/subscriptions.py` owns all 3 feature blocks (plans CRUD, transfer-recipients, subscription orders lifecycle). Factory pattern `build_router(db, require_auth, require_admin, logger)`.
+- server.py reduced from **8234 → 7560 lines (-674)**. Zero behaviour change — all endpoints still resolve on the same paths.
+
+### 🧪 Playwright E2E suite for PaymentPage
+- New `/app/tests/e2e_payment_page.py` runs via `/opt/plugins-venv/bin/python3`. 10 assertions cover the full flow, 10/10 passing.
+
+### 🎨 Salon detail page design restored
+- Scoped the v3.9.4 global CSS override to `.bh-dark-zone`-wrapped pages only. `BarberProfile`, admin panels, and other pages render their intended warm-chocolate/gold design.
+
+## v3.9.6 — More routers + AuthPage E2E + web-push + salon data seed (2026-04-22)
+Follow-up completing the 3 remaining items + seeding test data:
+
+### 🗂️ More routers extracted
+- New `routers/admin_users.py` owns `/admin/users` + `/admin/stats` (~80 lines). Pattern now proven across 3 routers (vacation / subscriptions / admin_users) — all use the same factory-function pattern.
+- **server.py cumulative reduction: 8234 → 7485 lines (-749 lines across 3 sprints)**.
+- Remaining P2 extractions: `/admin/barbershops` CRUD (~400 lines) + `/barbers/profile` CRUD (~200 lines). Deferred to future iterations — more risky due to intertwined helpers.
+
+### 🧪 AuthPage E2E Playwright suite
+- New `/app/tests/e2e_auth_page.py` — **8/8 passing**.
+- Covers: login loop fix (salon + admin both redirect to correct dashboard, no bounce), token persistence across page reload, shop-type selector present + toggles between male/female with proper highlight classes.
+- Added missing `data-testid` attributes to AuthPage TabsTriggers + login-method buttons (`tab-login`, `tab-register`, `login-method-email`, `login-method-phone`).
+
+### 🔔 Web-push notifications wired for subscription orders
+- `routers/subscriptions.py` now accepts an optional `sec_extras` param from the factory.
+- When a new subscription order is created, after storing the in-app admin notification we enumerate every admin's `push_subscriptions` and fire a push payload via `sec_extras.send_web_push`. Best-effort — fails silently if VAPID keys aren't configured.
+- Push payload includes: title, body (salon name + country + ref code), icon, badge, deep-link URL to `/admin?tab=subscription-orders&order={id}`, and a `tag` to deduplicate toasts.
+
+### 🏪 Test salon data seeded
+- User reported the salon page looked "empty". Root cause: test salon had zero gallery/services/products.
+- Seeded 4 gallery images + 4 services (prices + durations in SYP-equivalent) + 4 products (shampoo, aftershave, beard oil, comb) into `fefee4cb-4bb7-4000-a3ee-7290f5054114` so the BarberProfile page renders the full old-school layout: hero carousel → 4-image gallery grid → about → services with prices → products store → book-now CTA.
+
+### Testing
+- E2E: 10/10 PaymentPage + 8/8 AuthPage = 18/18 assertions passing.
+- Backend: manual verification that `/admin/users`, `/admin/stats`, `/subscription-plans`, `/transfer-recipients`, `/subscription-orders` all resolve from the new routers (not server.py).
+
+Follow-up completing all 3 remaining items + fixing a regression:
+
+### 🗂️ Router split (completed)
 - New `/app/backend/routers/subscriptions.py` owns all 3 feature blocks:
   - Subscription plans CRUD (public list + admin CRUD + seeding)
   - Transfer-recipients singleton (public read + admin update)

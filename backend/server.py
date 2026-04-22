@@ -3558,91 +3558,9 @@ async def approve_subscription(sub_id: str, admin: Dict = Depends(require_admin)
     
     return {"message": "Subscription approved"}
 
-@api_router.get("/admin/users")
-async def get_admin_users(
-    admin: Dict = Depends(require_admin),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
-    user_type: Optional[str] = Query(None, regex="^(user|barber|salon)$"),
-    search: Optional[str] = None,
-):
-    """Get users (customers + barbershops) for admin dashboard with pagination + filtering."""
-    result = []
-    
-    # Build query for customers
-    user_q: Dict[str, Any] = {}
-    shop_q: Dict[str, Any] = {}
-    if search:
-        # Escape user input for regex safety
-        safe_search = re.escape(search)
-        user_q["$or"] = [
-            {"full_name": {"$regex": safe_search, "$options": "i"}},
-            {"phone_number": {"$regex": safe_search, "$options": "i"}},
-        ]
-        shop_q["$or"] = [
-            {"shop_name": {"$regex": safe_search, "$options": "i"}},
-            {"phone_number": {"$regex": safe_search, "$options": "i"}},
-        ]
+# /admin/users and /admin/stats moved to routers/admin_users.py (v3.9.6).
+# Registration happens below via app.include_router.
 
-    # Get customers
-    if user_type in (None, "user"):
-        users = await db.users.find(user_q, {"_id": 0, "password": 0}).skip(skip).limit(limit).to_list(limit)
-        for u in users:
-            result.append({
-                "id": u["id"],
-                "name": u.get("full_name", ""),
-                "phone": u.get("phone_number", ""),
-                "user_type": "user",
-                "country": u.get("country", ""),
-                "city": u.get("city", ""),
-                "subscription_status": "N/A",
-                "created_at": u.get("created_at", "")
-            })
-
-    # Get barbershops
-    if user_type in (None, "barber", "salon"):
-        if user_type == "barber":
-            shop_q["shop_type"] = "male"
-        elif user_type == "salon":
-            shop_q["shop_type"] = "female"
-        shops = await db.barbershops.find(shop_q, {"_id": 0, "password": 0}).skip(skip).limit(limit).to_list(limit)
-        for s in shops:
-            result.append({
-                "id": s["id"],
-                "name": s.get("shop_name", s.get("owner_name", "")),
-                "phone": s.get("phone_number", ""),
-                "user_type": "barber" if s.get("shop_type") == "male" else "salon",
-                "country": s.get("country", ""),
-                "city": s.get("city", ""),
-                "subscription_status": s.get("subscription_status", "inactive"),
-                "created_at": s.get("created_at", "")
-        })
-    
-    return result
-
-@api_router.get("/admin/stats")
-async def get_admin_stats(admin: Dict = Depends(require_admin)):
-    total_users = await db.users.count_documents({})
-    total_barbershops = await db.barbershops.count_documents({})
-    total_bookings = await db.bookings.count_documents({})
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    today_bookings = await db.bookings.count_documents({"booking_date": today})
-    pending_subs = await db.subscriptions.count_documents({"status": "pending"})
-    pending_reports = await db.reports.count_documents({"status": "pending"})
-    pending_verification = await db.barbershops.count_documents({"is_verified": False})
-    active_subs = await db.barbershops.count_documents({"subscription_status": "active"})
-    
-    return {
-        "total_users": total_users,
-        "total_barbershops": total_barbershops,
-        "total_barbers": total_barbershops,
-        "total_bookings": total_bookings,
-        "today_bookings": today_bookings,
-        "pending_subscriptions": pending_subs,
-        "pending_reports": pending_reports,
-        "pending_verification": pending_verification,
-        "active_subscribers": active_subs
-    }
 
 
 # ============== Sub-Admins CRUD (v3.7) ==============
@@ -7146,11 +7064,13 @@ app.include_router(api_router)
 # module with its own endpoints; they receive shared deps via a factory fn. ---
 from routers.vacation import build_router as _build_vacation_router  # noqa: E402
 from routers.subscriptions import build_router as _build_subs_router  # noqa: E402
+from routers.admin_users import build_router as _build_admin_users_router  # noqa: E402
 app.include_router(_build_vacation_router(db, require_barbershop), prefix="/api")
 app.include_router(
-    _build_subs_router(db, require_auth, require_admin, logger),
+    _build_subs_router(db, require_auth, require_admin, logger, sec_extras if SEC_EXTRAS_OK else None),
     prefix="/api",
 )
+app.include_router(_build_admin_users_router(db, require_admin), prefix="/api")
 
 # ============== SECURITY HEADERS MIDDLEWARE ==============
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

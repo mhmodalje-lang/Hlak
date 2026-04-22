@@ -281,12 +281,14 @@ const AuthPage = () => {
             <TabsList className="grid w-full grid-cols-2 mb-6 bg-[var(--bh-glass-bg)] p-1 rounded-xl">
               <TabsTrigger
                 value="login"
+                data-testid="tab-login"
                 className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-[var(--bh-gold)] data-[state=active]:to-[var(--bh-gold-deep)] data-[state=active]:text-[var(--bh-obsidian)] font-bold transition-all"
               >
                 {t.login}
               </TabsTrigger>
               <TabsTrigger
                 value="register"
+                data-testid="tab-register"
                 className="rounded-lg data-[state=active]:bg-gradient-to-r data-[state=active]:from-[var(--bh-gold)] data-[state=active]:to-[var(--bh-gold-deep)] data-[state=active]:text-[var(--bh-obsidian)] font-bold transition-all"
               >
                 {t.register}
@@ -300,6 +302,7 @@ const AuthPage = () => {
                 <button
                   type="button"
                   onClick={() => setLoginMethod('email')}
+                  data-testid="login-method-email"
                   className={`flex-1 py-2 px-4 rounded-lg font-bold text-xs transition-all ${
                     loginMethod === 'email'
                       ? 'bg-gradient-to-r from-[var(--bh-gold)] to-[var(--bh-gold-deep)] text-[var(--bh-obsidian)]'
@@ -311,6 +314,7 @@ const AuthPage = () => {
                 <button
                   type="button"
                   onClick={() => setLoginMethod('phone')}
+                  data-testid="login-method-phone"
                   className={`flex-1 py-2 px-4 rounded-lg font-bold text-xs transition-all ${
                     loginMethod === 'phone'
                       ? 'bg-gradient-to-r from-[var(--bh-gold)] to-[var(--bh-gold-deep)] text-[var(--bh-obsidian)]'

@@ -166,8 +166,13 @@ def _wa_link(digits: str, message: str) -> Optional[str]:
     return f"https://wa.me/{digits}?text={_urlp.quote(message)}"
 
 
-def build_router(db, require_auth, require_admin, logger=None) -> APIRouter:
-    """Factory: returns a fully-wired APIRouter. Caller decides prefix."""
+def build_router(db, require_auth, require_admin, logger=None, sec_extras=None) -> APIRouter:
+    """Factory: returns a fully-wired APIRouter. Caller decides prefix.
+
+    sec_extras is the `security_extras` module imported in server.py. If provided
+    and web-push is enabled (VAPID keys configured), new subscription orders
+    trigger an immediate push notification to every admin who subscribed.
+    """
     router = APIRouter(tags=["subscriptions"])
 
     # ---------- Plans seeding ----------
@@ -446,6 +451,37 @@ def build_router(db, require_auth, require_admin, logger=None) -> APIRouter:
             })
         except Exception:
             pass
+
+        # v3.9.6 — fire web-push to every admin who subscribed to notifications.
+        # We DON'T block the request if push fails; silent best-effort.
+        try:
+            if sec_extras is not None and getattr(sec_extras, "WEBPUSH_OK", False):
+                admins = await db.admins.find({}, {"_id": 0, "id": 1}).to_list(50)
+                admin_ids = [a["id"] for a in admins if a.get("id")]
+                if admin_ids:
+                    subs = await db.push_subscriptions.find(
+                        {"user_id": {"$in": admin_ids}}, {"_id": 0}
+                    ).to_list(200)
+                    push_payload = {
+                        "title": "💳 BARBER HUB — طلب اشتراك جديد",
+                        "body": f"{salon_name or '-'} · {plan.get('country') or ''} · {ref_code}",
+                        "icon": "/icons/icon-192.png",
+                        "badge": "/icons/badge-72.png",
+                        "url": f"/admin?tab=subscription-orders&order={order_doc['id']}",
+                        "tag": f"sub-order-{order_doc['id']}",
+                    }
+                    for s in subs:
+                        try:
+                            sec_extras.send_web_push(
+                                {"endpoint": s.get("endpoint"), "keys": s.get("keys", {})},
+                                push_payload,
+                            )
+                        except Exception as e:
+                            if logger is not None:
+                                logger.debug(f"push send failed for endpoint {s.get('endpoint','')[:40]}…: {e}")
+        except Exception as e:
+            if logger is not None:
+                logger.debug(f"web-push dispatch skipped: {e}")
 
         order_doc.pop("_id", None)
         order_doc["admin_wa_link"] = admin_wa_link

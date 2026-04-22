@@ -7552,6 +7552,10 @@ async def create_subscription_order(
     else:
         salon_phone = entity.get("phone_number")
     wa_digits = re.sub(r"\D", "", str(salon_phone or ""))
+    # wa.me requires full international format. Prepend Syria (963) when the
+    # number is local (starts with 0 and 9-11 digits).
+    if wa_digits.startswith("0") and 9 <= len(wa_digits) <= 11:
+        wa_digits = "963" + wa_digits.lstrip("0")
     admin_wa_link = None
     if wa_digits:
         wa_msg = f"مرحباً {salon_name or ''}، وصلنا طلب اشتراك {ref_code} وسنقوم بمراجعته."
@@ -7619,6 +7623,9 @@ async def admin_list_subscription_orders(
     for o in orders:
         phone = o.get("salon_phone") or ""
         digits = re.sub(r"\D", "", str(phone))
+        # wa.me needs international format — prepend Syria (963) for local numbers
+        if digits.startswith("0") and 9 <= len(digits) <= 11:
+            digits = "963" + digits.lstrip("0")
         if digits:
             msg = f"مرحباً {o.get('salon_name') or ''}، بخصوص طلب الاشتراك {o.get('reference_code') or ''}"
             o["admin_wa_link"] = f"https://wa.me/{digits}?text={_urlp.quote(msg)}"

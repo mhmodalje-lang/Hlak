@@ -62,9 +62,40 @@ BARBER HUB is a **global marketplace super-app** connecting barbers, salons, and
 - `LocationPicker` for hyper-local mapping: GPS capture + manual village/neighborhood/district input.
 
 ## Test Credentials
-- **Admin**: `admin` / `admin123`
-- **Salon**: `0935964158` / `salon123` (id `23a8effc-7e65-4869-9202-b1447430cf45`, country `سوريا`, city `الحسكة`)
+- **Admin**: `admin` / `NewStrong2026!xYz` (rotated — legacy `admin123` rejected)
+- **Test Salon (v3.9.1)**: `0998765432` / `TestPass2026!` (approved)
+- **Legacy Salon**: `0935964158` / rotated (see /app/memory/admin_bootstrap_password.txt)
 - Users: register via `POST /api/auth/register` with `{phone_number, password, full_name, gender, country, city}`.
+
+## v3.9.1 — Manual Subscription Flow + Salon Ops (latest, 2026-04-22)
+User request: 
+1. Remove WhatsApp from Social Gate + Contact page (privacy — communication via platform only)
+2. Facebook deep-link opens Facebook app on mobile (fb://facewebmodal/f?href=)
+3. Full manual subscription flow: plan → recipient details (Syriatel Cash / 4 exchange offices) → upload receipt → admin approves
+4. Salon dashboard: per-day working hours + single Vacation toggle that hides salon from listings + search
+5. Auto wa.me link for admin to message salon on new order
+
+### Backend
+- New: `GET /api/transfer-recipients` (public syriatel_cash singleton + al-haram / al-admiral / al-fuad / balance-transfer offices)
+- New: `PUT /api/admin/transfer-recipients`
+- New: `POST /api/subscription-orders` (auth: salon) — creates pending order with `reference_code` `BH-YY-XXXXXX` and `admin_wa_link` (wa.me auto-built, 963 prefix for local numbers)
+- New: `GET /api/my-subscription-orders` + `GET /api/admin/subscription-orders` + `POST /api/admin/subscription-orders/{id}/approve|reject`
+- New: `POST /api/barbershop/me/vacation` — toggles `is_on_vacation` flag
+- Modified: `GET /api/barbershops` + `GET /api/search/barbers` — filter `is_on_vacation:{$ne:True}` so vacationing salons are hidden
+- Modified: `GET /api/barbers/profile/me` — now returns `is_on_vacation`, `vacation_until`, `vacation_message_ar|en`, `working_hours`
+
+### Frontend
+- `components/SocialFollowGate.jsx` — WhatsApp removed; Facebook uses `fb://facewebmodal/f?href=<url>` on mobile; progress counter is now 3/3.
+- `components/HomeSections.jsx` — footer WhatsApp icon removed.
+- `pages/ContactPage.jsx` — rewritten: only Email + Phone cards, no WhatsApp channel.
+- `pages/PaymentPage.jsx` — full rewrite: step-wise (plan → method → recipient → receipt upload → reference code success screen). Uses `/api/subscription-plans?country_code` + `/api/transfer-recipients` + `POST /api/subscription-orders`.
+- `components/WorkingHoursVacation.jsx` — new card in `BarberDashboard` with per-day open/close hours + day-off toggle + single large Vacation Mode toggle button.
+
+### Testing (iteration_6.json)
+- Backend: 17/17 pytest passed (subscription plans, transfer recipients, subscription orders happy+error paths, vacation hide/unhide, working_hours persistence).
+- Frontend: 4/4 visual spot-checks (Social Gate without WhatsApp, Contact page, HomeSections footer, PaymentPage).
+- Minor issues fixed: wa.me international phone prefix (963).
+
 
 ## Testing Status
 - **Phase 3**: 18/18 backend pytest cases passed (iteration_4.json).

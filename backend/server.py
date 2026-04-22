@@ -7023,6 +7023,258 @@ async def pwa_status():
         },
     }
 
+# ============================================================================
+# SITE SETTINGS (contact info, social links) — admin controlled, public read
+# ============================================================================
+DEFAULT_SITE_SETTINGS = {
+    "id": "site_settings_singleton",
+    "phone": "+963 935 964 158",
+    "email": "",
+    "whatsapp": "",
+    "facebook": "",
+    "instagram": "",
+    "twitter": "",
+    "tiktok": "",
+    "youtube": "",
+    "snapchat": "",
+    "address": "",
+    "tagline_ar": "منصة BARBER HUB الرائدة في حجز مواعيد الحلاقة",
+    "tagline_en": "BARBER HUB — the leading platform to book your barber",
+    "updated_at": None,
+}
+
+class SiteSettingsUpdate(BaseModel):
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    whatsapp: Optional[str] = None
+    facebook: Optional[str] = None
+    instagram: Optional[str] = None
+    twitter: Optional[str] = None
+    tiktok: Optional[str] = None
+    youtube: Optional[str] = None
+    snapchat: Optional[str] = None
+    address: Optional[str] = None
+    tagline_ar: Optional[str] = None
+    tagline_en: Optional[str] = None
+
+
+@api_router.get("/site-settings")
+async def get_site_settings():
+    """Public: fetch current site settings (contact info, social links)."""
+    doc = await db.site_settings.find_one({"id": "site_settings_singleton"}, {"_id": 0})
+    if not doc:
+        # Seed default on first read
+        seed = dict(DEFAULT_SITE_SETTINGS)
+        seed["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.site_settings.insert_one(seed)
+        doc = {k: v for k, v in seed.items() if k != "_id"}
+    return doc
+
+
+@api_router.put("/admin/site-settings")
+async def update_site_settings(payload: SiteSettingsUpdate, admin: Dict = Depends(require_admin)):
+    """Admin-only: update site-wide settings."""
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.site_settings.update_one(
+        {"id": "site_settings_singleton"},
+        {"$set": updates, "$setOnInsert": {"id": "site_settings_singleton", **{k: v for k, v in DEFAULT_SITE_SETTINGS.items() if k != "id" and k not in updates}}},
+        upsert=True,
+    )
+    doc = await db.site_settings.find_one({"id": "site_settings_singleton"}, {"_id": 0})
+    return {"success": True, "settings": doc}
+
+
+# ============================================================================
+# SUBSCRIPTION PLANS per country (admin managed)
+# ============================================================================
+class SubscriptionPlanCreate(BaseModel):
+    country: str                      # e.g. "Syria", "Saudi Arabia", "global"
+    country_code: Optional[str] = None  # e.g. "SY", "SA" — optional
+    country_ar: Optional[str] = None
+    currency: str = "USD"             # e.g. "SYP", "SAR", "USD"
+    currency_symbol: Optional[str] = None  # e.g. "ل.س", "ر.س", "$"
+    monthly_price: float = 20.0
+    yearly_price: Optional[float] = None
+    free_trial_months: int = 2
+    subscribe_url: Optional[str] = None   # external payment link
+    badge_text_ar: Optional[str] = "🎉 عرض خاص - أول شهرين مجاناً 🎉"
+    badge_text_en: Optional[str] = "🎉 Special Offer - First 2 Months Free 🎉"
+    title_ar: Optional[str] = "اشتراك احترافي"
+    title_en: Optional[str] = "Professional Subscription"
+    description_ar: Optional[str] = "باقة متكاملة لإدارة صالونك باحترافية عالية"
+    description_en: Optional[str] = "Full package to run your salon professionally"
+    features_ar: Optional[List[str]] = None
+    features_en: Optional[List[str]] = None
+    active: bool = True
+
+
+class SubscriptionPlanUpdate(BaseModel):
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+    country_ar: Optional[str] = None
+    currency: Optional[str] = None
+    currency_symbol: Optional[str] = None
+    monthly_price: Optional[float] = None
+    yearly_price: Optional[float] = None
+    free_trial_months: Optional[int] = None
+    subscribe_url: Optional[str] = None
+    badge_text_ar: Optional[str] = None
+    badge_text_en: Optional[str] = None
+    title_ar: Optional[str] = None
+    title_en: Optional[str] = None
+    description_ar: Optional[str] = None
+    description_en: Optional[str] = None
+    features_ar: Optional[List[str]] = None
+    features_en: Optional[List[str]] = None
+    active: Optional[bool] = None
+
+
+DEFAULT_PLAN_FEATURES_AR = [
+    "إدارة كاملة للصالون وفريق العمل والخدمات",
+    "نظام حجوزات متقدم مع تنبيهات فورية وتذكيرات تلقائية",
+    "معرض صور احترافي لعرض أعمالك وجذب المزيد من العملاء",
+    "تقارير وإحصائيات لمتابعة الأداء والإيرادات",
+    "دعم فني مميز على مدار الساعة لمساعدتك",
+]
+DEFAULT_PLAN_FEATURES_EN = [
+    "Full salon, staff & services management",
+    "Advanced booking system with instant alerts & auto-reminders",
+    "Professional gallery to showcase your work",
+    "Reports & analytics to track performance & revenue",
+    "Premium 24/7 technical support",
+]
+
+
+async def _seed_default_plans_if_empty():
+    count = await db.subscription_plans.count_documents({})
+    if count > 0:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    defaults = [
+        {
+            "id": str(uuid.uuid4()),
+            "country": "Syria",
+            "country_code": "SY",
+            "country_ar": "سوريا",
+            "currency": "SYP",
+            "currency_symbol": "ل.س",
+            "monthly_price": 250000.0,
+            "yearly_price": None,
+            "free_trial_months": 2,
+            "subscribe_url": "",
+            "badge_text_ar": "🎉 عرض خاص - أول شهرين مجاناً 🎉",
+            "badge_text_en": "🎉 Special Offer - First 2 Months Free 🎉",
+            "title_ar": "اشتراك احترافي",
+            "title_en": "Professional Subscription",
+            "description_ar": "باقة متكاملة لإدارة صالونك باحترافية عالية",
+            "description_en": "Full package to run your salon professionally",
+            "features_ar": DEFAULT_PLAN_FEATURES_AR,
+            "features_en": DEFAULT_PLAN_FEATURES_EN,
+            "active": True,
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "country": "Global",
+            "country_code": "GLOBAL",
+            "country_ar": "عالمي",
+            "currency": "USD",
+            "currency_symbol": "$",
+            "monthly_price": 20.0,
+            "yearly_price": 200.0,
+            "free_trial_months": 2,
+            "subscribe_url": "",
+            "badge_text_ar": "🎉 عرض خاص - أول شهرين مجاناً 🎉",
+            "badge_text_en": "🎉 Special Offer - First 2 Months Free 🎉",
+            "title_ar": "اشتراك احترافي",
+            "title_en": "Professional Subscription",
+            "description_ar": "باقة متكاملة لإدارة صالونك باحترافية عالية",
+            "description_en": "Full package to run your salon professionally",
+            "features_ar": DEFAULT_PLAN_FEATURES_AR,
+            "features_en": DEFAULT_PLAN_FEATURES_EN,
+            "active": True,
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+    await db.subscription_plans.insert_many(defaults)
+
+
+@api_router.get("/subscription-plans")
+async def list_subscription_plans(country: Optional[str] = None, country_code: Optional[str] = None, active_only: bool = True):
+    """Public: list subscription plans. Optionally filter by country or country_code.
+    If filter yields nothing, returns the 'Global' plan as fallback.
+    """
+    await _seed_default_plans_if_empty()
+    query: Dict[str, Any] = {}
+    if active_only:
+        query["active"] = True
+
+    results: List[Dict] = []
+    # Prefer country_code exact match first
+    if country_code:
+        results = await db.subscription_plans.find({**query, "country_code": country_code.upper()}, {"_id": 0}).to_list(50)
+    if not results and country:
+        results = await db.subscription_plans.find({**query, "country": {"$regex": f"^{country}$", "$options": "i"}}, {"_id": 0}).to_list(50)
+    if not results and (country or country_code):
+        # Fallback to Global
+        results = await db.subscription_plans.find({**query, "country_code": "GLOBAL"}, {"_id": 0}).to_list(50)
+    if not results:
+        # No filters → all
+        results = await db.subscription_plans.find(query, {"_id": 0}).sort("country", 1).to_list(200)
+    return {"plans": results}
+
+
+@api_router.get("/admin/subscription-plans")
+async def admin_list_subscription_plans(admin: Dict = Depends(require_admin)):
+    await _seed_default_plans_if_empty()
+    plans = await db.subscription_plans.find({}, {"_id": 0}).sort("country", 1).to_list(500)
+    return {"plans": plans}
+
+
+@api_router.post("/admin/subscription-plans")
+async def create_subscription_plan(payload: SubscriptionPlanCreate, admin: Dict = Depends(require_admin)):
+    now = datetime.now(timezone.utc).isoformat()
+    doc = payload.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    if doc.get("country_code"):
+        doc["country_code"] = doc["country_code"].upper()
+    if not doc.get("features_ar"):
+        doc["features_ar"] = DEFAULT_PLAN_FEATURES_AR
+    if not doc.get("features_en"):
+        doc["features_en"] = DEFAULT_PLAN_FEATURES_EN
+    doc["created_at"] = now
+    doc["updated_at"] = now
+    await db.subscription_plans.insert_one(doc)
+    doc.pop("_id", None)
+    return {"success": True, "plan": doc}
+
+
+@api_router.put("/admin/subscription-plans/{plan_id}")
+async def update_subscription_plan(plan_id: str, payload: SubscriptionPlanUpdate, admin: Dict = Depends(require_admin)):
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if updates.get("country_code"):
+        updates["country_code"] = updates["country_code"].upper()
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.subscription_plans.update_one({"id": plan_id}, {"$set": updates})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    plan = await db.subscription_plans.find_one({"id": plan_id}, {"_id": 0})
+    return {"success": True, "plan": plan}
+
+
+@api_router.delete("/admin/subscription-plans/{plan_id}")
+async def delete_subscription_plan(plan_id: str, admin: Dict = Depends(require_admin)):
+    res = await db.subscription_plans.delete_one({"id": plan_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return {"success": True}
+
+
 # Include the router
 app.include_router(api_router)
 

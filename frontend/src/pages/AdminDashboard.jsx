@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import AdminRankingPanel from '@/components/AdminRankingPanel';
 import AdminReviewModeration from '@/components/AdminReviewModeration';
+import AdminSiteSettingsPanel from '@/components/AdminSiteSettingsPanel';
+import AdminSubscriptionPlansPanel from '@/components/AdminSubscriptionPlansPanel';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -290,6 +292,8 @@ const AdminDashboard = () => {
             </TabsTrigger>
             <TabsTrigger value="wallets" data-testid="tab-wallets">{t.wallets}</TabsTrigger>
             <TabsTrigger value="agents" data-testid="tab-agents">{t.agents}</TabsTrigger>
+            <TabsTrigger value="site_settings" data-testid="tab-site-settings">{isRTL ? 'إعدادات الموقع' : 'Site Settings'}</TabsTrigger>
+            <TabsTrigger value="plans" data-testid="tab-plans">{isRTL ? 'خطط الاشتراك' : 'Subscription Plans'}</TabsTrigger>
             <TabsTrigger value="misc" data-testid="tab-misc">{t.misc}</TabsTrigger>
           </TabsList>
 
@@ -377,6 +381,16 @@ const AdminDashboard = () => {
           {/* Agents */}
           <TabsContent value="agents">
             <AgentsPanel API={API} token={token} agents={agents} onChanged={fetchData} t={t} isRTL={isRTL} isMaster={isMaster} />
+          </TabsContent>
+
+          {/* Site Settings (contact info + social) */}
+          <TabsContent value="site_settings">
+            <AdminSiteSettingsPanel API={API} token={token} language={language} />
+          </TabsContent>
+
+          {/* Subscription Plans per country */}
+          <TabsContent value="plans">
+            <AdminSubscriptionPlansPanel API={API} token={token} language={language} />
           </TabsContent>
 
           {/* Misc */}

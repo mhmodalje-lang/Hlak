@@ -24,6 +24,15 @@ import {
   WhatsApp, AIBrain, Fire
 } from '@/components/icons';
 
+// GentoSY-style premium sections
+import {
+  WhyChooseSection,
+  SubscriptionPlanSection,
+  JourneySection,
+  TestimonialsSection,
+  PremiumFooter,
+} from '@/components/HomeSections';
+
 const HomePage = () => {
   const navigate = useNavigate();
   const { API, gender, user, logout, themeClass, isAuthenticated, isBarber, isAdmin, token } = useApp();
@@ -667,21 +676,29 @@ const HomePage = () => {
         </div>
       </section>
 
+      {/* ============================================================ */}
+      {/* GentoSY-style premium landing sections                         */}
+      {/* ============================================================ */}
+
+      {/* Why Choose BARBER HUB? — 3 feature cards */}
+      <WhyChooseSection language={language} />
+
+      {/* Subscription plan (dynamic per country) */}
+      <SubscriptionPlanSection
+        API={API}
+        language={language}
+        country={country}
+        countryCode={countryCode}
+      />
+
+      {/* Your Journey with BARBER HUB — 3 steps */}
+      <JourneySection language={language} />
+
+      {/* Testimonials */}
+      <TestimonialsSection language={language} />
+
       {/* Footer */}
-      <footer className="py-12 border-t border-[var(--bh-glass-border)] mt-16">
-        <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-2.5">
-              <Shears className="w-6 h-6 text-[var(--bh-gold)]" />
-              <span className="font-display font-bold bh-gold-text text-lg">BARBER HUB</span>
-            </div>
-            <div className="text-sm text-[var(--bh-text-muted)] text-center">
-              © {new Date().getFullYear()} BARBER HUB. {language === 'ar' ? 'جميع الحقوق محفوظة' : 'All rights reserved'}
-            </div>
-            <LanguageToggle />
-          </div>
-        </div>
-      </footer>
+      <PremiumFooter API={API} language={language} />
     </div>
   );
 };

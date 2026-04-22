@@ -280,8 +280,9 @@ class GalleryImageResponse(BaseModel):
 class BookingCreate(BaseModel):
     barbershop_id: Optional[str] = None
     barber_id: Optional[str] = None
+    staff_id: Optional[str] = None            # v3.9.7 — pick a specific staff member when salon has multiple
     service_id: Optional[str] = None
-    service_ids: Optional[List[str]] = None
+    service_ids: Optional[List[str]] = None   # user can select multiple services per booking
     booking_date: Optional[str] = None
     date: Optional[str] = None
     start_time: Optional[str] = None
@@ -2783,28 +2784,40 @@ async def create_booking(booking_data: BookingCreate, entity: Dict = Depends(get
     end_time = calculate_end_time(start_time, total_duration)
     
     # ATOMIC slot reservation to prevent race conditions.
-    # Strategy: first check for overlap (fast common-case path), then insert.
-    # A true lock-free approach would use a unique compound index on (barbershop_id, booking_date, start_time),
-    # but bookings can have different durations so we keep the overlap check and accept a rare double-insert
-    # which will then be detected by the same query after insertion (compensating cleanup below).
-    existing = await db.bookings.find_one({
+    # v3.9.7 — when staff_id is provided, slot is per-staff (multi-barber salons can
+    # run parallel bookings). When no staff is picked, we treat it as a whole-shop block.
+    overlap_filter: Dict[str, Any] = {
         "barbershop_id": barbershop_id,
         "booking_date": booking_date,
         "status": {"$in": ["pending", "confirmed"]},
         "$or": [
             {"start_time": {"$lt": end_time}, "end_time": {"$gt": start_time}}
         ]
-    })
+    }
+    if booking_data.staff_id:
+        overlap_filter["staff_id"] = booking_data.staff_id
+    existing = await db.bookings.find_one(overlap_filter)
     
     if existing:
         raise HTTPException(status_code=400, detail="This time slot is not available")
     
+    # v3.9.7 — validate staff_id (if provided) belongs to this salon
+    staff_id = booking_data.staff_id
+    staff_name = None
+    if staff_id:
+        staff_doc = await db.staff.find_one({"id": staff_id, "barbershop_id": barbershop_id}, {"_id": 0})
+        if not staff_doc:
+            raise HTTPException(status_code=404, detail="Selected staff member not found in this salon")
+        staff_name = staff_doc.get("name") or staff_doc.get("full_name")
+
     booking_id = str(uuid.uuid4())
     booking_doc = {
         "id": booking_id,
         "user_id": entity['id'] if entity and entity.get('entity_type') == 'user' else None,
         "barbershop_id": barbershop_id,
         "barbershop_name": shop['shop_name'],
+        "staff_id": staff_id,
+        "staff_name": staff_name,
         "service_id": booking_data.service_id or (booking_data.service_ids[0] if booking_data.service_ids else None),
         "service_name": ", ".join(service_names) if service_names else "Service",
         "booking_date": booking_date,
@@ -2824,7 +2837,7 @@ async def create_booking(booking_data: BookingCreate, entity: Dict = Depends(get
 
     # Post-insert race-condition check: if another booking was inserted concurrently with
     # overlapping time, delete ours (the later-created one) and return 400.
-    overlap = await db.bookings.find_one({
+    post_overlap_filter: Dict[str, Any] = {
         "barbershop_id": barbershop_id,
         "booking_date": booking_date,
         "status": {"$in": ["pending", "confirmed"]},
@@ -2833,7 +2846,10 @@ async def create_booking(booking_data: BookingCreate, entity: Dict = Depends(get
         "$or": [
             {"start_time": {"$lt": end_time}, "end_time": {"$gt": start_time}}
         ]
-    })
+    }
+    if booking_data.staff_id:
+        post_overlap_filter["staff_id"] = booking_data.staff_id
+    overlap = await db.bookings.find_one(post_overlap_filter)
     if overlap:
         await db.bookings.delete_one({"id": booking_id})
         raise HTTPException(status_code=400, detail="This time slot is not available")

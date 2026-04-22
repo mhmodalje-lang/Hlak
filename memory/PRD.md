@@ -159,6 +159,46 @@ Follow-up completing all 3 remaining items + fixing a regression:
 - Scoped the v3.9.4 global CSS override to `.bh-dark-zone`-wrapped pages only. `BarberProfile`, admin panels, and other pages render their intended warm-chocolate/gold design.
 
 ## v3.9.6 — More routers + AuthPage E2E + web-push + salon data seed (2026-04-22)
+
+### 🗂️ More routers extracted
+- New `routers/admin_users.py` owns `/admin/users` + `/admin/stats`. Pattern now proven across 3 routers (vacation / subscriptions / admin_users).
+- **server.py cumulative reduction: 8234 → 7485 lines (-749 lines across 3 sprints)**.
+
+### 🧪 AuthPage E2E Playwright
+- New `/app/tests/e2e_auth_page.py` — 8/8 passing.
+- Covers: login loop fix, token persistence, shop-type selector male/female toggle.
+
+### 🔔 Web-push notifications wired for subscription orders
+- `routers/subscriptions.py` fires web-push via `sec_extras.send_web_push` to every admin on new order.
+
+### 🏪 Test salon data seeded
+- 4 gallery images + 4 services + 4 products so the BarberProfile renders the full old-school layout.
+
+## v3.9.7 — Services Library + Multi-Barber Booking + Alternating sections (2026-04-22)
+User feedback after v3.9.6 — complete UX overhaul for the salon-setup and booking flows:
+
+### 🧰 Services Library (ProfileSetup redesign)
+- **Before**: cramped 4-column grid "اسم الـ / اسم الـ / السعر / +" with overflowing labels, forced barbers to type every service name twice.
+- **After**: Two-step flow:
+  1. **Preset library** — 10 male / 13 female ready-to-add services with emoji icons (Haircut, Beard Trim, Classic Shave, Face Cleaning, Kids Haircut, Keratin, Hair Color, Makeup, Bridal, Manicure, etc.). One tap to add, one tap to remove.
+  2. **Chosen services** list — each row shows icon + localized name + duration + an inline price input + auto-detected currency symbol.
+  3. **Custom service** form in a separate dashed-border card with 4 stacked inputs (not cramped grid).
+- **Currency auto-detection**: `COUNTRY_CURRENCY` map auto-picks SYP/SAR/AED/EGP/JOD/IQD/LBP/USD based on salon's country. Displayed as a pill badge `Currency: ل.س` next to the section title.
+
+### 💈 Multi-Barber / Staff Picker
+- **Backend**: `BookingCreate` now accepts `staff_id`. On create, validates the staff belongs to the same salon, stores `staff_name` on the booking doc, and **slot-reservation is per-staff** — two barbers can take parallel bookings. No staff_id → whole-shop block (legacy behaviour).
+- **Frontend**: `BookingPage` fetches `/api/barbershops/{id}/staff`. When ≥2 active staff exist, a **Staff Picker** card appears before service selection with: "Any available" + one tile per barber (avatar/initial + name + specialty). Choosing one stamps `staff_id` into the booking payload.
+- Verified: Mongo record shows `staff_id` + `staff_name` Arabic correctly persisted.
+
+### 🎨 Alternating light/dark sections
+- User said "لا تخلي كل الاقسام تحتها اسود — خلي اقسام ابيض واقسام اسود".
+- Added `.bh-section-light` (cream-glass panel) + `.bh-section-dark` (deep-black) utility classes scoped under `.bh-dark-zone`. HomePage now alternates — Sponsored (dark) → Top Barbers (light cream) → All Barbers (dark).
+
+### Testing
+- E2E: 10/10 PaymentPage + 8/8 AuthPage = **18/18 still passing**.
+- Manual: services library renders 10 preset tiles for men, currency badge shows "SYP", booking with staff_id persists correctly in Mongo.
+
+
 Follow-up completing the 3 remaining items + seeding test data:
 
 ### 🗂️ More routers extracted

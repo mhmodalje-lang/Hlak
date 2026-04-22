@@ -518,7 +518,7 @@ const HomePage = () => {
 
       {/* ====== Sponsored in Your City ====== */}
       {sponsoredShops.length > 0 && (
-        <section className="py-12" data-testid="sponsored-section">
+        <section className="py-12 bh-section-dark" data-testid="sponsored-section">
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
               <div>
@@ -629,10 +629,10 @@ const HomePage = () => {
         tiers.governorate_top.length === 0 &&
         tiers.country_top.length === 0 &&
         tiers.global_elite.length === 0 && (
-        <section className="py-16">
+        <section className="py-16 bh-section-light">
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between mb-10">
-              <h2 className="text-3xl md:text-4xl font-display font-bold text-white flex items-center gap-3">
+              <h2 className="text-3xl md:text-4xl font-display font-bold flex items-center gap-3">
                 <Crown className="w-8 h-8 text-[var(--bh-gold)]" />
                 {t.topBarbers}
               </h2>
@@ -649,7 +649,7 @@ const HomePage = () => {
       )}
 
       {/* All Barbers */}
-      <section className="py-16">
+      <section className="py-16 bh-section-dark">
         <div className="container mx-auto px-4">
           <h2 className="text-3xl md:text-4xl font-display font-bold text-white mb-10 flex items-center gap-3">
             <Location className="w-8 h-8 text-[var(--bh-gold)]" />

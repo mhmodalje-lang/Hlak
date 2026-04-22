@@ -35,6 +35,8 @@ const BookingPage = () => {
   const { countryCode } = useGeoLocation();
   
   const [barber, setBarber] = useState(null);
+  const [staffMembers, setStaffMembers] = useState([]);
+  const [selectedStaffId, setSelectedStaffId] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(null);
   const [selectedServices, setSelectedServices] = useState([]);
@@ -87,8 +89,13 @@ const BookingPage = () => {
       if (!barberId) return;
       setIsLoading(true);
       try {
-        const res = await axios.get(`${API}/barbershops/${barberId}`);
+        const [res, staffRes] = await Promise.all([
+          axios.get(`${API}/barbershops/${barberId}`),
+          axios.get(`${API}/barbershops/${barberId}/staff`).catch(() => ({ data: [] })),
+        ]);
         setBarber(res.data);
+        const staffList = Array.isArray(staffRes.data) ? staffRes.data : (staffRes.data?.staff || []);
+        setStaffMembers(staffList.filter(s => s.active !== false));
       } catch (err) {
         toast.error(t.bookingError);
         console.error(err);
@@ -170,9 +177,10 @@ const BookingPage = () => {
     try {
       const bookingData = {
         barbershop_id: barberId,
+        staff_id: selectedStaffId || null,
         date: format(selectedDate, 'yyyy-MM-dd'),
         time: selectedTime,
-        services: selectedServices.map(s => s.id),
+        service_ids: selectedServices.map(s => s.id || s.name),
         customer_name: customerName,
         customer_phone: customerPhone,
         notes: notes,
@@ -300,6 +308,65 @@ const BookingPage = () => {
                       </button>
                     );
                   })}
+                </div>
+              </motion.div>
+            )}
+
+            {/* v3.9.7 — Staff / Barber Selection (only shown when salon has 2+ staff) */}
+            {staffMembers.length >= 2 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                className="bh-glass-vip rounded-3xl p-6 bh-corner-accents"
+                data-testid="staff-picker"
+              >
+                <h2 className="text-2xl font-display font-bold bh-gold-text mb-4 flex items-center gap-2">
+                  <Shears className="w-6 h-6" />
+                  {isRTL ? 'اختر الحلاق' : 'Pick your barber'}
+                </h2>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <button
+                    onClick={() => setSelectedStaffId(null)}
+                    className={`p-4 rounded-xl border-2 transition-all text-start ${
+                      selectedStaffId === null
+                        ? 'border-[var(--bh-gold)] bg-gradient-to-br from-[var(--bh-gold)]/25 to-[var(--bh-gold-deep)]/10'
+                        : 'border-transparent bg-[var(--bh-glass-bg)] hover:border-[var(--bh-gold)]/40'
+                    }`}
+                    data-testid="staff-any"
+                  >
+                    <div className="text-2xl mb-1">⭐</div>
+                    <p className="font-bold text-[var(--bh-text-primary)] text-sm">
+                      {isRTL ? 'أي حلاق متاح' : 'Any available'}
+                    </p>
+                    <p className="text-[11px] text-[var(--bh-text-muted)]">
+                      {isRTL ? 'يختاره الصالون' : 'Salon decides'}
+                    </p>
+                  </button>
+                  {staffMembers.map(staff => (
+                    <button
+                      key={staff.id}
+                      onClick={() => setSelectedStaffId(staff.id)}
+                      className={`p-4 rounded-xl border-2 transition-all text-start ${
+                        selectedStaffId === staff.id
+                          ? 'border-[var(--bh-gold)] bg-gradient-to-br from-[var(--bh-gold)]/25 to-[var(--bh-gold-deep)]/10'
+                          : 'border-transparent bg-[var(--bh-glass-bg)] hover:border-[var(--bh-gold)]/40'
+                      }`}
+                      data-testid={`staff-${staff.id}`}
+                    >
+                      {staff.avatar_url ? (
+                        <img src={staff.avatar_url} alt={staff.name} className="w-10 h-10 rounded-full object-cover mb-2" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-[var(--bh-gold)]/20 flex items-center justify-center mb-2 text-[var(--bh-gold)] font-bold">
+                          {(staff.name || '?').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <p className="font-bold text-[var(--bh-text-primary)] text-sm truncate">{staff.name || staff.full_name}</p>
+                      {staff.specialty && (
+                        <p className="text-[11px] text-[var(--bh-text-muted)] truncate">{staff.specialty}</p>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </motion.div>
             )}

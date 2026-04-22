@@ -10,7 +10,7 @@ import axios from 'axios';
 import LocationPicker from '@/components/LocationPicker';
 import ImageUploader from '@/components/ImageUploader';
 import { 
-  ArrowRight, ArrowLeft, Plus, X, Loader2, Save,
+  ArrowRight, ArrowLeft, Plus, X, Loader2, Save, Check,
   Clock, DollarSign, Image, Link as LinkIcon
 } from 'lucide-react';
 
@@ -55,26 +55,60 @@ const ProfileSetup = () => {
     }
   });
 
-  const [newService, setNewService] = useState({ name: '', name_ar: '', price: '', duration_minutes: 30 });
+  const [newService, setNewService] = useState({ name: '', name_ar: '', price: '', duration_minutes: 30, currency: 'USD' });
   const [newImage, setNewImage] = useState({ before: '', after: '' });
+  // v3.9.7 — helper: currency auto-detected from the salon's country
+  // (user requested "يختار عملة بلده" — pick currency from country automatically).
+  const COUNTRY_CURRENCY = {
+    'Syria': { code: 'SYP', symbol: 'ل.س' },
+    'سوريا': { code: 'SYP', symbol: 'ل.س' },
+    'Saudi Arabia': { code: 'SAR', symbol: 'ر.س' },
+    'السعودية': { code: 'SAR', symbol: 'ر.س' },
+    'UAE': { code: 'AED', symbol: 'د.إ' },
+    'الإمارات': { code: 'AED', symbol: 'د.إ' },
+    'Egypt': { code: 'EGP', symbol: 'ج.م' },
+    'مصر': { code: 'EGP', symbol: 'ج.م' },
+    'Jordan': { code: 'JOD', symbol: 'د.أ' },
+    'الأردن': { code: 'JOD', symbol: 'د.أ' },
+    'Iraq': { code: 'IQD', symbol: 'د.ع' },
+    'العراق': { code: 'IQD', symbol: 'د.ع' },
+    'Lebanon': { code: 'LBP', symbol: 'ل.ل' },
+    'لبنان': { code: 'LBP', symbol: 'ل.ل' },
+  };
+  const detectedCurrency = COUNTRY_CURRENCY[formData.country] || COUNTRY_CURRENCY[user?.country] || { code: 'USD', symbol: '$' };
 
   const isMen = gender === 'male';
 
+  // list ourselves — barber just picks + sets price"). These are the ready-to-add
+  // presets, grouped by gender. Barber taps + icon → stays on screen with his price.
   const defaultServicessMen = [
-    { name: 'Haircut', name_ar: 'قص شعر', price: 10, duration_minutes: 30 },
-    { name: 'Beard Trim', name_ar: 'تشذيب الذقن', price: 5, duration_minutes: 15 },
-    { name: 'Face Cleaning', name_ar: 'تنظيف البشرة', price: 8, duration_minutes: 20 },
-    { name: 'Hair Color', name_ar: 'صبغة شعر', price: 20, duration_minutes: 45 }
+    { key: 'haircut', name: 'Haircut', name_ar: 'قص شعر', duration_minutes: 30, icon: '✂️' },
+    { key: 'beard',   name: 'Beard Trim', name_ar: 'تشذيب اللحية', duration_minutes: 15, icon: '🧔' },
+    { key: 'shave',   name: 'Classic Shave', name_ar: 'حلاقة تقليدية', duration_minutes: 20, icon: '🪒' },
+    { key: 'face',    name: 'Face Cleaning', name_ar: 'تنظيف البشرة', duration_minutes: 20, icon: '🧖' },
+    { key: 'color',   name: 'Hair Color', name_ar: 'صبغة شعر', duration_minutes: 45, icon: '🎨' },
+    { key: 'kid',     name: 'Kids Haircut', name_ar: 'قص للأطفال', duration_minutes: 20, icon: '👶' },
+    { key: 'wash',    name: 'Hair Wash + Style', name_ar: 'غسيل وتصفيف', duration_minutes: 20, icon: '💧' },
+    { key: 'mask',    name: 'Hair Mask Treatment', name_ar: 'حمام زيت', duration_minutes: 30, icon: '🫙' },
+    { key: 'combo',   name: 'Full Grooming Combo', name_ar: 'باقة العناية الكاملة', duration_minutes: 60, icon: '👑' },
+    { key: 'eyebrow', name: 'Eyebrow Shaping', name_ar: 'تشذيب الحاجب', duration_minutes: 10, icon: '✨' },
   ];
-
   const defaultServicesWomen = [
-    { name: 'Haircut', name_ar: 'قص شعر', price: 15, duration_minutes: 45 },
-    { name: 'Hair Styling', name_ar: 'تصفيف شعر', price: 20, duration_minutes: 60 },
-    { name: 'Makeup', name_ar: 'مكياج', price: 30, duration_minutes: 60 },
-    { name: 'Hair Color', name_ar: 'صبغة شعر', price: 40, duration_minutes: 90 },
-    { name: 'Manicure', name_ar: 'مناكير', price: 15, duration_minutes: 30 },
-    { name: 'Facial', name_ar: 'عناية بالبشرة', price: 25, duration_minutes: 45 }
+    { key: 'haircut',    name: 'Haircut', name_ar: 'قص شعر', duration_minutes: 45, icon: '✂️' },
+    { key: 'styling',    name: 'Hair Styling', name_ar: 'تصفيف شعر', duration_minutes: 60, icon: '💇‍♀️' },
+    { key: 'keratin',    name: 'Keratin Treatment', name_ar: 'بروتين / كيراتين', duration_minutes: 180, icon: '💎' },
+    { key: 'color',      name: 'Hair Color', name_ar: 'صبغة شعر', duration_minutes: 90, icon: '🎨' },
+    { key: 'highlights', name: 'Highlights', name_ar: 'هايلايت', duration_minutes: 120, icon: '🌟' },
+    { key: 'makeup',     name: 'Makeup', name_ar: 'مكياج', duration_minutes: 60, icon: '💄' },
+    { key: 'bridal',     name: 'Bridal Makeup', name_ar: 'مكياج عروس', duration_minutes: 180, icon: '👰' },
+    { key: 'manicure',   name: 'Manicure', name_ar: 'مناكير', duration_minutes: 30, icon: '💅' },
+    { key: 'pedicure',   name: 'Pedicure', name_ar: 'باديكير', duration_minutes: 45, icon: '🦶' },
+    { key: 'facial',     name: 'Facial Treatment', name_ar: 'تنظيف بشرة', duration_minutes: 60, icon: '🧖‍♀️' },
+    { key: 'threading',  name: 'Threading', name_ar: 'خيط حواجب', duration_minutes: 15, icon: '✨' },
+    { key: 'waxing',     name: 'Full Body Waxing', name_ar: 'إزالة الشعر بالشمع', duration_minutes: 60, icon: '🕯️' },
+    { key: 'henna',      name: 'Henna', name_ar: 'حناء', duration_minutes: 30, icon: '🤎' },
   ];
+  const defaultServices = isMen ? defaultServicessMen : defaultServicesWomen;
 
   const texts = {
     ar: {
@@ -201,9 +235,32 @@ const ProfileSetup = () => {
     if (!newService.name || !newService.price) return;
     setFormData({
       ...formData,
-      custom_services: [...formData.custom_services, { ...newService, price: parseFloat(newService.price) }]
+      custom_services: [...formData.custom_services, {
+        ...newService,
+        price: parseFloat(newService.price),
+        currency: newService.currency || detectedCurrency.code,
+      }]
     });
-    setNewService({ name: '', name_ar: '', price: '', duration_minutes: 30 });
+    setNewService({ name: '', name_ar: '', price: '', duration_minutes: 30, currency: detectedCurrency.code });
+  };
+
+  // v3.9.7 — one-tap "Add preset service" + edit price/currency inline
+  const addPresetService = (preset) => {
+    // Don't add a duplicate
+    if (formData.services.some(s => s.key === preset.key || s.name_ar === preset.name_ar)) return;
+    setFormData({
+      ...formData,
+      services: [...formData.services, { ...preset, price: 0, currency: detectedCurrency.code }],
+    });
+  };
+  const removePresetService = (key) => {
+    setFormData({ ...formData, services: formData.services.filter(s => s.key !== key) });
+  };
+  const updatePresetServicePrice = (key, price) => {
+    setFormData({
+      ...formData,
+      services: formData.services.map(s => s.key === key ? { ...s, price: parseFloat(price) || 0 } : s),
+    });
   };
 
   const removeCustomService = (index) => {
@@ -441,63 +498,160 @@ const ProfileSetup = () => {
             </div>
           </div>
 
-          {/* Services */}
-          <div className={`${isMen ? 'card-men' : 'card-women'} p-6`}>
-            <h2 className={`text-lg font-bold mb-4 ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
-              <DollarSign className="w-5 h-5 inline me-2" />
-              {t.services}
-            </h2>
-            
-            {/* Default Services */}
-            <p className={`text-sm mb-2 ${labelClass}`}>{t.defaultServices}:</p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {formData.services.map((s, i) => (
-                <span key={i} className={`px-3 py-1 rounded-full text-sm ${isMen ? 'bg-[#3A2E1F] text-white' : 'bg-[#E7E5E4] text-[#1C1917]'}`}>
-                  {language === 'ar' ? s.name_ar : s.name} - {s.price}€
-                </span>
-              ))}
+          {/* Services — v3.9.7 redesign: preset library + one-tap add + inline price */}
+          <div className={`${isMen ? 'card-men' : 'card-women'} p-6`} data-testid="services-section">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <h2 className={`text-lg font-bold ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
+                <DollarSign className="w-5 h-5 inline me-2" />
+                {t.services}
+              </h2>
+              <span className={`text-xs px-2.5 py-1 rounded-full border ${isMen ? 'border-amber-400/40 text-amber-300 bg-amber-500/10' : 'border-rose-400/40 text-rose-500 bg-rose-50'}`}>
+                {language === 'ar' ? `العملة: ${detectedCurrency.symbol}` : `Currency: ${detectedCurrency.code}`}
+              </span>
             </div>
+            <p className={`text-xs mb-4 ${labelClass}`}>
+              {language === 'ar'
+                ? 'اختر الخدمات التي تقدمها وحدد سعرك لكل خدمة. يمكنك أيضاً إضافة خدمات مخصصة في الأسفل.'
+                : 'Pick the services you offer and set your price. You can add custom ones at the bottom.'}
+            </p>
 
-            {/* Custom Services */}
-            <p className={`text-sm mb-2 ${labelClass}`}>{t.customServices}:</p>
-            <div className="space-y-2 mb-4">
-              {formData.custom_services.map((s, i) => (
-                <div key={i} className={`flex items-center justify-between p-2 rounded ${isMen ? 'bg-[#2A1F14]' : 'bg-[#FAFAFA]'}`}>
-                  <span className={isMen ? 'text-white' : 'text-[#1C1917]'}>
-                    {language === 'ar' ? s.name_ar : s.name} - {s.price}€ ({s.duration_minutes}min)
-                  </span>
-                  <button onClick={() => removeCustomService(i)} className="text-red-500">
-                    <X className="w-4 h-4" />
+            {/* Preset library — tap to add */}
+            <p className={`text-sm font-semibold mb-2 ${labelClass}`}>
+              {language === 'ar' ? 'مكتبة الخدمات (انقر للإضافة)' : 'Service Library (tap to add)'}
+            </p>
+            <div className="flex flex-wrap gap-2 mb-5" data-testid="preset-services-grid">
+              {defaultServices.map(preset => {
+                const added = formData.services.some(s => s.key === preset.key);
+                return (
+                  <button
+                    key={preset.key}
+                    onClick={() => added ? removePresetService(preset.key) : addPresetService(preset)}
+                    className={`px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                      added
+                        ? (isMen ? 'border-amber-400 bg-amber-500/20 text-amber-200' : 'border-rose-400 bg-rose-100 text-rose-700')
+                        : (isMen ? 'border-[#3A2E1F] bg-[#2A1F14] text-gray-300 hover:border-amber-400/60' : 'border-[#E7E5E4] bg-white text-[#1C1917] hover:border-rose-400/60')
+                    }`}
+                    data-testid={`preset-${preset.key}`}
+                  >
+                    <span className="me-1.5">{preset.icon}</span>
+                    {language === 'ar' ? preset.name_ar : preset.name}
+                    {added && <Check className="w-3 h-3 inline ms-1.5" strokeWidth={3} />}
                   </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Add Custom Service */}
-            <div className="grid grid-cols-4 gap-2">
-              <Input
-                placeholder={t.serviceName}
-                value={newService.name}
-                onChange={(e) => setNewService({ ...newService, name: e.target.value })}
-                className={inputClass}
-              />
-              <Input
-                placeholder={t.serviceNameAr}
-                value={newService.name_ar}
-                onChange={(e) => setNewService({ ...newService, name_ar: e.target.value })}
-                className={inputClass}
-                dir="rtl"
-              />
-              <Input
-                type="number"
-                placeholder={t.price}
-                value={newService.price}
-                onChange={(e) => setNewService({ ...newService, price: e.target.value })}
-                className={inputClass}
-              />
-              <Button onClick={addCustomService} className={isMen ? 'btn-primary-men' : 'btn-primary-women'}>
-                <Plus className="w-4 h-4" />
-              </Button>
+            {/* Chosen services with price input */}
+            {formData.services.length > 0 && (
+              <>
+                <p className={`text-sm font-semibold mb-2 ${labelClass}`}>
+                  {language === 'ar' ? 'حدّد السعر لكل خدمة اخترتها:' : 'Set price for each chosen service:'}
+                </p>
+                <div className="space-y-2 mb-5" data-testid="chosen-services-list">
+                  {formData.services.map(svc => (
+                    <div key={svc.key} className={`flex items-center gap-3 p-3 rounded-xl ${isMen ? 'bg-[#2A1F14] border border-[#3A2E1F]' : 'bg-[#FAFAFA] border border-[#E7E5E4]'}`}>
+                      <div className="text-2xl">{svc.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold truncate ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
+                          {language === 'ar' ? svc.name_ar : svc.name}
+                        </p>
+                        <p className="text-[11px] text-gray-400">{svc.duration_minutes} {language === 'ar' ? 'دقيقة' : 'min'}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          value={svc.price || ''}
+                          onChange={(e) => updatePresetServicePrice(svc.key, e.target.value)}
+                          className={`${inputClass} w-24 text-center`}
+                          data-testid={`price-${svc.key}`}
+                        />
+                        <span className={`text-xs font-semibold ${isMen ? 'text-amber-300' : 'text-rose-500'}`}>{detectedCurrency.symbol}</span>
+                      </div>
+                      <button onClick={() => removePresetService(svc.key)} className="text-red-500 hover:text-red-400 p-1" data-testid={`remove-${svc.key}`}>
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Custom Services already added */}
+            {formData.custom_services.length > 0 && (
+              <>
+                <p className={`text-sm font-semibold mb-2 ${labelClass}`}>{t.customServices}:</p>
+                <div className="space-y-2 mb-4">
+                  {formData.custom_services.map((s, i) => (
+                    <div key={i} className={`flex items-center justify-between gap-3 p-3 rounded-xl ${isMen ? 'bg-[#2A1F14] border border-[#3A2E1F]' : 'bg-[#FAFAFA] border border-[#E7E5E4]'}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold truncate ${isMen ? 'text-white' : 'text-[#1C1917]'}`}>
+                          {language === 'ar' ? (s.name_ar || s.name) : (s.name || s.name_ar)}
+                        </p>
+                        <p className="text-[11px] text-gray-400">
+                          {s.price} {s.currency || detectedCurrency.code} · {s.duration_minutes || 30} {language === 'ar' ? 'دقيقة' : 'min'}
+                        </p>
+                      </div>
+                      <button onClick={() => removeCustomService(i)} className="text-red-500 hover:text-red-400 p-1">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Add Custom Service — stacked form, no more cramped grid */}
+            <div className={`p-4 rounded-xl ${isMen ? 'bg-[#1a1209] border-2 border-dashed border-amber-400/30' : 'bg-[#FFF7F5] border-2 border-dashed border-rose-400/30'}`}>
+              <p className={`text-xs font-bold mb-3 ${isMen ? 'text-amber-300' : 'text-rose-500'}`}>
+                {language === 'ar' ? '➕ خدمة مخصصة (غير مدرجة في القائمة)' : '➕ Custom service (not in library)'}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                <Input
+                  placeholder={language === 'ar' ? 'اسم الخدمة بالإنجليزي' : 'Service name (English)'}
+                  value={newService.name}
+                  onChange={(e) => setNewService({ ...newService, name: e.target.value })}
+                  className={inputClass}
+                  data-testid="custom-service-name"
+                />
+                <Input
+                  placeholder={language === 'ar' ? 'اسم الخدمة بالعربي' : 'Service name (Arabic)'}
+                  value={newService.name_ar}
+                  onChange={(e) => setNewService({ ...newService, name_ar: e.target.value })}
+                  className={inputClass}
+                  dir="rtl"
+                  data-testid="custom-service-name-ar"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="relative">
+                  <Input
+                    type="number"
+                    placeholder={language === 'ar' ? 'السعر' : 'Price'}
+                    value={newService.price}
+                    onChange={(e) => setNewService({ ...newService, price: e.target.value })}
+                    className={`${inputClass} pe-10`}
+                    data-testid="custom-service-price"
+                  />
+                  <span className={`absolute top-1/2 -translate-y-1/2 end-3 text-xs font-semibold ${isMen ? 'text-amber-300' : 'text-rose-500'}`}>{detectedCurrency.symbol}</span>
+                </div>
+                <Input
+                  type="number"
+                  placeholder={language === 'ar' ? 'المدة (دقيقة)' : 'Duration (min)'}
+                  value={newService.duration_minutes}
+                  onChange={(e) => setNewService({ ...newService, duration_minutes: parseInt(e.target.value || '30', 10) })}
+                  className={inputClass}
+                  data-testid="custom-service-duration"
+                />
+                <Button
+                  onClick={addCustomService}
+                  className={isMen ? 'btn-primary-men' : 'btn-primary-women'}
+                  data-testid="add-custom-service-btn"
+                >
+                  <Plus className="w-4 h-4 me-1" />
+                  {language === 'ar' ? 'إضافة' : 'Add'}
+                </Button>
+              </div>
             </div>
           </div>
 

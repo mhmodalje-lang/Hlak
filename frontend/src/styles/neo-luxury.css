@@ -501,7 +501,35 @@ body, html, #root {
   color: var(--bh-text-muted) !important;
 }
 
-/* Auth page: make the shell feel full-screen / luxurious on desktop */
+/* v3.9.7 — Alternating section backgrounds within bh-dark-zone.
+   User requested "اقسام ابيض واقسام اسود" (alternating white/black sections).
+   Any descendant marked with `.bh-section-light` gets a cream glass panel;
+   `.bh-section-dark` keeps the true-black aesthetic. */
+.bh-dark-zone .bh-section-light {
+  background: linear-gradient(180deg,
+    rgba(247, 231, 206, 0.97) 0%,
+    rgba(232, 215, 195, 0.94) 100%) !important;
+  color: #1a1209 !important;
+  border-top: 1px solid rgba(212, 175, 55, 0.25);
+  border-bottom: 1px solid rgba(212, 175, 55, 0.25);
+}
+.bh-dark-zone .bh-section-light h1,
+.bh-dark-zone .bh-section-light h2,
+.bh-dark-zone .bh-section-light h3,
+.bh-dark-zone .bh-section-light h4,
+.bh-dark-zone .bh-section-light p,
+.bh-dark-zone .bh-section-light span:not(.text-amber-400):not(.text-pink-400) {
+  color: #1a1209 !important;
+}
+.bh-dark-zone .bh-section-light .text-gray-400,
+.bh-dark-zone .bh-section-light .text-gray-500 {
+  color: #5c4a35 !important;
+}
+.bh-dark-zone .bh-section-dark {
+  background: linear-gradient(180deg, #000000 0%, #0a0a0a 100%) !important;
+}
+
+
 .bh-auth-shell {
   min-height: 100dvh;
   width: 100%;

@@ -34,7 +34,7 @@
         \"relation\": [\"delegate_permission/common.handle_all_urls\"],
         \"target\": {
             \"namespace\": \"web\",
-            \"site\": \"https://security-audit-110.preview.emergentagent.com\"
+            \"site\": \"https://barber-finder-26.preview.emergentagent.com\"
         }
     }]
     

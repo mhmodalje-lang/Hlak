@@ -10,7 +10,7 @@ import sys
 from typing import Dict
 
 # Configuration
-BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
+BASE_URL = "https://barber-finder-26.preview.emergentagent.com/api"
 
 class PWATester:
     def __init__(self):

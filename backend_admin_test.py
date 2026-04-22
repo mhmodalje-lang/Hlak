@@ -10,7 +10,7 @@ import random
 import string
 
 # Configuration
-BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
+BASE_URL = "https://barber-finder-26.preview.emergentagent.com/api"
 ADMIN_PHONE = "admin"
 ADMIN_PASSWORD = "NewStrong2026!xYz"
 MASTER_OWNER_EMAIL = "mohamadalrejab@gmail.com"

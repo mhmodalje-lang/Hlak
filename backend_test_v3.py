@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 from PIL import Image
 
 # Configuration
-BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
+BASE_URL = "https://barber-finder-26.preview.emergentagent.com/api"
 ADMIN_CREDENTIALS = {"phone_number": "admin", "password": "admin123"}
 SALON_CREDENTIALS = {"phone_number": "0935964158", "password": "salon123"}
 

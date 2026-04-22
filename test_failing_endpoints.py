@@ -7,7 +7,7 @@ import requests
 import json
 import uuid
 
-BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
+BASE_URL = "https://barber-finder-26.preview.emergentagent.com/api"
 
 def test_review_and_subscription():
     # Register a new user

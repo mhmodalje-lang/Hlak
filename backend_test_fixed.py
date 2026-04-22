@@ -11,7 +11,7 @@ import pyotp
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
+BASE_URL = "https://barber-finder-26.preview.emergentagent.com/api"
 ADMIN_PHONE = "admin"
 ADMIN_PASSWORD = "AdminPass2026!"
 

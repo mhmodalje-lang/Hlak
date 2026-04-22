@@ -12,7 +12,7 @@ import base64
 from typing import Dict, Any, Optional
 
 # API Configuration
-BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
+BASE_URL = "https://barber-finder-26.preview.emergentagent.com/api"
 
 # Test Credentials
 ADMIN_CREDENTIALS = {"phone_number": "admin", "password": "admin123"}

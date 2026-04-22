@@ -11,7 +11,7 @@ import random
 import string
 
 # Configuration
-BASE_URL = "https://security-audit-110.preview.emergentagent.com/api"
+BASE_URL = "https://barber-finder-26.preview.emergentagent.com/api"
 
 def test_basic_endpoints():
     """Test basic endpoints that don't require authentication"""

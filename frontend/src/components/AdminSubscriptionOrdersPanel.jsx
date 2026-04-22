@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import {
   FileText, Clock, CheckCircle2, XCircle, Loader2, Eye, Check, X,
   Store, Tag, Hash, DollarSign, Image as ImageIcon, Calendar,
-  Phone, MapPin, MessageSquare, Bell
+  Phone, MapPin, MessageSquare, Bell, MessageCircle,
 } from 'lucide-react';
 
 const STATUS_TABS = [
@@ -173,6 +173,21 @@ const OrderRow = ({ order, language, onView }) => {
           <Calendar size={12} /> {createdAt}
         </div>
 
+        {/* WhatsApp quick-contact */}
+        {order.admin_wa_link && (
+          <a
+            href={order.admin_wa_link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="px-3 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/30 font-semibold text-xs flex items-center gap-1.5"
+            data-testid={`wa-order-${order.id}`}
+            title={isRTL ? 'فتح محادثة WhatsApp مع الصالون' : 'Open WhatsApp chat with salon'}
+          >
+            <MessageCircle size={14} /> {isRTL ? 'واتساب' : 'WhatsApp'}
+          </a>
+        )}
+
         {/* View button */}
         <button
           onClick={onView}
@@ -254,6 +269,21 @@ const OrderDetailModal = ({ API, token, language, orderId, onClose, onActionDone
               <div className="space-y-3">
                 <DetailRow icon={Hash}  label_ar="الكود المرجعي"   label_en="Reference Code" value={order.reference_code} isRTL={isRTL} highlight />
                 <DetailRow icon={Store} label_ar="اسم الصالون"     label_en="Salon Name"     value={order.salon_name} isRTL={isRTL} />
+                {order.salon_phone && (
+                  <DetailRow icon={Phone} label_ar="هاتف الصالون" label_en="Salon Phone"  value={order.salon_phone} isRTL={isRTL} />
+                )}
+                {order.admin_wa_link && (
+                  <a
+                    href={order.admin_wa_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-bold text-sm shadow-lg shadow-emerald-500/30 transition-all"
+                    data-testid="detail-wa-btn"
+                  >
+                    <MessageCircle size={18} />
+                    {isRTL ? 'التواصل مع الصالون عبر واتساب' : 'Contact salon via WhatsApp'}
+                  </a>
+                )}
                 <DetailRow icon={Tag}   label_ar="الخطة"           label_en="Plan"           value={isRTL ? order.plan_title_ar : order.plan_title_en} isRTL={isRTL} />
                 <DetailRow icon={MapPin} label_ar="الدولة"          label_en="Country"        value={`${order.country || ''} ${order.country_code ? `(${order.country_code})` : ''}`} isRTL={isRTL} />
                 <DetailRow icon={DollarSign} label_ar="المبلغ"      label_en="Amount"         value={`${Number(order.amount).toLocaleString()} ${order.currency_symbol || order.currency}`} isRTL={isRTL} highlight />

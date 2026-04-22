@@ -211,7 +211,8 @@ const SocialFollowGate = ({ language = 'ar', API }) => {
                     type="button"
                     onClick={() => markClicked(p.key, p.href)}
                     className={`group w-full relative overflow-hidden rounded-2xl border-2 transition-all duration-300 ${done ? 'border-emerald-400/60 bg-emerald-500/10' : 'border-amber-400/20 hover:border-amber-400/60 bg-gradient-to-br from-white/5 to-transparent'}`}
-                    data-testid={`social-btn-${p.key}`}
+                    data-testid={`social-follow-btn-${p.key}`}
+                    data-platform={p.key}
                   >
                     <div className="flex items-center gap-3 sm:gap-4 px-4 py-3 sm:px-5 sm:py-3.5">
                       {/* Icon tile */}
@@ -244,12 +245,12 @@ const SocialFollowGate = ({ language = 'ar', API }) => {
             </div>
 
             {/* Progress indicator */}
-            <div className="mb-4">
+            <div className="mb-4" data-testid="social-gate-progress">
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <span className="text-gray-400">
                   {isRTL ? 'تقدمك' : 'Progress'}
                 </span>
-                <span className="text-amber-400 font-bold">
+                <span className="text-amber-400 font-bold" data-testid="social-gate-progress-count">
                   {Object.values(clicked).filter(Boolean).length}/3
                 </span>
               </div>

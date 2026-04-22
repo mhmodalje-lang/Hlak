@@ -96,6 +96,12 @@ User request:
 - Frontend: 4/4 visual spot-checks (Social Gate without WhatsApp, Contact page, HomeSections footer, PaymentPage).
 - Minor issues fixed: wa.me international phone prefix (963).
 
+## v3.9.2 — Admin UX + Security polish (2026-04-22)
+Follow-up to v3.9.1 addressing P1 items from testing agent:
+- **Stricter receipt validation** — backend now rejects: non-image MIME (gif etc), malformed base64, images <100 bytes, images >3MB. Uses regex `^data:image/(png|jpeg|jpg|webp);base64,…` + `base64.b64decode(validate=True)`.
+- **Admin WhatsApp quick-contact** — AdminSubscriptionOrdersPanel now shows a green "واتساب" button on every order row and a prominent full-width "التواصل مع الصالون عبر واتساب" CTA inside the OrderDetailModal. `/api/admin/subscription-orders/{id}` now also returns `admin_wa_link`.
+- **data-testid polish** — SocialFollowGate platform cards renamed to `social-follow-btn-{key}` per testing conventions; added `social-gate-progress` + `social-gate-progress-count` wrappers.
+
 
 ## Testing Status
 - **Phase 3**: 18/18 backend pytest cases passed (iteration_4.json).

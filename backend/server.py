@@ -7468,9 +7468,23 @@ async def create_subscription_order(
     """Any authenticated user (typically a salon owner) can submit a subscription order
     with a transfer receipt. Admin reviews and approves.
     """
-    # Validate receipt
-    if not payload.receipt_image or not payload.receipt_image.startswith("data:image"):
+    # Validate receipt: must be a data-URI, a supported image MIME, decodable base64,
+    # and under 3 MB after decode.
+    if not payload.receipt_image or not isinstance(payload.receipt_image, str):
         raise HTTPException(status_code=400, detail="Receipt image is required (base64 data URI)")
+    import base64
+    _img_match = re.match(r"^data:image/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=\s]+)$", payload.receipt_image, re.IGNORECASE)
+    if not _img_match:
+        raise HTTPException(status_code=400, detail="Receipt must be a PNG/JPEG/WEBP data URI")
+    try:
+        _decoded = base64.b64decode(_img_match.group(2), validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Receipt image is not valid base64")
+    if len(_decoded) < 100:
+        # 100 bytes is way below any meaningful image
+        raise HTTPException(status_code=400, detail="Receipt image is too small or corrupted")
+    if len(_decoded) > 3 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Receipt image exceeds 3 MB")
 
     # Validate plan
     plan = await db.subscription_plans.find_one({"id": payload.plan_id}, {"_id": 0})
@@ -7642,6 +7656,17 @@ async def admin_get_subscription_order(order_id: str, admin: Dict = Depends(requ
     order = await db.subscription_orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    # Attach admin_wa_link (same logic as admin list) so the modal can show it.
+    import urllib.parse as _urlp
+    phone = order.get("salon_phone") or ""
+    digits = re.sub(r"\D", "", str(phone))
+    if digits.startswith("0") and 9 <= len(digits) <= 11:
+        digits = "963" + digits.lstrip("0")
+    if digits:
+        msg = f"مرحباً {order.get('salon_name') or ''}، بخصوص طلب الاشتراك {order.get('reference_code') or ''}"
+        order["admin_wa_link"] = f"https://wa.me/{digits}?text={_urlp.quote(msg)}"
+    else:
+        order["admin_wa_link"] = None
     return order
 
 

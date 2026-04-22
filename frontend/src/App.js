@@ -35,6 +35,7 @@ import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import AccountSettingsPage from "@/pages/AccountSettingsPage";
 import InstallPrompt from "@/components/InstallPrompt";
 import OnboardingTour from "@/components/OnboardingTour";
+import SocialFollowGate from "@/components/SocialFollowGate";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 
@@ -177,6 +178,7 @@ function App() {
                   <Toaster position="top-center" richColors />
                   <InstallPrompt />
                   <OnboardingTour />
+                  <SocialFollowGate language={language} API={API} />
                 </div>
               </AppContext.Provider>
             </CurrencyProvider>

@@ -7275,6 +7275,447 @@ async def delete_subscription_plan(plan_id: str, admin: Dict = Depends(require_a
     return {"success": True}
 
 
+# ============================================================================
+# TRANSFER RECIPIENTS (admin-managed Syriatel Cash + Exchange office recipients)
+# Separate from existing /payment-methods (which is per-country wallets).
+# This is for the "manual subscription payment" flow.
+# ============================================================================
+DEFAULT_TRANSFER_RECIPIENTS = {
+    "id": "transfer_recipients_singleton",
+    "syriatel_cash": {
+        "number": "+963 935 964 158",
+        "display_name_ar": "سيريتل كاش",
+        "display_name_en": "Syriatel Cash",
+        "instructions_ar": "حوّل المبلغ إلى الرقم أعلاه ثم ارفع صورة إشعار التحويل وأدخل رقم العملية المرجعي.",
+        "instructions_en": "Transfer the amount to the number above, then upload the transfer receipt and enter the reference number.",
+        "active": True,
+    },
+    "exchanges": [
+        {
+            "id": "al-haram",
+            "name_ar": "مكتب الهرم",
+            "name_en": "Al-Haram Exchange",
+            "recipient_ar": "ابراهيم الرجب",
+            "recipient_en": "Ibrahim Al-Rajab",
+            "province_ar": "معبدة",
+            "province_en": "Maabada",
+            "phone": "",
+            "active": True,
+        },
+        {
+            "id": "al-admiral",
+            "name_ar": "مكتب الأدميرال",
+            "name_en": "Al-Admiral Exchange",
+            "recipient_ar": "احمد الرجب",
+            "recipient_en": "Ahmad Al-Rajab",
+            "province_ar": "معبدة",
+            "province_en": "Maabada",
+            "phone": "",
+            "active": True,
+        },
+        {
+            "id": "al-fuad",
+            "name_ar": "مكتب الفؤاد",
+            "name_en": "Al-Fuad Exchange",
+            "recipient_ar": "احمد الرجب",
+            "recipient_en": "Ahmad Al-Rajab",
+            "province_ar": "معبدة",
+            "province_en": "Maabada",
+            "phone": "",
+            "active": True,
+        },
+        {
+            "id": "balance-transfer",
+            "name_ar": "تحويل رصيد",
+            "name_en": "Balance Transfer",
+            "recipient_ar": "احمد الرجب",
+            "recipient_en": "Ahmad Al-Rajab",
+            "province_ar": "—",
+            "province_en": "—",
+            "phone": "+963 935 964 158",
+            "active": True,
+        },
+    ],
+    "general_note_ar": "بعد التحويل، ارفع صورة إشعار الدفع ليتم تفعيل اشتراكك خلال 24 ساعة.",
+    "general_note_en": "After transferring, upload the payment receipt. Your subscription will be activated within 24 hours.",
+    "updated_at": None,
+}
+
+
+class ExchangeRecipient(BaseModel):
+    id: str
+    name_ar: Optional[str] = None
+    name_en: Optional[str] = None
+    recipient_ar: Optional[str] = None
+    recipient_en: Optional[str] = None
+    province_ar: Optional[str] = None
+    province_en: Optional[str] = None
+    phone: Optional[str] = None
+    active: bool = True
+
+
+class SyriatelCashRecipient(BaseModel):
+    number: Optional[str] = None
+    display_name_ar: Optional[str] = None
+    display_name_en: Optional[str] = None
+    instructions_ar: Optional[str] = None
+    instructions_en: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class TransferRecipientsUpdate(BaseModel):
+    syriatel_cash: Optional[SyriatelCashRecipient] = None
+    exchanges: Optional[List[ExchangeRecipient]] = None
+    general_note_ar: Optional[str] = None
+    general_note_en: Optional[str] = None
+
+
+@api_router.get("/transfer-recipients")
+async def get_transfer_recipients():
+    """Public: returns recipient info for Syriatel Cash + Exchange offices."""
+    doc = await db.transfer_recipients.find_one({"id": "transfer_recipients_singleton"}, {"_id": 0})
+    if not doc:
+        seed = dict(DEFAULT_TRANSFER_RECIPIENTS)
+        seed["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.transfer_recipients.insert_one(seed)
+        doc = {k: v for k, v in seed.items() if k != "_id"}
+    if doc.get("exchanges"):
+        doc["exchanges"] = [e for e in doc["exchanges"] if e.get("active", True)]
+    return doc
+
+
+@api_router.get("/admin/transfer-recipients")
+async def admin_get_transfer_recipients(admin: Dict = Depends(require_admin)):
+    """Admin: returns full recipient info including inactive ones."""
+    doc = await db.transfer_recipients.find_one({"id": "transfer_recipients_singleton"}, {"_id": 0})
+    if not doc:
+        seed = dict(DEFAULT_TRANSFER_RECIPIENTS)
+        seed["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.transfer_recipients.insert_one(seed)
+        doc = {k: v for k, v in seed.items() if k != "_id"}
+    return doc
+
+
+@api_router.put("/admin/transfer-recipients")
+async def update_transfer_recipients(payload: TransferRecipientsUpdate, admin: Dict = Depends(require_admin)):
+    """Admin: update Syriatel Cash number or exchange office recipient info."""
+    existing = await db.transfer_recipients.find_one({"id": "transfer_recipients_singleton"}, {"_id": 0})
+    if not existing:
+        existing = dict(DEFAULT_TRANSFER_RECIPIENTS)
+
+    updates: Dict[str, Any] = {}
+    if payload.syriatel_cash is not None:
+        current_sc = existing.get("syriatel_cash") or {}
+        sc_update = {k: v for k, v in payload.syriatel_cash.model_dump().items() if v is not None}
+        updates["syriatel_cash"] = {**current_sc, **sc_update}
+    if payload.exchanges is not None:
+        updates["exchanges"] = [e.model_dump() for e in payload.exchanges]
+    if payload.general_note_ar is not None:
+        updates["general_note_ar"] = payload.general_note_ar
+    if payload.general_note_en is not None:
+        updates["general_note_en"] = payload.general_note_en
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await db.transfer_recipients.update_one(
+        {"id": "transfer_recipients_singleton"},
+        {"$set": updates, "$setOnInsert": {"id": "transfer_recipients_singleton"}},
+        upsert=True,
+    )
+    doc = await db.transfer_recipients.find_one({"id": "transfer_recipients_singleton"}, {"_id": 0})
+    return {"success": True, "transfer_recipients": doc}
+
+
+# ============================================================================
+# SUBSCRIPTION ORDERS (semi-automatic: salon uploads receipt, admin approves)
+# ============================================================================
+
+def _generate_reference_code() -> str:
+    """Generate a unique reference code for a subscription order. e.g. BH-26-A4F9B7"""
+    from datetime import datetime as _dt
+    year = _dt.now(timezone.utc).strftime("%y")
+    rand = uuid.uuid4().hex[:6].upper()
+    return f"BH-{year}-{rand}"
+
+
+class SubscriptionOrderCreate(BaseModel):
+    plan_id: str
+    payment_method: str                     # 'syriatel_cash' | 'exchange'
+    exchange_id: Optional[str] = None       # required if payment_method == 'exchange'
+    reference_number: Optional[str] = None  # transfer ref/operation number (optional)
+    receipt_image: Optional[str] = None     # base64 data URI (required)
+    notes: Optional[str] = None             # additional notes from salon
+
+
+class SubscriptionOrderAdminAction(BaseModel):
+    admin_notes: Optional[str] = None
+    duration_days: Optional[int] = None  # override (default: 30 for monthly, 365 for yearly)
+
+
+@api_router.post("/subscription-orders")
+async def create_subscription_order(
+    payload: SubscriptionOrderCreate,
+    entity: Dict = Depends(require_auth),
+):
+    """Any authenticated user (typically a salon owner) can submit a subscription order
+    with a transfer receipt. Admin reviews and approves.
+    """
+    # Validate receipt
+    if not payload.receipt_image or not payload.receipt_image.startswith("data:image"):
+        raise HTTPException(status_code=400, detail="Receipt image is required (base64 data URI)")
+
+    # Validate plan
+    plan = await db.subscription_plans.find_one({"id": payload.plan_id}, {"_id": 0})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Subscription plan not found")
+
+    # Validate payment method
+    if payload.payment_method not in ("syriatel_cash", "exchange"):
+        raise HTTPException(status_code=400, detail="payment_method must be 'syriatel_cash' or 'exchange'")
+
+    exchange_info = None
+    if payload.payment_method == "exchange":
+        if not payload.exchange_id:
+            raise HTTPException(status_code=400, detail="exchange_id is required when payment_method is 'exchange'")
+        pm = await db.transfer_recipients.find_one({"id": "transfer_recipients_singleton"}, {"_id": 0}) or {}
+        for ex in pm.get("exchanges", []):
+            if ex.get("id") == payload.exchange_id:
+                exchange_info = ex
+                break
+        if not exchange_info:
+            raise HTTPException(status_code=404, detail="Selected exchange not found")
+
+    # Determine the salon/shop associated with this order
+    salon_id = None
+    salon_name = None
+    if entity.get("entity_type") == "barbershop":
+        salon_id = entity.get("id")
+        salon_name = entity.get("shop_name") or entity.get("name")
+    else:
+        # Regular user submitting (allowed for future cases), but salon_id may be missing
+        salon_id = entity.get("id")
+        salon_name = entity.get("name") or entity.get("phone_number")
+
+    now = datetime.now(timezone.utc).isoformat()
+    ref_code = _generate_reference_code()
+    # Ensure uniqueness
+    while await db.subscription_orders.find_one({"reference_code": ref_code}):
+        ref_code = _generate_reference_code()
+
+    order_doc = {
+        "id": str(uuid.uuid4()),
+        "reference_code": ref_code,
+        "salon_id": salon_id,
+        "salon_name": salon_name,
+        "entity_type": entity.get("entity_type"),
+        "plan_id": plan.get("id"),
+        "plan_title_ar": plan.get("title_ar"),
+        "plan_title_en": plan.get("title_en"),
+        "country": plan.get("country"),
+        "country_code": plan.get("country_code"),
+        "currency": plan.get("currency"),
+        "currency_symbol": plan.get("currency_symbol"),
+        "amount": plan.get("monthly_price", 0),
+        "free_trial_months": plan.get("free_trial_months", 0),
+        "payment_method": payload.payment_method,
+        "exchange_id": payload.exchange_id,
+        "exchange_info": exchange_info,
+        "reference_number": (payload.reference_number or "").strip(),
+        "receipt_image": payload.receipt_image,
+        "notes": (payload.notes or "").strip(),
+        "status": "pending",
+        "admin_notes": None,
+        "approved_by": None,
+        "approved_at": None,
+        "rejected_at": None,
+        "activated_until": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.subscription_orders.insert_one(order_doc)
+
+    # Create an in-app admin notification if the collection exists
+    try:
+        await db.admin_notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "type": "subscription_order",
+            "title": f"طلب اشتراك جديد - {ref_code}",
+            "message": f"الصالون {salon_name or '-'} أرسل طلب اشتراك جديد ({plan.get('country') or ''})",
+            "entity_id": order_doc["id"],
+            "entity_type": "subscription_order",
+            "read": False,
+            "created_at": now,
+        })
+    except Exception:
+        pass
+
+    order_doc.pop("_id", None)
+    return {"success": True, "order": order_doc, "reference_code": ref_code}
+
+
+@api_router.get("/my-subscription-orders")
+async def list_my_subscription_orders(entity: Dict = Depends(require_auth)):
+    """Returns the authenticated entity's subscription orders."""
+    orders = await db.subscription_orders.find(
+        {"salon_id": entity.get("id")}, {"_id": 0, "receipt_image": 0}
+    ).sort("created_at", -1).to_list(100)
+    return {"orders": orders}
+
+
+@api_router.get("/my-subscription-orders/{order_id}")
+async def get_my_subscription_order(order_id: str, entity: Dict = Depends(require_auth)):
+    order = await db.subscription_orders.find_one(
+        {"id": order_id, "salon_id": entity.get("id")}, {"_id": 0}
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+
+@api_router.get("/admin/subscription-orders")
+async def admin_list_subscription_orders(
+    admin: Dict = Depends(require_admin),
+    status: Optional[str] = Query(None, regex="^(pending|approved|rejected)$"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Admin: list all subscription orders with optional status filter.
+    Excludes receipt_image to keep list lightweight; fetch individual to see receipt.
+    """
+    query: Dict[str, Any] = {}
+    if status:
+        query["status"] = status
+    orders = await db.subscription_orders.find(
+        query, {"_id": 0, "receipt_image": 0}
+    ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+
+    total = await db.subscription_orders.count_documents(query)
+    pending_count = await db.subscription_orders.count_documents({"status": "pending"})
+    return {"orders": orders, "total": total, "pending_count": pending_count}
+
+
+@api_router.get("/admin/subscription-orders/{order_id}")
+async def admin_get_subscription_order(order_id: str, admin: Dict = Depends(require_admin)):
+    order = await db.subscription_orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+
+@api_router.post("/admin/subscription-orders/{order_id}/approve")
+async def admin_approve_subscription_order(
+    order_id: str,
+    payload: SubscriptionOrderAdminAction,
+    admin: Dict = Depends(require_admin),
+):
+    order = await db.subscription_orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.get("status") == "approved":
+        raise HTTPException(status_code=400, detail="Order is already approved")
+
+    now = datetime.now(timezone.utc)
+    # Determine duration in days
+    duration_days = payload.duration_days or 30
+    # If plan's yearly_price matches the paid amount, give a year
+    plan = await db.subscription_plans.find_one({"id": order.get("plan_id")}, {"_id": 0}) or {}
+    if plan.get("yearly_price") and float(order.get("amount", 0)) >= float(plan["yearly_price"]) * 0.95:
+        duration_days = payload.duration_days or 365
+
+    # Add free-trial months bonus
+    ft_months = int(order.get("free_trial_months") or 0)
+    activated_until = now + timedelta(days=duration_days + (ft_months * 30))
+
+    await db.subscription_orders.update_one(
+        {"id": order_id},
+        {"$set": {
+            "status": "approved",
+            "admin_notes": payload.admin_notes,
+            "approved_by": admin.get("id"),
+            "approved_at": now.isoformat(),
+            "activated_until": activated_until.isoformat(),
+            "updated_at": now.isoformat(),
+        }}
+    )
+
+    # Activate the salon's subscription
+    salon_id = order.get("salon_id")
+    if salon_id and order.get("entity_type") == "barbershop":
+        # Extend from max(existing_expiry, now)
+        shop = await db.barbershops.find_one({"id": salon_id}, {"_id": 0, "subscription_expiry": 1})
+        current_expiry = None
+        if shop and shop.get("subscription_expiry"):
+            try:
+                current_expiry = datetime.fromisoformat(shop["subscription_expiry"].replace("Z", "+00:00"))
+            except Exception:
+                current_expiry = None
+        base = current_expiry if current_expiry and current_expiry > now else now
+        new_expiry = base + timedelta(days=duration_days + (ft_months * 30))
+
+        await db.barbershops.update_one(
+            {"id": salon_id},
+            {"$set": {
+                "subscription_status": "active",
+                "subscription_expiry": new_expiry.isoformat(),
+                "is_verified": True,
+            }}
+        )
+
+    return {"success": True, "activated_until": activated_until.isoformat()}
+
+
+@api_router.post("/admin/subscription-orders/{order_id}/reject")
+async def admin_reject_subscription_order(
+    order_id: str,
+    payload: SubscriptionOrderAdminAction,
+    admin: Dict = Depends(require_admin),
+):
+    order = await db.subscription_orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.subscription_orders.update_one(
+        {"id": order_id},
+        {"$set": {
+            "status": "rejected",
+            "admin_notes": payload.admin_notes or "",
+            "approved_by": admin.get("id"),
+            "rejected_at": now,
+            "updated_at": now,
+        }}
+    )
+    return {"success": True}
+
+
+# ============================================================================
+# SALON VACATION / TEMPORARY-CLOSED toggle
+# ============================================================================
+class VacationToggle(BaseModel):
+    is_on_vacation: bool
+    vacation_message_ar: Optional[str] = None
+    vacation_message_en: Optional[str] = None
+    vacation_until: Optional[str] = None  # ISO date (optional — auto-reopen)
+
+
+@api_router.post("/barbershop/me/vacation")
+async def toggle_vacation(payload: VacationToggle, entity: Dict = Depends(require_barbershop)):
+    """Salon toggles temporary-closed / vacation mode."""
+    now = datetime.now(timezone.utc).isoformat()
+    updates: Dict[str, Any] = {
+        "is_on_vacation": bool(payload.is_on_vacation),
+        "updated_at": now,
+    }
+    if payload.vacation_message_ar is not None:
+        updates["vacation_message_ar"] = payload.vacation_message_ar
+    if payload.vacation_message_en is not None:
+        updates["vacation_message_en"] = payload.vacation_message_en
+    if payload.vacation_until is not None:
+        updates["vacation_until"] = payload.vacation_until
+
+    await db.barbershops.update_one({"id": entity.get("id")}, {"$set": updates})
+    return {"success": True, "is_on_vacation": updates["is_on_vacation"]}
+
+
 # Include the router
 app.include_router(api_router)
 

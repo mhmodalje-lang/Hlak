@@ -15,6 +15,8 @@ import AdminRankingPanel from '@/components/AdminRankingPanel';
 import AdminReviewModeration from '@/components/AdminReviewModeration';
 import AdminSiteSettingsPanel from '@/components/AdminSiteSettingsPanel';
 import AdminSubscriptionPlansPanel from '@/components/AdminSubscriptionPlansPanel';
+import AdminSubscriptionOrdersPanel from '@/components/AdminSubscriptionOrdersPanel';
+import AdminTransferRecipientsPanel from '@/components/AdminTransferRecipientsPanel';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -292,6 +294,8 @@ const AdminDashboard = () => {
             </TabsTrigger>
             <TabsTrigger value="wallets" data-testid="tab-wallets">{t.wallets}</TabsTrigger>
             <TabsTrigger value="agents" data-testid="tab-agents">{t.agents}</TabsTrigger>
+            <TabsTrigger value="orders" data-testid="tab-orders">{isRTL ? '🔔 طلبات الدفع' : '🔔 Payment Orders'}</TabsTrigger>
+            <TabsTrigger value="recipients" data-testid="tab-recipients">{isRTL ? 'جهات التحويل' : 'Transfer Recipients'}</TabsTrigger>
             <TabsTrigger value="site_settings" data-testid="tab-site-settings">{isRTL ? 'إعدادات الموقع' : 'Site Settings'}</TabsTrigger>
             <TabsTrigger value="plans" data-testid="tab-plans">{isRTL ? 'خطط الاشتراك' : 'Subscription Plans'}</TabsTrigger>
             <TabsTrigger value="misc" data-testid="tab-misc">{t.misc}</TabsTrigger>
@@ -386,6 +390,16 @@ const AdminDashboard = () => {
           {/* Site Settings (contact info + social) */}
           <TabsContent value="site_settings">
             <AdminSiteSettingsPanel API={API} token={token} language={language} />
+          </TabsContent>
+
+          {/* Subscription Orders (approve/reject salon payments) */}
+          <TabsContent value="orders">
+            <AdminSubscriptionOrdersPanel API={API} token={token} language={language} />
+          </TabsContent>
+
+          {/* Transfer Recipients (Syriatel Cash + Exchanges) */}
+          <TabsContent value="recipients">
+            <AdminTransferRecipientsPanel API={API} token={token} language={language} />
           </TabsContent>
 
           {/* Subscription Plans per country */}

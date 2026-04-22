@@ -8171,6 +8171,57 @@ async def startup_db():
     asyncio.create_task(_initial_recompute())
     asyncio.create_task(_nightly_ranking_task())
 
+    # ---------- v3.9.4 — Vacation auto-reopen scheduler ----------
+    # Salons can set `vacation_until` (ISO date); when that date passes we
+    # automatically flip `is_on_vacation` back to False so they re-appear
+    # in listings. Runs every 15 minutes.
+    async def _vacation_autoreopen_task():
+        while True:
+            try:
+                await asyncio.sleep(60 * 15)
+                now_iso = datetime.now(timezone.utc).isoformat()
+                res = await db.barbershops.update_many(
+                    {
+                        "is_on_vacation": True,
+                        "vacation_until": {"$ne": None, "$lte": now_iso},
+                    },
+                    {"$set": {
+                        "is_on_vacation": False,
+                        "vacation_until": None,
+                        "updated_at": now_iso,
+                    }}
+                )
+                if res.modified_count:
+                    logger.info(f"Auto-reopened {res.modified_count} salon(s) after vacation_until lapsed")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Vacation auto-reopen task error: {e}")
+
+    # Run once at boot too (catch any lapsed vacations while server was down)
+    async def _initial_vacation_sweep():
+        try:
+            await asyncio.sleep(3)
+            now_iso = datetime.now(timezone.utc).isoformat()
+            res = await db.barbershops.update_many(
+                {
+                    "is_on_vacation": True,
+                    "vacation_until": {"$ne": None, "$lte": now_iso},
+                },
+                {"$set": {
+                    "is_on_vacation": False,
+                    "vacation_until": None,
+                    "updated_at": now_iso,
+                }}
+            )
+            if res.modified_count:
+                logger.info(f"Startup vacation sweep: reopened {res.modified_count} salon(s)")
+        except Exception as e:
+            logger.error(f"Initial vacation sweep failed: {e}")
+
+    asyncio.create_task(_initial_vacation_sweep())
+    asyncio.create_task(_vacation_autoreopen_task())
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()

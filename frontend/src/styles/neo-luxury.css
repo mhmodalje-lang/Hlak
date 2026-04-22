@@ -4,12 +4,12 @@
 ============================================================ */
 
 :root {
-  /* Core palette - Deep Chocolate Browns (Warmer than Black) */
-  --bh-ink: #0F0805;            /* Deep espresso ink */
-  --bh-obsidian: #1A0F0A;       /* Rich espresso - main background */
-  --bh-obsidian-2: #24150D;     /* Chocolate layer 2 */
-  --bh-obsidian-3: #2D1810;     /* Chocolate layer 3 */
-  --bh-obsidian-4: #3D2418;     /* Warm dark brown */
+  /* v3.9.4 — True-Black Luxury palette (user requested #000000) */
+  --bh-ink: #000000;            /* Pure black ink */
+  --bh-obsidian: #000000;       /* Pure black base */
+  --bh-obsidian-2: #0a0a0a;     /* Near-black layer 2 */
+  --bh-obsidian-3: #141414;     /* Dark-gray layer 3 */
+  --bh-obsidian-4: #1f1f1f;     /* Mid-dark layer */
 
   /* Gold spectrum - Champagne & Bronze */
   --bh-gold: #D4AF37;           /* Classic gold */
@@ -23,34 +23,34 @@
   --bh-burgundy-light: #B24159;
   --bh-rose: #B76E79;
 
-  /* Text - Warmer tones */
+  /* Text - Warm cream for contrast on pure black */
   --bh-text-primary: #F7E7CE;   /* Warm cream */
   --bh-text-secondary: rgba(232, 215, 195, 0.85); /* Warm beige */
   --bh-text-muted: rgba(168, 151, 128, 0.7);      /* Warm muted */
   --bh-text-dim: rgba(138, 122, 103, 0.5);        /* Dim warm */
 
-  /* Borders / glass - Brown Tint */
-  --bh-glass-bg: rgba(61, 36, 24, 0.45);          /* Warm brown glass */
-  --bh-glass-bg-hi: rgba(45, 24, 16, 0.75);       /* Rich chocolate glass */
-  --bh-glass-border: rgba(212, 175, 55, 0.2);     /* Gold border */
+  /* Borders / glass - Glassmorphism on true black */
+  --bh-glass-bg: rgba(20, 20, 20, 0.55);          /* Dark glass */
+  --bh-glass-bg-hi: rgba(10, 10, 10, 0.85);       /* Near-black high glass */
+  --bh-glass-border: rgba(212, 175, 55, 0.22);    /* Gold border */
   --bh-glass-border-hi: rgba(247, 231, 206, 0.4); /* Champagne border */
 
-  /* Neon glows - Warmer */
+  /* Neon glows */
   --bh-glow-gold: 0 0 40px rgba(212, 175, 55, 0.4), 0 0 80px rgba(205, 127, 50, 0.15);
   --bh-glow-gold-soft: 0 0 24px rgba(247, 231, 206, 0.3);
   --bh-glow-burgundy: 0 0 40px rgba(183, 110, 121, 0.3);
 
-  /* Gradients - Warm Chocolate */
+  /* Gradients - True-Black Luxury */
   --bh-grad-gold: linear-gradient(135deg, #D4AF37 0%, #F7E7CE 45%, #CD7F32 100%);
   --bh-grad-gold-deep: linear-gradient(135deg, #8B6914 0%, #D4AF37 50%, #CD7F32 100%);
   --bh-grad-burgundy: linear-gradient(135deg, #6E1E2B 0%, #B76E79 100%);
-  --bh-grad-night: radial-gradient(ellipse at top, #2D1810 0%, #1A0F0A 60%, #0F0805 100%);
-  --bh-grad-night-side: linear-gradient(135deg, #1A0F0A 0%, #2D1810 50%, #1A0F0A 100%);
-  --bh-grad-vip: linear-gradient(135deg, #1A0F0A 0%, #3D2418 40%, #1A0F0A 100%);
+  --bh-grad-night: radial-gradient(ellipse at top, #141414 0%, #0a0a0a 60%, #000000 100%);
+  --bh-grad-night-side: linear-gradient(135deg, #000000 0%, #141414 50%, #000000 100%);
+  --bh-grad-vip: linear-gradient(135deg, #000000 0%, #1f1f1f 40%, #000000 100%);
 
   /* Shadows */
-  --bh-shadow-lux: 0 20px 60px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(212, 175, 55, 0.15);
-  --bh-shadow-deep: 0 40px 80px rgba(0, 0, 0, 0.85);
+  --bh-shadow-lux: 0 20px 60px rgba(0, 0, 0, 0.75), 0 4px 12px rgba(212, 175, 55, 0.18);
+  --bh-shadow-deep: 0 40px 80px rgba(0, 0, 0, 0.95);
 
   /* Sizes */
   --bh-radius-lg: 24px;
@@ -432,3 +432,125 @@ body, html {
 .bh-delay-4 { animation-delay: 0.4s; }
 .bh-delay-5 { animation-delay: 0.5s; }
 .bh-delay-6 { animation-delay: 0.6s; }
+
+
+/* ============================================================
+   v3.9.4 — Global True-Black Override
+   The user explicitly requested a full-screen dark mode without
+   stray white sections. Many pages were built with light-theme
+   Tailwind classes (bg-white / bg-amber-50 / bg-gray-50 etc).
+   These overrides force every such surface to blend into the
+   pure-black luxury theme. We use specific class selectors so
+   intentionally-white cards (e.g. logos on login) still work
+   when they use inline style.
+============================================================ */
+
+/* App root backgrounds */
+body, html, #root {
+  background: #000000 !important;
+  color: var(--bh-text-primary);
+}
+
+/* Sweep common light-theme backgrounds to glass-black */
+.bg-white,
+.bg-amber-50,
+.bg-amber-100\/50,
+.bg-gray-50,
+.bg-neutral-50,
+.bg-stone-50,
+.bg-rose-50,
+.bg-pink-50,
+.bg-slate-50 {
+  background-color: rgba(10, 10, 10, 0.85) !important;
+  color: var(--bh-text-primary);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+}
+
+/* Gradients built from white/light stops → black with warm overlay */
+.bg-gradient-to-b.from-amber-50,
+.bg-gradient-to-b.from-white,
+.bg-gradient-to-br.from-white,
+.bg-gradient-to-t.from-white,
+.bg-gradient-to-tr.from-amber-50 {
+  background: linear-gradient(to bottom,
+    rgba(20, 20, 20, 0.95) 0%,
+    rgba(0, 0, 0, 1) 100%) !important;
+}
+
+/* Any `to-white` utility likewise becomes dark */
+.to-white,
+.to-amber-50 {
+  --tw-gradient-to: rgba(0, 0, 0, 1) !important;
+}
+
+/* Cards that rely on shadow and white bg need a gold hairline */
+.rounded-2xl.shadow-sm.bg-white,
+.rounded-2xl.bg-white,
+.rounded-xl.bg-white {
+  border: 1px solid rgba(212, 175, 55, 0.15);
+}
+
+/* Headlines and body copy in dark-mode-unaware pages */
+.text-neutral-900,
+.text-gray-900,
+.text-stone-900,
+.text-zinc-900,
+.text-black {
+  color: var(--bh-text-primary) !important;
+}
+
+.text-neutral-700,
+.text-gray-700,
+.text-stone-700,
+.text-zinc-700 {
+  color: var(--bh-text-secondary) !important;
+}
+
+.text-neutral-600,
+.text-gray-600,
+.text-stone-600,
+.text-zinc-600 {
+  color: var(--bh-text-muted) !important;
+}
+
+/* Remove white focus rings that looked washed-out */
+input, textarea, select {
+  background-color: rgba(20, 20, 20, 0.6);
+  color: var(--bh-text-primary);
+}
+input:focus, textarea:focus, select:focus {
+  outline-color: var(--bh-gold);
+}
+
+/* Auth page: make the shell feel full-screen / luxurious on desktop */
+.bh-auth-shell {
+  min-height: 100dvh;
+  width: 100%;
+  display: grid;
+  place-items: stretch;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 1024px) {
+  .bh-auth-shell {
+    grid-template-columns: 1.1fr 1fr;
+  }
+  .bh-auth-hero {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 4rem;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(212, 175, 55, 0.12), transparent 50%),
+      linear-gradient(135deg, #000000 0%, #141414 60%, #000000 100%);
+    border-right: 1px solid rgba(212, 175, 55, 0.12);
+  }
+  [dir="rtl"] .bh-auth-hero {
+    border-right: none;
+    border-left: 1px solid rgba(212, 175, 55, 0.12);
+  }
+}
+.bh-auth-hero { display: none; } /* hidden on mobile */
+@media (min-width: 1024px) {
+  .bh-auth-hero { display: flex; }
+}

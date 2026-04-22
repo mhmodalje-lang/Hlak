@@ -112,11 +112,15 @@ const AuthPage = () => {
     } catch (e) { console.error(e); }
   }, [API]);
 
-  // v3.7 — route each role to its native surface.
-  // Salon -> /dashboard (their control panel: profile, products, services, gallery, bookings).
-  // Admin -> /admin (super-admin dashboard).
-  // Customer -> /home (discovery, booking, AI advisor, favorites).
+  // v3.9.4 — Route each role to its native surface.
+  //   • Master Owner (email == mohamadalrejab@gmail.com) -> /admin
+  //   • Any admin -> /admin
+  //   • Salon -> /dashboard
+  //   • Customer -> /home
+  const MASTER_OWNER_EMAIL = 'mohamadalrejab@gmail.com';
   const routeForEntity = (user) => {
+    const email = (user?.email || '').toLowerCase().trim();
+    if (email === MASTER_OWNER_EMAIL) return '/admin';
     const etype = user?.entity_type || user?.role || (user?.shop_name ? 'barbershop' : 'user');
     if (etype === 'barbershop') return '/dashboard';
     if (etype === 'admin' || etype === 'master_admin' || etype === 'sub_admin') return '/admin';
@@ -133,7 +137,11 @@ const AuthPage = () => {
         password: loginData.password,
       };
       const res = await axios.post(`${API}/auth/login`, payload);
-      login(res.data.access_token || res.data.token, res.data.user);
+      // v3.9.4 FIX: login() expects (userData, token, userType). Previous order was
+      // (token, user) — stored the token into setUser and the user-object into setToken,
+      // so every subsequent API call sent "[object Object]" as the Authorization header
+      // → 401 → bounced back to login → infinite loop.
+      login(res.data.user, res.data.access_token || res.data.token, res.data.user_type);
       // If the account requires password change, bounce user to the change screen.
       if (res.data?.user?.must_change_password) {
         toast.info(language === 'ar' ? 'يرجى تغيير كلمة المرور أولاً' : 'Please change your password first');
@@ -159,14 +167,10 @@ const AuthPage = () => {
         ? `${API}/auth/register`
         : `${API}/auth/register-barbershop`;
       const res = await axios.post(endpoint, data);
-      login(res.data.access_token || res.data.token, res.data.user);
+      login(res.data.user, res.data.access_token || res.data.token, res.data.user_type);
       toast.success(language === 'ar' ? '🎉 تم إنشاء حسابك!' : '🎉 Account created!');
-      // v3.7 — after salon registration, go directly to the dashboard
-      // so the owner can upload their logo, gallery, and products straight away.
-      // v3.7.5 BUGFIX: authType is 'user' or 'barbershop' (never 'shop').
-      //                 The previous check was broken, causing new salons to land on /home
-      //                 instead of their dashboard.
-      navigate(authType === 'barbershop' ? '/dashboard' : '/home');
+      // v3.9.4 — use same role-based router as login so admins/shops/users land on the right page
+      navigate(routeForEntity(res.data.user));
     } catch (err) {
       toast.error(err.response?.data?.detail || (language === 'ar' ? 'خطأ في التسجيل' : 'Registration failed'));
     } finally {
@@ -175,12 +179,48 @@ const AuthPage = () => {
   };
 
   return (
-    <div className="bh-surface min-h-[100dvh] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Ambient Orbs - Warm Brown & Gold */}
+    <div className="bh-surface bh-auth-shell relative overflow-hidden" data-testid="auth-page">
+      {/* Ambient Orbs */}
       <div className="bh-orb bh-orb-gold w-96 h-96 top-0 right-0 opacity-15" />
-      <div className="bh-orb w-80 h-80 bottom-0 left-0 opacity-10" 
+      <div className="bh-orb w-80 h-80 bottom-0 left-0 opacity-10"
         style={{ background: 'radial-gradient(circle, rgba(205,127,50,0.3), transparent)' }} />
 
+      {/* Left luxury-hero panel (desktop only) */}
+      <aside className="bh-auth-hero relative z-10" data-testid="auth-hero-panel">
+        <div className="max-w-md">
+          <div className="w-20 h-20 mb-6 rounded-full flex items-center justify-center"
+            style={{
+              background: 'linear-gradient(135deg, rgba(212,175,55,0.22), rgba(10,10,10,0.6))',
+              border: '2px solid var(--bh-gold)',
+              boxShadow: '0 0 60px rgba(212,175,55,0.4)',
+            }}>
+            <Crown className="w-10 h-10 text-[var(--bh-gold)]" strokeWidth={1.5} />
+          </div>
+          <h1 className="font-display text-5xl font-black text-[var(--bh-gold-light)] leading-tight mb-4">
+            {language === 'ar' ? 'أهلاً بك في BARBER HUB' : 'Welcome to BARBER HUB'}
+          </h1>
+          <p className="text-[var(--bh-text-secondary)] text-lg leading-relaxed mb-8">
+            {language === 'ar'
+              ? 'النادي الحصري للحلاقة والتجميل — احجز، اكتشف، وتألّق.'
+              : 'The exclusive club for grooming & beauty — book, discover, shine.'}
+          </p>
+          <div className="space-y-3 text-[var(--bh-text-muted)] text-sm">
+            {[
+              language === 'ar' ? 'حجوزات فورية للصالونات المميزة' : 'Instant bookings at premium salons',
+              language === 'ar' ? 'AI للقصة المثالية قبل الزيارة' : 'AI-powered haircut try-on',
+              language === 'ar' ? 'نقاط ولاء وتخفيضات حصرية' : 'Loyalty points & exclusive deals',
+            ].map((txt, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-[var(--bh-gold)]/20 border border-[var(--bh-gold)]/40 text-[var(--bh-gold)] text-xs flex items-center justify-center font-bold">✓</span>
+                <span>{txt}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+      {/* Right: Auth card column */}
+      <div className="flex items-center justify-center p-4 lg:p-8 relative z-10 min-h-[100dvh]">
       {/* Back Button */}
       <button
         onClick={() => navigate(-1)}
@@ -393,6 +433,41 @@ const AuthPage = () => {
                   </>
                 ) : (
                   <>
+                    {/* v3.9.4 — Explicit shop-type selector (male barbershop vs female beauty center) */}
+                    <div className="space-y-2">
+                      <Label className="text-[var(--bh-text-secondary)] font-body">
+                        {language === 'ar' ? 'نوع الصالون' : 'Shop Type'}
+                      </Label>
+                      <div className="grid grid-cols-2 gap-3" data-testid="shop-type-selector">
+                        <button
+                          type="button"
+                          onClick={() => setShopRegisterData({ ...shopRegisterData, shop_type: 'male' })}
+                          className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all ${
+                            shopRegisterData.shop_type === 'male'
+                              ? 'border-amber-400 bg-amber-500/15 text-amber-300 shadow-lg shadow-amber-500/20'
+                              : 'border-white/10 bg-white/[0.03] text-gray-400 hover:border-amber-400/40'
+                          }`}
+                          data-testid="shop-type-male"
+                        >
+                          <span className="text-xl me-1">♂️</span>
+                          {language === 'ar' ? 'صالون رجالي' : 'Men\'s Barbershop'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShopRegisterData({ ...shopRegisterData, shop_type: 'female' })}
+                          className={`py-3 px-4 rounded-xl border-2 text-sm font-semibold transition-all ${
+                            shopRegisterData.shop_type === 'female'
+                              ? 'border-pink-400 bg-pink-500/15 text-pink-300 shadow-lg shadow-pink-500/20'
+                              : 'border-white/10 bg-white/[0.03] text-gray-400 hover:border-pink-400/40'
+                          }`}
+                          data-testid="shop-type-female"
+                        >
+                          <span className="text-xl me-1">♀️</span>
+                          {language === 'ar' ? 'مركز تجميل نسائي' : 'Women\'s Beauty Center'}
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <Label className="text-[var(--bh-text-secondary)] font-body">{t.ownerName}</Label>
                       <Input
@@ -535,6 +610,7 @@ const AuthPage = () => {
           </div>
         </div>
       </motion.div>
+      </div> {/* end right auth column */}
     </div>
   );
 };

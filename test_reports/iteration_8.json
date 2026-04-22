@@ -1,0 +1,78 @@
+{
+  "summary": "Barber Hub v3.9.4 — backend + frontend regression. 13/13 pytest pass, plus a separate MongoDB-level probe confirmed the vacation auto-reopen sweep flips is_on_vacation=false when vacation_until is in the past AND preserves vacation when vacation_until is in the future. Frontend: login loop FIXED (salon -> /dashboard, admin -> /admin), token/user/user_type persist in localStorage across refresh, two-column auth shell renders on desktop with data-testid='auth-hero-panel' at x=0 width=1001 height=900, true-black #000 body background on /auth AND /home (rgb(0,0,0)), shop-type-selector with male/female buttons visible and clickable on register form. register-barbershop with shop_type=female persists shop_type correctly (verified via 200 response body user.shop_type='female').",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "frontend auth-shell (HTML5 email validation)", "issue": "When the default tab 'With Email' is active, the input field has type='email'. Logging in with phone-only identifiers (admin, 09xxxxxxxx) triggers the browser-native '@ is missing' popup and BLOCKS POST /api/auth/login entirely. User must manually toggle to 'With Phone' tab. Consider making the input type='text' or auto-detecting phone vs email, or defaulting to 'With Phone' for admin-style accounts. Non-blocker but confusing."},
+      {"endpoint": "POST /api/subscription-orders (v3.9.3 regression)", "issue": "Pydantic schema requires payment_method — documented in iteration_7 test fixtures update. Already enforced."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "shop-type-selector", "issue": "aria-pressed attribute is not set on [data-testid=shop-type-male]/[data-testid=shop-type-female] — selection is visually indicated (orange border) but screen-reader users cannot tell which is active. Minor a11y issue.", "selector": "[data-testid=\"shop-type-male\"], [data-testid=\"shop-type-female\"]", "priority": "LOW"},
+      {"component": "AuthPage WithEmail tab", "issue": "HTML5 email validation on type='email' field blocks login for phone-only accounts (admin, 0998765432). User must click 'With Phone' tab first. This was the original login-loop symptom's siblings — login() order fix is correct but UX can still trap users.", "selector": "[data-testid=\"login-email-phone\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/auth desktop 1920x900", "issues": ["Two-column layout renders correctly: left hero (x=0, w=1001) + right form. Body bg is pure #000000."]},
+      {"screen": "/home", "issues": ["Body bg is rgb(0,0,0) — dark theme applied correctly."]}
+    ]
+  },
+  "passed_tests": {
+    "backend": [
+      "TestLoginContract::test_salon_login_shape (access_token=str, user_type='barbershop', user=dict, no _id/password leaked)",
+      "TestLoginContract::test_admin_login_shape (access_token, user_type='admin')",
+      "TestLoginContract::test_invalid_credentials_401",
+      "TestRegisterShopType::test_register_female_salon_persists_shop_type (user.shop_type=='female' echoed, approval_status='pending')",
+      "TestRegisterShopType::test_register_male_default_works",
+      "TestBarberProfileMe::test_profile_me_with_bearer_200 (Authorization: Bearer <token> -> 200)",
+      "TestBarberProfileMe::test_profile_me_without_token_401",
+      "TestBarberProfileMe::test_profile_me_bad_token_401",
+      "TestVacationAutoReopen::test_vacation_until_past_accepted_and_sweep_query_shape",
+      "TestVacationAutoReopen::test_vacation_until_field_exposed_on_profile",
+      "TestV393Regression::test_barbers_type_female_excludes_male_salon",
+      "TestV393Regression::test_subscription_orders_invalid_cycle_rejected (billing_cycle='weekly' -> 400)",
+      "TestV393Regression::test_admin_subscription_orders_wa_link (admin_wa_link present in admin listing)",
+      "[DB-level probe] Sweep with past vacation_until -> modified_count=1, is_on_vacation flipped to False, vacation_until -> None",
+      "[DB-level probe] Sweep with future vacation_until -> modified_count=0 (correctly preserved)"
+    ],
+    "frontend": [
+      "AuthPage loads with data-testid='auth-page' and data-testid='auth-hero-panel' at {x:0,y:0,w:1001,h:900}",
+      "Body background on /auth = rgb(0,0,0) (TRUE BLACK)",
+      "Body background on /home = rgb(0,0,0)",
+      "Salon login 0998765432/TestPass2026! -> POST /api/auth/login 200 -> redirect /dashboard -> LS has barber_hub_token(len=209) barber_hub_user_type='barbershop'",
+      "After reload on /dashboard URL stays /dashboard (persistence works)",
+      "Admin login admin/NewStrong2026!xYz (With Phone tab) -> POST /api/auth/login 200 -> redirect /admin",
+      "Register > Barbershop shows data-testid='shop-type-selector' with shop-type-male and shop-type-female buttons both visible and clickable"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v394_backend.py",
+    "/app/test_reports/pytest/v394_results.xml"
+  ],
+  "action_items": [
+    "(MEDIUM UX) [data-testid=login-email-phone] uses type='email' on 'With Email' tab. Phone-only accounts (admin, 09xxxxxxxx) cannot submit without manually toggling to 'With Phone'. Recommend auto-detecting input or switching default tab for the admin phone.",
+    "(LOW A11Y) Add aria-pressed on shop-type-male/female buttons so screen readers reflect active selection.",
+    "(MINOR) /api/search/barbers param inconsistency from iteration_7 still open (accepts shop_type not type, missing approval_status filter).",
+    "(INFO) Master admin user.email is NOT 'mohamadalrejab@gmail.com' in DB — user was informed. The routeForEntity() branches on entity_type==admin anyway, so /admin redirect still fires. If the user wants the email-based master check to trigger, set db.admins.email='mohamadalrejab@gmail.com' for the admin record."
+  ],
+  "critical_code_review_comments": [
+    "AuthPage.jsx: routeForEntity() uses user?.entity_type — but login() in App.js never merges the 'type' argument into userData; the entity_type comes from the user object returned by the backend (which DOES include entity_type for admin + shop_type for barbershop via the {k:v for k,v in entity.items() if k != 'password'} spread in server.py login handler). Worth confirming: backend does NOT inject 'entity_type' into the user dict before returning — it's only in the JWT. routeForEntity falls back correctly to shop_name-based detection, but the cleaner fix is to use the explicit user_type param from login() instead of user.entity_type. Works today by coincidence.",
+    "server.py _initial_vacation_sweep sleeps 3s before running but _vacation_autoreopen_task sleeps 15min BEFORE the first DB hit — meaning between the 3s sweep and the first 15min tick, any salon whose vacation_until lapses will stay 'on vacation' for up to 15 min. Consider doing the first iteration of the task immediately, then sleep. Low priority.",
+    "HTML5 email validation on login input is a recurring UX trap for phone-first users. Either use type='text' or write a JS-level validator that accepts both phone and email shapes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v394_backend.py"
+  ],
+  "success_rate": {"backend": "100% (13/13 pytest + 2 DB probes)", "frontend": "100% on critical flows (login no-loop, role redirect, shop-type selector, dark theme, persistence)"},
+  "test_credentials": {
+    "admin": {"phone": "admin", "password": "NewStrong2026!xYz", "note": "must use 'With Phone' tab — 'With Email' blocks via HTML5"},
+    "salon_male": {"phone": "0998765432", "password": "TestPass2026!"},
+    "salon_female_created_this_run": "each test run creates a fresh TEST_female_<uuid8> salon via /api/auth/register-barbershop — cleanup NOT implemented"
+  },
+  "seed_data_creation": "Two new pending barbershops created per run (TEST_male_<uuid8>, TEST_female_<uuid8>) by TestRegisterShopType. One TEST_v394_invalid_cycle subscription order attempt (400 rejected, not persisted). Salon 0998765432's vacation was toggled on (with past vacation_until) and then swept+cleaned by the direct-DB probe — final state: is_on_vacation=false, vacation_until=None.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Primary blocker (v3.9.4 login-loop) is FIXED — verified end-to-end. /app/backend/tests/test_v394_backend.py is the new regression suite (13 tests green). The vacation auto-reopen was verified at DB level (sweep query + update_many) because the in-process asyncio task has a 15-min cycle that tests cannot wait for. Pending follow-ups for main agent: (a) HTML5 email validation UX on login input, (b) aria-pressed on shop-type selector, (c) /api/search/barbers param name + approval_status filter from iteration_7.",
+  "rca of the issue": "The original v3.9.4 bug — login loop caused by AuthPage.jsx passing (token, user) into App.js login() that expects (userData, accessToken, type) — is fully resolved. Current login() signature (line 86 of App.js) matches the call at AuthPage.jsx:144 and :170. Token now correctly stored in barber_hub_token localStorage key, user_type in barber_hub_user_type, and route redirect via routeForEntity() works: barbershop -> /dashboard, admin -> /admin. Reload preserves session."
+}

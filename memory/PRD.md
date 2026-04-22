@@ -120,6 +120,31 @@ Follow-up completing all 3 P1 items from v3.9.2:
 ### Testing (iteration_7.json)
 - Backend: 23/23 pytest passed. Covers vacation endpoint, billing_cycle happy+error paths, yearly duration calc, 5 listing filters (approval + vacation + gender), receipt validation regression, admin GET detail wa_link.
 
+## v3.9.4 — Master Plan Sprint (2026-04-22)
+User submitted a master-plan document requesting immediate fixes. Shipped:
+
+### 🔒 Critical: Login loop fixed
+- **Root cause**: `AuthPage.jsx` called `login(token, user)` but `App.js` expected `login(userData, accessToken, type)`. Result: `user` state = token string, `token` state = user object → every API call sent `[object Object]` as Authorization → 401 → redirect back to /auth → loop.
+- **Fix**: Swapped argument order in both login and register handlers. Also added master-admin email shortcut in `routeForEntity`.
+
+### 🎨 Full-screen Luxury Black UI
+- `neo-luxury.css` core palette swapped from warm chocolate to **true #000000 + near-black layers** (`--bh-obsidian: #000000`).
+- **Global override** block added: forces `bg-white`, `bg-amber-50`, `bg-gray-50`, `bg-neutral-50`, `bg-rose-50`, etc. to `rgba(10,10,10,0.85)` with backdrop blur. Light-theme pages (Contact, Home, PaymentPage, BarberDashboard) now blend into black without per-page edits.
+- AuthPage restructured into **two-column full-screen shell** on desktop (`bh-auth-shell` grid: 1.1fr hero panel / 1fr form). Hero panel shows Crown icon + luxury welcome copy + 3 feature bullets. Mobile falls back to single column.
+
+### ♂️♀️ Shop-type selector at registration
+- AuthPage now exposes a **2-button toggle** (`data-testid="shop-type-male"` / `shop-type-female"`) above owner name when `authType=barbershop`. Male defaults to amber/gold accent, female defaults to pink. Selection sent as `shop_type` in `/api/auth/register-barbershop`.
+
+### 🔄 Vacation Auto-Reopen (scheduled job)
+- `server.py` startup event now launches two tasks:
+  - `_initial_vacation_sweep()` runs 3s after boot (catches vacations that expired while server was down)
+  - `_vacation_autoreopen_task()` runs every 15 minutes
+- Both execute `update_many({is_on_vacation:true, vacation_until:{$lte:now}}, {$set:{is_on_vacation:false, vacation_until:null}})` — salons with expired vacations auto-reappear in listings.
+
+### Testing (iteration_8.json)
+- Backend: 13/13 pytest passed. Login returns correct shape (access_token/user_type/user), register-barbershop persists shop_type=female, auto-reopen sweep flips expired vacations and preserves future ones.
+- Frontend: Login loop FIXED — salon → /dashboard, admin → /admin, no loop. Token persists across refresh. Two-column auth shell (1001×900 on desktop). True-black body (rgb(0,0,0)) on /auth and /home. Shop-type selector functional.
+
 
 
 ## Testing Status
